@@ -90,29 +90,18 @@ export const renderCreateOrder = async () => {
     const repeater = new FormRepeater({
         containerId: 'items-repeater',
         itemTemplate: (id, data) => `
-            <div style="
-                display: grid; 
-                grid-template-columns: 2fr 1fr 1fr auto; 
-                gap: var(--space-4); 
-                align-items: center; 
-                padding: var(--space-4); 
-                background: white; 
-                border: 1px solid var(--color-gray-200);
-                border-radius: var(--radius-md);
-                margin-bottom: var(--space-4);
-                box-shadow: var(--shadow-sm);
-            ">
-                <div class="input-group" style="margin:0">
+            <div class="order-item-card">
+                <div class="input-group">
                     <label style="font-size: 11px; color: var(--color-gray-500); margin-bottom: 4px;">ITEM</label>
                     <select name="items[${id}][name]" required class="product-select" onchange="window.updatePrice(this)" style="width: 100%;">
                         ${productOptions}
                     </select>
                 </div>
-                <div class="input-group" style="margin:0">
+                <div class="input-group">
                     <label style="font-size: 11px; color: var(--color-gray-500); margin-bottom: 4px;">QTY</label>
                     <input type="number" name="items[${id}][quantity]" required min="1" value="${data?.quantity || 1}" class="calc-trigger" style="width: 100%;">
                 </div>
-                <div class="input-group" style="margin:0">
+                <div class="input-group">
                     <label style="font-size: 11px; color: var(--color-gray-500); margin-bottom: 4px;">PRICE</label>
                     <input type="number" name="items[${id}][price]" required min="0" step="0.01" value="${data?.price || ''}" class="calc-trigger price-input" style="width: 100%;">
                 </div>

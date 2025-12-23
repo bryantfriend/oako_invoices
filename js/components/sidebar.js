@@ -67,5 +67,16 @@ export class Sidebar {
                 router.navigate(ROUTES.LOGIN);
             });
         }
+
+        // Close sidebar on nav click (mobile)
+        const navLinks = this.element.querySelectorAll('.nav-item');
+        navLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) {
+                    this.element.classList.remove('open');
+                    document.querySelector('.sidebar-overlay')?.classList.remove('open');
+                }
+            });
+        });
     }
 }

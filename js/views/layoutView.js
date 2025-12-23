@@ -19,38 +19,46 @@ class LayoutView {
         const user = authService.getCurrentUser();
 
         topBar.innerHTML = `
-            <div style="font-weight: 600; font-size: var(--text-lg); color: var(--color-gray-800);">
-                Dashboard
-            </div>
-            <div style="display: flex; align-items: center; gap: var(--space-4);">
-                <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                    <span style="font-size: var(--text-sm); font-weight: 600;">
-                        ${user?.email || 'Admin'}
-                    </span>
-                    <span style="font-size: var(--text-xs); color: var(--color-gray-500);">
-                        Administrator
-                    </span>
-                </div>
-                <div style="
-                    width: 32px; 
-                    height: 32px; 
-                    background: var(--color-primary-100); 
-                    color: var(--color-primary-700); 
-                    border-radius: var(--radius-full); 
-                    display: flex; 
-                    align-items: center; 
-                    justify-content: center;
-                    font-weight: 600;
-                ">
-                    ${(user?.email || 'A').charAt(0).toUpperCase()}
-                </div>
-            </div>
+          <div class="top-bar-left">
+              <button id="hamburger-btn" class="hamburger-btn">☰</button>
+              <span id="page-title">Dashboard</span>
+          </div>
+
+          <div class="top-bar-right">
+              <div style="display:flex;flex-direction:column;align-items:flex-end">
+                  <span class="user-email">${user?.email || 'Admin'}</span>
+                  <span class="user-role">Administrator</span>
+              </div>
+              <div class="avatar">
+                  ${(user?.email || 'A').charAt(0).toUpperCase()}
+              </div>
+          </div>
         `;
+
+
+        // Inject overlay if it doesn't exist
+        if (!document.querySelector('.sidebar-overlay')) {
+            const overlay = document.createElement('div');
+            overlay.className = 'sidebar-overlay';
+            document.body.appendChild(overlay);
+            
+            // Add click event to close sidebar
+            overlay.addEventListener('click', () => {
+                document.getElementById('sidebar')?.classList.remove('open');
+                overlay.classList.remove('open');
+            });
+        }
+
+        // Add hamburger click event
+        document.getElementById('hamburger-btn')?.addEventListener('click', () => {
+             document.getElementById('sidebar')?.classList.add('open');
+             document.querySelector('.sidebar-overlay')?.classList.add('open');
+        });
     }
 
 
     updateTitle(title) {
-        const titleEl = document.querySelector('#top-bar > div:first-child');
+        const titleEl = document.getElementById('page-title');
         if (titleEl) titleEl.textContent = title;
     }
 }
