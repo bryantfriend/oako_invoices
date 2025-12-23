@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kyrgyz Organics Admin</title>
+    
+    <!-- Fonts: Inter (Google Fonts) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="/css/variables.css">
+    <link rel="stylesheet" href="/css/animations.css">
+    <link rel="stylesheet" href="/css/styles.css">
+    
+    <!-- Favicon placeholder -->
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <div id="app">
+        <!-- Layout Scaffolding -->
+        <aside id="sidebar" class="sidebar hidden">
+            <!-- Sidebar content injected by layoutView -->
+        </aside>
+        
+        <main id="main-content" class="main-content">
+            <header id="top-bar" class="top-bar hidden">
+                <!-- Header content injected by layoutView -->
+            </header>
+            
+            <div id="page-container" class="page-container">
+                <!-- Page views injected here -->
+                <div class="loading-screen">
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-text"></div>
+                </div>
+            </div>
+        </main>
+
+        <div id="modal-container"></div>
+        <div id="toast-container"></div>
+    </div>
+
+    <!-- Application Logic -->
+    <script type="module" src="/js/main.js"></script>
+</body>
+</html>
