@@ -16,23 +16,27 @@ export const renderCustomers = async () => {
 
     // Table
     const table = new DataTable({
-        columns: [
-            { key: 'companyName', label: 'Company', render: (val, row) => `<strong>${val || row.name}</strong>` },
-            { key: 'name', label: 'Contact Name' },
-            { key: 'phone', label: 'Phone' },
-            { key: 'email', label: 'Email' }
-        ],
-        data: customers,
-        onRowClick: false, // For now, no detail view unless needed
-        actions: (row) => `
-          <button class="btn btn-secondary btn-sm"
+    columns: [
+        { key: 'companyName', label: 'Company', render: (val, row) => `<strong>${val || row.name}</strong>` },
+        { key: 'name', label: 'Contact Name' },
+        { key: 'phone', label: 'Phone' },
+        { key: 'email', label: 'Email' }
+    ],
+    data: customers,
+    onRowClick: false,
+    actions: (row) => `
+        <button class="btn btn-secondary btn-sm"
             onclick="window.editCustomer('${row.id}')">
             Edit
-          </button>
-`
+        </button>
 
-        `
-    });
+        <button class="btn btn-destructive btn-sm"
+            onclick="window.archiveCustomer('${row.id}')">
+            Archive
+        </button>
+    `
+});
+
 
     container.innerHTML = `
         <div class="animate-fade-in">
@@ -140,5 +144,16 @@ window.editCustomer = async (id) => {
     });
 
     modal.open();
+};
+
+window.archiveCustomer = (id) => {
+    Modal.confirm(
+        'Archive Customer',
+        'This customer will be hidden but not deleted.',
+        async () => {
+            await customerController.archiveCustomer(id);
+            renderCustomers();
+        }
+    );
 };
 
