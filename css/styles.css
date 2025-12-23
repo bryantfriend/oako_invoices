@@ -1,0 +1,214 @@
+/* Global Reset */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--color-gray-50);
+    color: var(--color-gray-700);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    height: 100vh;
+    overflow: hidden;
+    line-height: 1.5;
+}
+
+/* Scrollbar Polish */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--color-gray-300);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-gray-400);
+}
+
+/* Typography Defaults */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--color-gray-900);
+    font-weight: 600;
+}
+
+a {
+    color: var(--color-primary-600);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+a:hover {
+    color: var(--color-primary-700);
+}
+
+button {
+    font-family: inherit;
+    cursor: pointer;
+}
+
+/* Layout Structure */
+#app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+.sidebar {
+    width: var(--sidebar-width);
+    background-color: var(--color-gray-0);
+    border-right: 1px solid var(--color-gray-200);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 20;
+    transition: transform var(--transition-normal);
+}
+
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--color-gray-50);
+}
+
+.top-bar {
+    height: var(--header-height);
+    background-color: var(--color-gray-0);
+    border-bottom: 1px solid var(--color-gray-200);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--space-6);
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.page-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-6);
+    max-width: var(--max-content-width);
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* Utilities */
+.hidden {
+    display: none !important;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    font-size: var(--text-sm);
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
+}
+
+.btn-primary {
+    background-color: var(--color-primary-600);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: var(--color-primary-700);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:active {
+    transform: translateY(1px);
+}
+
+.btn-secondary {
+    background-color: white;
+    border-color: var(--color-gray-300);
+    color: var(--color-gray-700);
+}
+
+.btn-secondary:hover {
+    border-color: var(--color-gray-400);
+    background-color: var(--color-gray-50);
+}
+
+.btn-destructive {
+    background-color: white;
+    border-color: var(--color-gray-200);
+    color: var(--color-error);
+}
+
+.btn-destructive:hover {
+    background-color: var(--color-error-bg);
+    border-color: var(--color-error);
+}
+
+.card {
+    background-color: white;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-gray-200);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-6);
+    margin-bottom: var(--space-6);
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+}
+
+label {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-gray-700);
+}
+
+input,
+select,
+textarea {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px var(--color-primary-100);
+}
+
+/* Loading Screen */
+.loading-screen {
+    padding: var(--space-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--color-gray-400);
+}
