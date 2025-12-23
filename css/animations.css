@@ -1,0 +1,92 @@
+/* Keyframes */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Utility Classes for Animation */
+.animate-fade-in {
+    animation: fadeIn var(--transition-normal) ease-out forwards;
+}
+
+.animate-slide-up {
+    animation: slideInUp var(--transition-normal) ease-out forwards;
+}
+
+/* Repeater Animation (CSS based height/opacity) */
+.repeater-item {
+    transition: all var(--transition-normal);
+    overflow: hidden;
+}
+
+.repeater-item.removing {
+    opacity: 0;
+    transform: translateX(-10px);
+    height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+/* Skeleton Loading Shine */
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.skeleton,
+.skeleton-card,
+.skeleton-text {
+    background: linear-gradient(90deg,
+            var(--color-gray-100) 25%,
+            var(--color-gray-200) 50%,
+            var(--color-gray-100) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: var(--radius-md);
+}
+
+.skeleton-text {
+    height: 16px;
+    width: 60%;
+    margin-bottom: 8px;
+}
+
+.skeleton-card {
+    height: 200px;
+    width: 100%;
+    border-radius: var(--radius-lg);
+}
