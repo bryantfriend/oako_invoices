@@ -60,9 +60,14 @@ const renderMainView = (container, date, categories) => {
             return `
                                             <tr style="border-bottom: 1px solid var(--color-gray-100); ${rowStyle}">
                                                 <td style="padding: 12px 16px;">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <strong>${p.displayName || p.name}</strong>
-                                                        ${isOversold ? `<span title="Sold exceeds today's baked total" style="cursor: help;">⚠️</span>` : ''}
+                                                    <div style="display: flex; align-items: center; gap: var(--space-3);">
+                                                        <div style="width: 40px; height: 40px; border-radius: 6px; overflow: hidden; background: var(--color-gray-100); flex-shrink: 0; border: 1px solid var(--color-gray-200);">
+                                                            ${p.imageUrl ? `<img src="${p.imageUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--color-gray-400); font-size: 18px;">🥖</div>'}
+                                                        </div>
+                                                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                                                            <strong style="color: var(--color-gray-900);">${p.displayName || p.name}</strong>
+                                                            ${isOversold ? `<span style="font-size: 11px; color: var(--color-error); font-weight: 600;">⚠️ Oversold</span>` : ''}
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td style="text-align: center; padding: 12px 16px;">
@@ -145,9 +150,16 @@ const showInitializationModal = (date, categories) => {
                                 <tr style="background: #f8fafc;"><td colspan="2" style="padding: 4px 12px; font-weight: 700; font-size: 11px; color: var(--color-gray-500);">${cat.name.toUpperCase()}</td></tr>
                                 ${cat.products.map(p => `
                                     <tr style="border-bottom: 1px solid var(--color-gray-100);">
-                                        <td style="padding: 8px 12px;">${p.displayName || p.name}</td>
+                                        <td style="padding: 8px 12px;">
+                                            <div style="display: flex; align-items: center; gap: 12px;">
+                                                <div style="width: 32px; height: 32px; border-radius: 4px; overflow: hidden; background: #f1f5f9; flex-shrink: 0;">
+                                                    ${p.imageUrl ? `<img src="${p.imageUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; font-size: 14px;">🥖</div>'}
+                                                </div>
+                                                <span style="font-weight: 600;">${p.displayName || p.name}</span>
+                                            </div>
+                                        </td>
                                         <td style="padding: 8px 12px; text-align: center;">
-                                            <input type="number" class="init-baked-input" data-id="${p.id}" value="0" style="width: 70px; text-align: center; border: 1px solid #ddd; border-radius: 4px;">
+                                            <input type="number" class="init-baked-input" data-id="${p.id}" value="0" style="width: 70px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
                                         </td>
                                     </tr>
                                 `).join('')}
