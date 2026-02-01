@@ -387,24 +387,24 @@ function renderStatusActions(order) {
     let buttons = [];
 
     if (curr === ORDER_STATUS.DRAFT) {
-        buttons.push({ label: 'Confirm & Generate Invoice', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
-        buttons.push({ label: 'Submit for Review', status: ORDER_STATUS.PENDING, type: 'secondary' });
+        buttons.push({ label: '✨ Confirm & Generate Invoice', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
+        buttons.push({ label: '📤 Submit for Review', status: ORDER_STATUS.PENDING, type: 'secondary' });
     }
     if (curr === ORDER_STATUS.PENDING) {
-        buttons.push({ label: 'Confirm & Generate Invoice', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
-        buttons.push({ label: 'Reject / Cancel', status: ORDER_STATUS.CANCELLED, type: 'destructive' });
+        buttons.push({ label: '✅ Confirm & Generate Invoice', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
+        buttons.push({ label: '❌ Reject / Cancel', status: ORDER_STATUS.CANCELLED, type: 'destructive' });
     }
     if (curr === ORDER_STATUS.CONFIRMED) {
-        buttons.push({ label: 'Mark as Fulfilled', status: ORDER_STATUS.FULFILLED, type: 'success' });
-        buttons.push({ label: 'Mark as Paid', action: 'paid', type: 'primary' });
-        buttons.push({ label: 'View/Generate Invoice', action: 'invoice', type: 'secondary' });
+        buttons.push({ label: '📦 Mark as Fulfilled', status: ORDER_STATUS.FULFILLED, type: 'success' });
+        buttons.push({ label: '💰 Mark as Paid', action: 'paid', type: 'primary' });
+        buttons.push({ label: '📄 View/Generate Invoice', action: 'invoice', type: 'secondary' });
     }
     if (curr === ORDER_STATUS.FULFILLED) {
-        buttons.push({ label: 'Mark as Paid', action: 'paid', type: 'primary' });
-        buttons.push({ label: 'View Invoice', action: 'invoice', type: 'secondary' });
+        buttons.push({ label: '💰 Mark as Paid', action: 'paid', type: 'primary' });
+        buttons.push({ label: '📄 View Invoice', action: 'invoice', type: 'secondary' });
     }
     if (curr === ORDER_STATUS.PAID) {
-        buttons.push({ label: 'View Invoice', action: 'invoice', type: 'secondary' });
+        buttons.push({ label: '📄 View Invoice', action: 'invoice', type: 'secondary' });
     }
 
     if (curr === ORDER_STATUS.CANCELLED) {

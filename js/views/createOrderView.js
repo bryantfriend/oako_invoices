@@ -6,6 +6,7 @@ import { FormRepeater } from "../components/formRepeater.js";
 import { createCard } from "../components/card.js";
 import { notificationService } from "../core/notificationService.js";
 import { Modal } from "../components/modal.js";
+import { DataTable } from "../components/dataTable.js";
 import { formatCurrency } from "../core/formatters.js";
 
 export const renderCreateOrder = async () => {

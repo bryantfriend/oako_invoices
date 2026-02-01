@@ -48,8 +48,8 @@ export const renderDashboard = async () => {
                 
                 <!-- V5 DASHBOARD GRID -->
                 <div style="
-                    display: grid; 
-                    grid-template-rows: auto auto auto auto 1fr; 
+                    display: flex; 
+                    flex-direction: column; 
                     gap: 12px; 
                 ">
                     
@@ -80,7 +80,7 @@ export const renderDashboard = async () => {
                     </div>
 
                     <!-- ROW 2: KPIs -->
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; height: 90px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; min-height: 90px;">
                         ${renderKPICard("Orders", stats.metrics.orders, false)}
                         ${renderKPICard("Revenue", stats.metrics.revenue, true)}
                         ${renderKPICard("Outstanding", stats.metrics.outstanding, true, true)}
@@ -88,7 +88,7 @@ export const renderDashboard = async () => {
                     </div>
 
                     <!-- ROW 3: MAIN CHART (REVENUE) -->
-                    <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; height: 160px;">
+                    <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; min-height: 200px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800);">Revenue Trend</h3>
                             <div style="display: flex; gap: 12px; font-size: 10px;">
@@ -102,7 +102,7 @@ export const renderDashboard = async () => {
                     </div>
 
                     <!-- ROW 4: SECONDARY CHARTS (3 COL) -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; height: 140px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; min-height: 180px;">
                          <!-- Volume -->
                         <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column;">
                             <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin-bottom: 6px;">ORDER VOLUME</h3>
@@ -141,7 +141,7 @@ export const renderDashboard = async () => {
                                 <option value="paid">Paid</option>
                             </select>
                         </div>
-                        <div id="orders-table-wrapper" style="overflow-y: auto; flex: 1;"></div>
+                        <div id="orders-table-wrapper" style="overflow-x: auto;"></div>
                     </div>
 
                 </div>
@@ -388,8 +388,8 @@ export const renderDashboard = async () => {
                             ✓
                         </button>
                     ` : ''}
-                    <button class="btn-icon" onclick="event.stopPropagation(); window.printOrder('${row.id}')" title="Invoice" style="color: #6366f1; background: #eef2ff;">
-                        IP
+                    <button class="btn-icon" onclick="event.stopPropagation(); window.printOrder('${row.id}')" title="Print Invoice" style="color: #6366f1; background: #eef2ff;">
+                        📄
                     </button>
                      <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">
                          <span style="opacity: 0.5; font-size: 12px;">👁️</span>
