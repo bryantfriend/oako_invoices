@@ -80,7 +80,7 @@ export const renderDashboard = async () => {
                     </div>
 
                     <!-- ROW 2: KPIs -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; min-height: 90px;">
+                    <div class="grid-cols-mobile-2" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; min-height: 90px;">
                         ${renderKPICard("Orders", stats.metrics.orders, false)}
                         ${renderKPICard("Revenue", stats.metrics.revenue, true)}
                         ${renderKPICard("Outstanding", stats.metrics.outstanding, true, true)}
@@ -88,10 +88,10 @@ export const renderDashboard = async () => {
                     </div>
 
                     <!-- ROW 3: MAIN CHART (REVENUE) -->
-                    <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; min-height: 200px;">
+                    <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; min-height: 250px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800);">Revenue Trend</h3>
-                            <div style="display: flex; gap: 12px; font-size: 10px;">
+                            <div class="hide-mobile" style="display: flex; gap: 12px; font-size: 10px;">
                                 <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Collected</div>
                                 <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span> Outstanding</div>
                             </div>
@@ -102,7 +102,7 @@ export const renderDashboard = async () => {
                     </div>
 
                     <!-- ROW 4: SECONDARY CHARTS (3 COL) -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; min-height: 180px;">
+                    <div class="hide-mobile" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; min-height: 180px;">
                          <!-- Volume -->
                         <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column;">
                             <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin-bottom: 6px;">ORDER VOLUME</h3>

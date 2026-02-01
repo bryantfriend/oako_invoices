@@ -82,7 +82,7 @@ export const renderOrderDetail = async ({ id }) => {
     `;
 
     container.innerHTML = `
-        <div class="animate-fade-in" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">
+        <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">
             <!-- Left Column: Items -->
             <div style="display: flex; flex-direction: column; gap: var(--space-6);">
                 ${createCard({

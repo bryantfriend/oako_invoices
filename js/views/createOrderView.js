@@ -34,7 +34,7 @@ export const renderCreateOrder = async () => {
     const customerDatalist = customers.map(c => `<option value="${c.companyName || c.name}">`).join('');
 
     container.innerHTML = `
-        <div class="animate-slide-up" style="max-width: 800px; margin: 0 auto;">
+        <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">
             <form id="create-order-form">
                 ${createCard({
         title: 'Customer Information',
