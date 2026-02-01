@@ -76,6 +76,27 @@ export const inventoryController = {
         return await inventoryService.saveProductionRecord(date, productId, { totalBaked, locked });
     },
 
+    async bulkUpdateLockStatus(date, categories, locked) {
+        try {
+            const promises = [];
+            categories.forEach(cat => {
+                cat.products.forEach(p => {
+                    promises.push(inventoryService.saveProductionRecord(date, p.id, {
+                        totalBaked: p.totalBaked,
+                        locked: locked
+                    }));
+                });
+            });
+            await Promise.all(promises);
+            notificationService.success(`${locked ? 'Locked' : 'Unlocked'} all records`);
+            return true;
+        } catch (error) {
+            console.error("Bulk update failed:", error);
+            notificationService.error("Bulk update failed");
+            return false;
+        }
+    },
+
     async importYesterday(todayDate) {
         try {
             const yesterday = new Date(todayDate);

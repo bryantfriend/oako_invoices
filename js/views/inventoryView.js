@@ -29,8 +29,14 @@ const renderMainView = (container, date, categories) => {
     container.innerHTML = `
         <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-6);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="font-size: 14px; color: var(--color-gray-500);">
-                    Showing inventory for <strong>${date}</strong>
+                <div style="display: flex; align-items: center; gap: var(--space-4);">
+                    <div style="font-size: 14px; color: var(--color-gray-500);">
+                        Showing inventory for <strong>${date}</strong>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="lock-all-btn" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">🔒 Lock All</button>
+                        <button id="unlock-all-btn" class="btn btn-ghost btn-sm" style="font-size: 11px; padding: 4px 10px; color: var(--color-gray-500);">🔓 Unlock All</button>
+                    </div>
                 </div>
                 <button id="refresh-inventory" class="btn btn-ghost btn-sm">🔄 Refresh Data</button>
             </div>
@@ -129,6 +135,16 @@ const renderMainView = (container, date, categories) => {
     });
 
     document.getElementById('refresh-inventory')?.addEventListener('click', () => renderInventory());
+
+    document.getElementById('lock-all-btn')?.addEventListener('click', async () => {
+        await inventoryController.bulkUpdateLockStatus(date, categories, true);
+        renderInventory();
+    });
+
+    document.getElementById('unlock-all-btn')?.addEventListener('click', async () => {
+        await inventoryController.bulkUpdateLockStatus(date, categories, false);
+        renderInventory();
+    });
 };
 
 const showInitializationModal = (date, categories) => {
