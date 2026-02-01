@@ -25,7 +25,7 @@ class LayoutView {
                     <span></span>
                     <span></span>
                 </button>
-                <div style="font-weight: 600; font-size: var(--text-lg); color: var(--color-gray-800);">
+                <div id="top-bar-title" style="font-weight: 600; font-size: var(--text-lg); color: var(--color-gray-800);">
                     Dashboard
                 </div>
             </div>
