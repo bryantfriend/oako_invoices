@@ -122,8 +122,11 @@ export const renderCustomers = async () => {
             data: filteredData,
             onRowClick: (row) => router.navigate(ROUTES.CUSTOMER_DETAIL.replace(':id', row.id)),
             actions: (row) => `
-                <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.editCustomer('${row.id}')">Edit</button>
-                <button type="button" class="btn btn-destructive btn-sm" onclick="event.stopPropagation(); window.archiveCustomer('${row.id}')">Archive</button>
+                <div style="display: flex; gap: var(--space-2); align-items: center; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.editCustomer('${row.id}')">Edit</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.archiveCustomer('${row.id}')">Archive</button>
+                    <button type="button" class="btn btn-destructive btn-sm" style="padding: 2px 6px;" onclick="event.stopPropagation(); window.deleteCustomer('${row.id}')" title="Delete Permanently">🗑️</button>
+                </div>
             `
         });
 
@@ -343,6 +346,17 @@ window.archiveCustomer = (id) => {
         async () => {
             await customerController.archiveCustomer(id);
             renderCustomers();
+        }
+    );
+};
+
+window.deleteCustomer = (id) => {
+    Modal.confirm(
+        'Delete Customer Permanently',
+        'Are you sure? This will permanently remove the customer from the database. This action cannot be undone.',
+        async () => {
+            const success = await customerController.handleDeleteCustomer(id);
+            if (success) renderCustomers();
         }
     );
 };

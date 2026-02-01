@@ -56,7 +56,23 @@ export const customerController = {
     },
 
     async archiveCustomer(id) {
-        await customerService.updateCustomer(id, { archived: true });
+        try {
+            await customerService.updateCustomer(id, { archived: true });
+            notificationService.success("Customer archived");
+        } catch (error) {
+            notificationService.error("Failed to archive customer");
+        }
+    },
+
+    async handleDeleteCustomer(id) {
+        try {
+            await customerService.deleteCustomer(id);
+            notificationService.success("Customer permanently deleted");
+            return true;
+        } catch (error) {
+            notificationService.error("Failed to delete customer");
+            return false;
+        }
     },
 
     async loadCustomerDetail(id) {

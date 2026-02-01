@@ -6,6 +6,7 @@ import {
     getDoc,
     doc,
     updateDoc,
+    deleteDoc,
     query,
     orderBy,
     where,
@@ -90,6 +91,17 @@ export const customerService = {
             // Fallback: If index missing or composite query fails, assume empty
             console.warn("Search failed", error);
             return [];
+        }
+    },
+
+    async deleteCustomer(id) {
+        try {
+            const docRef = doc(db, COLLECTION, id);
+            await deleteDoc(docRef);
+            return true;
+        } catch (error) {
+            console.error("Error deleting customer:", error);
+            throw error;
         }
     }
 };

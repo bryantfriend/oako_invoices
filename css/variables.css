@@ -2,27 +2,29 @@
     /* -- Colors -- */
     /* Brand - Organic Greens */
     /* HSL: 150 deg (green), 30-50% sat */
-    --color-primary-50:  #effef6;
+    --color-primary-50: #effef6;
     --color-primary-100: #d6fce7;
     --color-primary-200: #aef8d1;
     --color-primary-300: #76f0b5;
     --color-primary-400: #3ce295;
-    --color-primary-500: #14c677; /* Main Brand */
+    --color-primary-500: #14c677;
+    /* Main Brand */
     --color-primary-600: #0a9f5d;
     --color-primary-700: #0d7f4c;
     --color-primary-800: #10643f;
     --color-primary-900: #125236;
 
     /* Neutrals - Warm Grays */
-    --color-gray-0:   #ffffff;
-    --color-gray-50:  #f9fafb;
+    --color-gray-0: #ffffff;
+    --color-gray-50: #f9fafb;
     --color-gray-100: #f3f4f6;
     --color-gray-200: #e5e7eb;
     --color-gray-300: #d1d5db;
     --color-gray-400: #9ca3af;
     --color-gray-500: #6b7280;
     --color-gray-600: #4b5563;
-    --color-gray-700: #374151; /* Main Text */
+    --color-gray-700: #374151;
+    /* Main Text */
     --color-gray-800: #1f2937;
     --color-gray-900: #111827;
 
@@ -31,21 +33,28 @@
     --color-success-bg: #effef6;
     --color-warning: #f59e0b;
     --color-warning-bg: #fffbeb;
-    --color-error:   #ef4444;
+    --color-error: #ef4444;
     --color-error-bg: #fef2f2;
-    --color-info:    #3b82f6;
+    --color-info: #3b82f6;
     --color-info-bg: #eff6ff;
 
     /* -- Typography -- */
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-    
-    --text-xs: 0.75rem;   /* 12px */
-    --text-sm: 0.875rem;  /* 14px */
-    --text-base: 1rem;    /* 16px */
-    --text-lg: 1.125rem;  /* 18px */
-    --text-xl: 1.25rem;   /* 20px */
-    --text-2xl: 1.5rem;   /* 24px */
-    --text-3xl: 1.875rem; /* 30px */
+
+    --text-xs: 0.75rem;
+    /* 12px */
+    --text-sm: 0.875rem;
+    /* 14px */
+    --text-base: 1rem;
+    /* 16px */
+    --text-lg: 1.125rem;
+    /* 18px */
+    --text-xl: 1.25rem;
+    /* 20px */
+    --text-2xl: 1.5rem;
+    /* 24px */
+    --text-3xl: 1.875rem;
+    /* 30px */
 
     /* -- Spacing -- */
     --space-1: 4px;
@@ -64,19 +73,22 @@
     --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 
     /* -- Radius -- */
-    --radius-sm: 0.375rem; /* 6px */
-    --radius-md: 0.5rem;   /* 8px */
-    --radius-lg: 0.75rem;  /* 12px */
+    --radius-sm: 0.375rem;
+    /* 6px */
+    --radius-md: 0.5rem;
+    /* 8px */
+    --radius-lg: 0.75rem;
+    /* 12px */
     --radius-full: 9999px;
 
     /* -- Transitions -- */
     --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
     --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
-    
+
     /* -- Layout -- */
     --sidebar-width: 260px;
     --header-height: 64px;
-    --max-content-width: 1200px;
+    --max-content-width: 100%;
 }
 
 /* Dark Mode Support (Future proofing, not requested but good to have prepared) */
