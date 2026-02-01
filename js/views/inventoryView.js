@@ -43,60 +43,62 @@ const renderMainView = (container, date, categories) => {
                     ${createCard({
         padding: '0',
         content: `
-                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                                <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
-                                    <tr>
-                                        <th style="text-align: left; padding: 12px 16px;">Product Name</th>
-                                        <th style="text-align: center; padding: 12px 16px; width: 100px;">Sold</th>
-                                        <th style="text-align: center; padding: 12px 16px; width: 140px;">Total Baked</th>
-                                        <th style="text-align: center; padding: 12px 16px; width: 100px;">Left</th>
-                                        <th style="text-align: center; padding: 12px 16px; width: 60px;">Lock</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${cat.products.map(p => {
+                            <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                                <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 500px;">
+                                    <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
+                                        <tr>
+                                            <th style="text-align: left; padding: 12px 16px;">Product Name</th>
+                                            <th style="text-align: center; padding: 12px 16px; width: 80px;">Sold</th>
+                                            <th style="text-align: center; padding: 12px 16px; width: 120px;">Total Baked</th>
+                                            <th style="text-align: center; padding: 12px 16px; width: 80px;">Left</th>
+                                            <th style="text-align: center; padding: 12px 16px; width: 60px;">Lock</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${cat.products.map(p => {
             const isOversold = p.left < 0;
             const rowStyle = isOversold ? 'background: var(--color-error-bg);' : '';
             return `
-                                            <tr style="border-bottom: 1px solid var(--color-gray-100); ${rowStyle}">
-                                                <td style="padding: 12px 16px;">
-                                                    <div style="display: flex; align-items: center; gap: var(--space-3);">
-                                                        <div style="width: 40px; height: 40px; border-radius: 6px; overflow: hidden; background: var(--color-gray-100); flex-shrink: 0; border: 1px solid var(--color-gray-200);">
-                                                            ${p.imageUrl ? `<img src="${p.imageUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--color-gray-400); font-size: 18px;">🥖</div>'}
+                                                <tr style="border-bottom: 1px solid var(--color-gray-100); ${rowStyle}">
+                                                    <td style="padding: 12px 16px;">
+                                                        <div style="display: flex; align-items: center; gap: var(--space-3);">
+                                                            <div style="width: 40px; height: 40px; border-radius: 6px; overflow: hidden; background: var(--color-gray-100); flex-shrink: 0; border: 1px solid var(--color-gray-200);">
+                                                                ${p.imageUrl ? `<img src="${p.imageUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--color-gray-400); font-size: 18px;">🥖</div>'}
+                                                            </div>
+                                                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                                                <strong style="color: var(--color-gray-900); white-space: nowrap;">${p.displayName || p.name}</strong>
+                                                                ${isOversold ? `<span style="font-size: 11px; color: var(--color-error); font-weight: 600;">⚠️ Oversold</span>` : ''}
+                                                            </div>
                                                         </div>
-                                                        <div style="display: flex; flex-direction: column; gap: 2px;">
-                                                            <strong style="color: var(--color-gray-900);">${p.displayName || p.name}</strong>
-                                                            ${isOversold ? `<span style="font-size: 11px; color: var(--color-error); font-weight: 600;">⚠️ Oversold</span>` : ''}
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td style="text-align: center; padding: 12px 16px;">
-                                                    <span style="font-weight: 600; color: var(--color-gray-900);">${p.sold}</span>
-                                                </td>
-                                                <td style="text-align: center; padding: 12px 16px;">
-                                                    <input type="number" 
-                                                        class="baked-input" 
-                                                        data-id="${p.id}" 
-                                                        value="${p.totalBaked}" 
-                                                        ${p.locked ? 'disabled' : ''}
-                                                        style="width: 80px; text-align: center; padding: 4px; border: 1px solid ${p.locked ? 'transparent' : 'var(--color-gray-200)'}; border-radius: 4px; background: ${p.locked ? 'transparent' : 'white'}; font-weight: ${p.locked ? '700' : '400'};"
-                                                    >
-                                                </td>
-                                                <td style="text-align: center; padding: 12px 16px;">
-                                                    <span style="font-weight: 700; color: ${isOversold ? 'var(--color-error)' : 'var(--color-success)'};">
-                                                        ${p.left}
-                                                    </span>
-                                                </td>
-                                                <td style="text-align: center; padding: 12px 16px;">
-                                                    <button class="lock-toggle btn-icon" data-id="${p.id}" data-locked="${p.locked}">
-                                                        ${p.locked ? '🔒' : '🔓'}
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        `;
+                                                    </td>
+                                                    <td style="text-align: center; padding: 12px 16px;">
+                                                        <span style="font-weight: 600; color: var(--color-gray-900);">${p.sold}</span>
+                                                    </td>
+                                                    <td style="text-align: center; padding: 12px 16px;">
+                                                        <input type="number" 
+                                                            class="baked-input" 
+                                                            data-id="${p.id}" 
+                                                            value="${p.totalBaked}" 
+                                                            ${p.locked ? 'disabled' : ''}
+                                                            style="width: 70px; text-align: center; padding: 4px; border: 1px solid ${p.locked ? 'transparent' : 'var(--color-gray-200)'}; border-radius: 4px; background: ${p.locked ? 'transparent' : 'white'}; font-weight: ${p.locked ? '700' : '400'};"
+                                                        >
+                                                    </td>
+                                                    <td style="text-align: center; padding: 12px 16px;">
+                                                        <span style="font-weight: 700; color: ${isOversold ? 'var(--color-error)' : 'var(--color-success)'};">
+                                                            ${p.left}
+                                                        </span>
+                                                    </td>
+                                                    <td style="text-align: center; padding: 12px 16px;">
+                                                        <button class="lock-toggle btn-icon" data-id="${p.id}" data-locked="${p.locked}">
+                                                            ${p.locked ? '🔒' : '🔓'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            `;
         }).join('')}
-                                </tbody>
-                            </table>
+                                    </tbody>
+                                </table>
+                            </div>
                         `
     })}
                 </div>
@@ -137,9 +139,9 @@ const showInitializationModal = (date, categories) => {
                 <p style="font-size: 14px; color: var(--color-gray-600);">
                     Today's inventory is empty. Please enter your baked totals or import from yesterday.
                 </p>
-                <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--color-gray-200); border-radius: 8px;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                        <thead style="background: var(--color-gray-50); position: sticky; top: 0;">
+                <div style="max-height: 400px; overflow: auto; border: 1px solid var(--color-gray-200); border-radius: 8px; -webkit-overflow-scrolling: touch;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 320px;">
+                        <thead style="background: var(--color-gray-50); position: sticky; top: 0; z-index: 1;">
                             <tr>
                                 <th style="text-align: left; padding: 8px 12px;">Product</th>
                                 <th style="text-align: center; padding: 8px 12px; width: 100px;">Total Baked</th>
@@ -155,11 +157,11 @@ const showInitializationModal = (date, categories) => {
                                                 <div style="width: 32px; height: 32px; border-radius: 4px; overflow: hidden; background: #f1f5f9; flex-shrink: 0;">
                                                     ${p.imageUrl ? `<img src="${p.imageUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : '<div style="display: flex; align-items: center; justify-content: center; height: 100%; font-size: 14px;">🥖</div>'}
                                                 </div>
-                                                <span style="font-weight: 600;">${p.displayName || p.name}</span>
+                                                <span style="font-weight: 600; white-space: nowrap;">${p.displayName || p.name}</span>
                                             </div>
                                         </td>
                                         <td style="padding: 8px 12px; text-align: center;">
-                                            <input type="number" class="init-baked-input" data-id="${p.id}" value="0" style="width: 70px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
+                                            <input type="number" class="init-baked-input" data-id="${p.id}" value="0" style="width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -167,9 +169,9 @@ const showInitializationModal = (date, categories) => {
                         </tbody>
                     </table>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <button id="import-yesterday-btn" class="btn btn-secondary">📥 Import Yesterday</button>
-                    <button id="confirm-init-btn" class="btn btn-primary">Confirm & Show Table</button>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button id="confirm-init-btn" class="btn btn-primary" style="width: 100%;">Confirm & Show Table</button>
+                    <button id="import-yesterday-btn" class="btn btn-secondary" style="width: 100%;">📥 Import Yesterday</button>
                 </div>
             </div>
         `,
