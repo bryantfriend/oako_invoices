@@ -18,9 +18,15 @@ const COLLECTION = 'customers';
 export const customerService = {
     async getAllCustomers() {
         try {
-            const q = query(collection(db, COLLECTION), orderBy('name', 'asc'));
-            const snapshot = await getDocs(q);
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Simplified query to avoid index requirements for now
+            // We can add filtering/ordering back once index is created in Firebase
+            const snapshot = await getDocs(collection(db, COLLECTION));
+            let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // Client-side filter and sort as a fallback
+            return docs
+                .filter(d => d.archived !== true)
+                .sort((a, b) => (a.companyName || a.name || "").localeCompare(b.companyName || b.name || ""));
         } catch (error) {
             console.error("Error fetching customers:", error);
             return [];

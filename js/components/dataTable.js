@@ -14,7 +14,7 @@ export class DataTable {
                         <tr>
                             ${this.columns.map(col => `
                                 <th style="
-                                    text-align: left; 
+                                    text-align: ${col.align || 'left'}; 
                                     padding: 12px 16px; 
                                     font-weight: 600; 
                                     color: var(--color-gray-600);
@@ -45,7 +45,7 @@ export class DataTable {
                 onmouseout="this.style.backgroundColor='transparent'"
             >
                 ${this.columns.map(col => `
-                    <td style="padding: 12px 16px; color: var(--color-gray-700);">
+                    <td style="padding: 12px 16px; color: var(--color-gray-700); text-align: ${col.align || 'left'};">
                         ${col.render ? col.render(row[col.key], row) : (row[col.key] || '-')}
                     </td>
                 `).join('')}

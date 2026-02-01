@@ -1,45 +1,177 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper: Admin Check
+
+    // ===============================
+    // HELPERS
+    // ===============================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isAdmin() {
-      return request.auth != null; // Simple authentication check for now
+      return request.auth != null;
+      // Future: request.auth.token.admin == true
     }
 
-    // --- YOUR EXISTING RULES (Preserve these) ---
-    // Example: Products (Read-only for public if you want, or restricted)
-    match /products/{productId} {
-      allow read: if true; // Or authenticated only
-      allow write: if isAdmin();
-    }
-    
-    match /banners/{bannerId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-    
-    match /categories/{categoryId} {
+    // ===============================
+    // PUBLIC / CMS CONTENT
+    // ===============================
+
+    match /pages/{id} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // --- NEW RULES FOR ADMIN TOOL ---
-    
-    match /orders/{orderId} {
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /categories/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /banners/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ===============================
+    // DAILY INVENTORY
+    // ===============================
+
+    match /inventory/{dateId} {
+      // Public reads to show availability
+      allow read: if true;
+      // Admin controls stock
+      allow write: if isAdmin();
+    }
+
+    // ===============================
+    // INVENTORY TEMPLATES (ADMIN)
+    // ===============================
+
+    match /inventory_templates/{templateId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ===============================
+    // PAYMENT METHODS (QR / BANK INFO)
+    // ===============================
+
+    match /payment_methods/{methodId} {
+      // Public checkout must see QR codes
+      allow read: if true;
+      // Only admin configures payment methods
+      allow write: if isAdmin();
+    }
+
+    // ===============================
+    // AUDIT LOGS (IMMUTABLE)
+    // ===============================
+
+    match /audit_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAdmin() && 
-                   request.resource.data.customerName is string &&
-                   request.resource.data.items is list;
-      allow update: if isAdmin();
-      allow delete: if false; 
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
+
+    // ===============================
+    // ORDERS (BUYING FLOW)
+    // ===============================
+
+    match /orders/{orderId} {
+
+      // ===============================
+      // ADMIN PORTAL
+      // ===============================
+      allow read, create, update: if isAdmin();
+
+      // 1️⃣ Public order reservation
+      allow create: if true
+        && request.resource.data.customerName is string
+        && request.resource.data.productId is string
+        && request.resource.data.status == "reserved"
+        && request.resource.data.createdAt is timestamp;
+
+      // 2️⃣ Customer uploads receipt (QR payment proof)
+      allow update: if
+        (
+          // Admin can always update
+          isAdmin()
+          ||
+          // Customer can ONLY add receipt + move to pending verification
+          (
+            request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['receiptUrl', 'status'])
+            && request.resource.data.status == "pending_verification"
+          )
+        );
+
+      // Admin can delete orders
+      allow delete: if isAdmin();
+    }
+
+    // ===============================
+    // PAYMENT REQUESTS (OPTIONAL / LEGACY)
+    // ===============================
+    // Keep ONLY if still used. Safe to remove later.
+
+    match /paymentRequests/{paymentId} {
+      allow read: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.orderId is string
+        && request.resource.data.amount is number
+        && request.resource.data.qrProvider is string
+        && request.resource.data.status == "waiting"
+        && request.resource.data.createdAt is timestamp;
+
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ===============================
+    // INVOICES (OPTIONAL)
+    // ===============================
 
     match /invoices/{invoiceId} {
       allow read: if isAdmin();
-      allow create: if isAdmin() && request.resource.data.orderId is string;
-      allow update: if false; 
-      allow delete: if false;
+      allow create: if isAdmin()
+        && request.resource.data.orderId is string
+        && request.resource.data.totalAmount is number
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.invoiceNumber is string
+        && request.resource.data.items is list;
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================
+    // INVOICE SETTINGS (ADMIN)
+    // ===============================
+    match /settings/{id} {
+      allow read: if true; 
+      allow write: if isAdmin();
+    }
+    
+    // ===============================
+    // CUSTOMERS (INVOICING / CRM)
+    // ===============================
+
+    match /customers/{customerId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    // ===============================
+    // DEFAULT DENY (CRITICAL)
+    // ===============================
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

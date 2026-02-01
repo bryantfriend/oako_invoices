@@ -168,26 +168,116 @@ export const renderOrderDetail = async ({ id }) => {
     // Bind Status Actions
     const actionBtns = container.querySelectorAll('.status-action-btn');
     actionBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const action = btn.dataset.action;
             const newStatus = btn.dataset.status;
 
             if (action === 'invoice') {
-                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id)); // Generate/View Invoice logic
+                const { invoiceService } = await import("../services/invoiceService.js");
+                const invoiceId = await invoiceService.createInvoice(id);
+                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
                 return;
             }
 
-            const modal = new Modal(
-                'Update Status',
-                `Are you sure you want to change status to ${newStatus}?`,
-                async () => {
+            if (action === 'paid') {
+                const { orderService } = await import("../services/orderService.js");
+                const { notificationService } = await import("../core/notificationService.js");
+                await orderService.updateOrderStatus(id, ORDER_STATUS.PAID);
+                notificationService.success("Order marked as Paid");
+                renderOrderDetail({ id });
+                return;
+            }
+
+            const { settingsService } = await import("../services/settingsService.js");
+            const settings = await settingsService.getInvoiceSettings();
+
+            const modal = new Modal({
+                title: 'Confirm Order & Generate Invoice',
+                content: `
+                    <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                        <p>Are you sure you want to confirm this order? This will generate the official invoice.</p>
+                        
+                        <div style="background: var(--color-gray-50); padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-gray-200);">
+                            <h4 style="margin-bottom: var(--space-3); color: var(--color-gray-700);">Financial Adjustments</h4>
+                            
+                            <!-- Tax Section -->
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2);">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="modal-add-tax" checked> 
+                                    <span>Add VAT (Tax)</span>
+                                </label>
+                                <div id="tax-rate-container" style="display: flex; align-items: center; gap: 4px;">
+                                    <input type="number" id="modal-tax-rate" value="${settings.defaultTaxRate}" step="0.5" style="width: 60px; text-align: center;" class="input">
+                                    <span style="font-size: 14px; color: var(--color-gray-500);">%</span>
+                                </div>
+                            </div>
+
+                            <hr style="border: 0; border-top: 1px solid var(--color-gray-200); margin: var(--space-2) 0;">
+
+                            <!-- Discount Section -->
+                            <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="modal-add-discount"> 
+                                    <span>Apply Discount</span>
+                                </label>
+                                
+                                <div id="discount-container" style="display: none; gap: var(--space-2); align-items: center;">
+                                    <select id="modal-discount-type" class="input" style="width: auto;">
+                                        <option value="percent">Percent (%)</option>
+                                        <option value="fixed">Fixed Amount</option>
+                                    </select>
+                                    <input type="number" id="modal-discount-value" value="0" step="1" style="width: 80px;" class="input">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                        // Toggle logic (since native script tags don't run in innerHTML normally, 
+                        // we handle this in the view logic below the modal.open)
+                    </script>
+                `,
+                confirmText: 'Confirm & Generate Invoice',
+                type: newStatus === ORDER_STATUS.CANCELLED ? 'destructive' : 'primary',
+                onConfirm: async () => {
+                    const addTax = document.getElementById('modal-add-tax')?.checked;
+                    const taxRate = parseFloat(document.getElementById('modal-tax-rate')?.value || 0);
+                    const addDiscount = document.getElementById('modal-add-discount')?.checked;
+                    const discountType = document.getElementById('modal-discount-type')?.value;
+                    const discountValue = parseFloat(document.getElementById('modal-discount-value')?.value || 0);
+
+                    const adjustments = {
+                        taxRate: addTax ? taxRate : 0,
+                        discountType: addDiscount ? discountType : 'none',
+                        discountValue: addDiscount ? discountValue : 0
+                    };
+
                     await orderDetailController.updateStatus(id, newStatus);
-                    renderOrderDetail({ id });
-                },
-                'Confirm Change',
-                newStatus === 'cancelled' ? 'destructive' : 'primary'
-            );
-            modal.render();
+
+                    if (newStatus === ORDER_STATUS.CONFIRMED) {
+                        const { invoiceService } = await import("../services/invoiceService.js");
+                        const invoiceId = await invoiceService.createInvoice(id, adjustments);
+                        router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
+                    } else {
+                        renderOrderDetail({ id });
+                    }
+                }
+            });
+            modal.open();
+
+            // Interactivity for Modal Toggles
+            const taxToggle = document.getElementById('modal-add-tax');
+            const taxContainer = document.getElementById('tax-rate-container');
+            taxToggle?.addEventListener('change', (e) => {
+                taxContainer.style.opacity = e.target.checked ? '1' : '0.3';
+                taxContainer.style.pointerEvents = e.target.checked ? 'auto' : 'none';
+            });
+
+            const discToggle = document.getElementById('modal-add-discount');
+            const discContainer = document.getElementById('discount-container');
+            discToggle?.addEventListener('change', (e) => {
+                discContainer.style.display = e.target.checked ? 'flex' : 'none';
+            });
         });
     });
 };
@@ -201,18 +291,23 @@ function renderStatusActions(order) {
     let buttons = [];
 
     if (curr === ORDER_STATUS.DRAFT) {
-        buttons.push({ label: 'Submit for Review', status: ORDER_STATUS.PENDING, type: 'primary' });
+        buttons.push({ label: 'Confirm & Generate Invoice', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
+        buttons.push({ label: 'Submit for Review', status: ORDER_STATUS.PENDING, type: 'secondary' });
     }
     if (curr === ORDER_STATUS.PENDING) {
-        buttons.push({ label: 'Confirm Order', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
+        buttons.push({ label: 'Confirm & Generate Invoice', status: ORDER_STATUS.CONFIRMED, type: 'primary' });
         buttons.push({ label: 'Reject / Cancel', status: ORDER_STATUS.CANCELLED, type: 'destructive' });
     }
     if (curr === ORDER_STATUS.CONFIRMED) {
         buttons.push({ label: 'Mark as Fulfilled', status: ORDER_STATUS.FULFILLED, type: 'success' });
-        // Invoice Button
-        buttons.push({ label: 'Generate Invoice', action: 'invoice', type: 'secondary' });
+        buttons.push({ label: 'Mark as Paid', action: 'paid', type: 'primary' });
+        buttons.push({ label: 'View/Generate Invoice', action: 'invoice', type: 'secondary' });
     }
     if (curr === ORDER_STATUS.FULFILLED) {
+        buttons.push({ label: 'Mark as Paid', action: 'paid', type: 'primary' });
+        buttons.push({ label: 'View Invoice', action: 'invoice', type: 'secondary' });
+    }
+    if (curr === ORDER_STATUS.PAID) {
         buttons.push({ label: 'View Invoice', action: 'invoice', type: 'secondary' });
     }
 

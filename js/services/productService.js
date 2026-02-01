@@ -8,6 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const COLLECTION = 'products';
+const CATEGORIES_COLLECTION = 'categories';
 
 export const productService = {
     async getAllProducts() {
@@ -33,6 +34,24 @@ export const productService = {
         } catch (error) {
             console.error("Error fetching products:", error);
             // Fallback for UI if permission denied or other error
+            return [];
+        }
+    },
+
+    async getAllCategories() {
+        try {
+            const q = collection(db, CATEGORIES_COLLECTION);
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    name: data.name || data.name_en || 'Unknown Category'
+                };
+            });
+        } catch (error) {
+            console.error("Error fetching categories:", error);
             return [];
         }
     }

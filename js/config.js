@@ -10,6 +10,6 @@ export const firebaseConfig = {
 
 export const APP_CONFIG = {
     ITEM_LIMIT: 50,
-    CURRENCY: 'USD', // Update to 'KGS' if preferred for Kyrgyz Organics
-    LOCALE: 'en-US'
+    CURRENCY: 'KGS',
+    LOCALE: 'ru-KG'
 };

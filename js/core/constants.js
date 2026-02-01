@@ -3,11 +3,11 @@ export const ORDER_STATUS = {
     PENDING: 'pending', // Submitted by customer/sales
     CONFIRMED: 'confirmed', // Reviewed by admin
     FULFILLED: 'fulfilled', // Shipped/Done
+    PAID: 'paid', // Payment received
     CANCELLED: 'cancelled'
 };
 
 export const ROUTES = {
-    LOGIN: '/login',
     DASHBOARD: '/',
     LOGIN: '/login',
     CREATE_ORDER: '/orders/create',
@@ -15,7 +15,8 @@ export const ROUTES = {
     INVOICES: '/invoices',
     INVOICE_DETAIL: '/invoices/:id',
     CUSTOMERS: '/customers',
-    CUSTOMER_DETAIL: '/customers/:id'
+    CUSTOMER_DETAIL: '/customers/:id',
+    SETTINGS: '/settings'
 };
 
 export const ALERTS = {

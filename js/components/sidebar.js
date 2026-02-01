@@ -21,6 +21,7 @@ export class Sidebar {
                 ${this.createNavItem('Create Order', ROUTES.CREATE_ORDER, '➕')}
                 ${this.createNavItem('Invoices', ROUTES.INVOICES, '📄')}
                 ${this.createNavItem('Customers', ROUTES.CUSTOMERS, '👥')}
+                ${this.createNavItem('Settings', ROUTES.SETTINGS, '⚙️')}
             </nav>
 
             <div class="sidebar-footer" style="padding: 16px; margin-top: auto; border-top: 1px solid var(--color-gray-200);">
@@ -35,13 +36,15 @@ export class Sidebar {
     }
 
     createNavItem(label, route, icon) {
-        const isActive = window.location.pathname === route;
+        // Check hash instead of pathname for active state
+        const currentPath = window.location.hash.slice(1) || '/';
+        const isActive = currentPath === route;
         const bg = isActive ? 'var(--color-primary-50)' : 'transparent';
         const color = isActive ? 'var(--color-primary-700)' : 'var(--color-gray-700)';
         const weight = isActive ? '600' : '400';
 
         return `
-            <a href="${route}" class="nav-item" style="
+            <a href="#${route}" class="nav-item" style="
                 display: flex; 
                 align-items: center; 
                 gap: 12px; 
@@ -67,16 +70,5 @@ export class Sidebar {
                 router.navigate(ROUTES.LOGIN);
             });
         }
-
-        // Close sidebar on nav click (mobile)
-        const navLinks = this.element.querySelectorAll('.nav-item');
-        navLinks.forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
-                    this.element.classList.remove('open');
-                    document.querySelector('.sidebar-overlay')?.classList.remove('open');
-                }
-            });
-        });
     }
 }

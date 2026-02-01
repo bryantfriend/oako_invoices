@@ -6,6 +6,7 @@ import { FormRepeater } from "../components/formRepeater.js";
 import { createCard } from "../components/card.js";
 import { notificationService } from "../core/notificationService.js";
 import { Modal } from "../components/modal.js";
+import { formatCurrency } from "../core/formatters.js";
 
 export const renderCreateOrder = async () => {
     layoutView.render();
@@ -13,22 +14,22 @@ export const renderCreateOrder = async () => {
 
     const container = document.getElementById('page-container');
 
-    // Fetch products
+    // Fetch data
     let products = [];
+    let categories = [];
+    let customers = [];
     try {
-        products = await productService.getAllProducts();
+        [products, categories, customers] = await Promise.all([
+            productService.getAllProducts(),
+            productService.getAllCategories(),
+            customerController.loadAllCustomers()
+        ]);
     } catch (e) {
-        console.warn("Could not fetch products", e);
+        console.warn("Could not fetch initial data", e);
     }
 
-    // Product Options Helper
-    const productOptions = products.length > 0
-        ? `<option value="">Select a product...</option>` +
-        products.map(p => `<option value="${p.displayName}" data-price="${p.price}">${p.displayName}</option>`).join('')
-        : `<option value="" disabled>No products found</option>`;
+    let selectedItems = []; // { productId, name, price, quantity, imageUrl }
 
-    // Fetch Customers for Autocomplete
-    let customers = await customerController.loadAllCustomers();
     const customerDatalist = customers.map(c => `<option value="${c.companyName || c.name}">`).join('');
 
     container.innerHTML = `
@@ -37,29 +38,35 @@ export const renderCreateOrder = async () => {
                 ${createCard({
         title: 'Customer Information',
         content: `
-                        <div class="input-group">
-                            <label for="customerName">Customer / Company</label>
-                            <div style="display: flex; gap: var(--space-2);">
-                                <div style="position: relative; flex: 1;">
-                                    <span style="position: absolute; left: 10px; top: 10px;">🔍</span>
-                                    <input type="text" id="customerName" name="customerName" list="customer-list" 
-                                        required placeholder="Search company..." 
-                                        style="padding-left: 36px; width: 100%;" autocomplete="off">
-                                    <datalist id="customer-list">
-                                        ${customerDatalist}
-                                    </datalist>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                            <div class="input-group">
+                                <label for="customerName">Customer / Company</label>
+                                <div style="display: flex; gap: var(--space-2);">
+                                    <div style="position: relative; flex: 1;">
+                                        <span style="position: absolute; left: 10px; top: 10px;">🔍</span>
+                                        <input type="text" id="customerName" name="customerName" list="customer-list" 
+                                            required placeholder="Search company..." 
+                                            style="padding-left: 36px; width: 100%;" autocomplete="off">
+                                        <datalist id="customer-list">
+                                            ${customerDatalist}
+                                        </datalist>
+                                    </div>
+                                    <button type="button" id="quick-add-customer-btn" class="btn btn-secondary" title="Add New Customer" style="padding: 0 12px;">
+                                        ➕
+                                    </button>
                                 </div>
-                                <button type="button" id="quick-add-customer-btn" class="btn btn-secondary" title="Add New Customer" style="padding: 0 12px;">
-                                    ➕
-                                </button>
+                                <small style="color: var(--color-gray-500); cursor: pointer;" id="auto-fill-hint">
+                                    ✨ Tip: Select a company to check for previous orders
+                                </small>
                             </div>
-                            <small style="color: var(--color-gray-500); cursor: pointer;" id="auto-fill-hint">
-                                ✨ Tip: Select a company to check for previous orders
-                            </small>
+                            <div class="input-group">
+                                <label for="orderDate">Order / Delivery Date</label>
+                                <input type="date" id="orderDate" name="orderDate" class="input" required style="width: 100%;">
+                            </div>
                         </div>
-                        <div class="input-group">
+                        <div class="input-group" style="margin-top: 10px;">
                             <label for="notes">Notes</label>
-                            <textarea id="notes" name="notes" rows="3" placeholder="Special instructions..."></textarea>
+                            <textarea id="notes" name="notes" rows="2" placeholder="Special instructions..."></textarea>
                         </div>
                     `
     })}
@@ -67,9 +74,14 @@ export const renderCreateOrder = async () => {
                 ${createCard({
         title: 'Order Items',
         content: `
-                        <div id="items-repeater"></div>
-                        <div style="margin-top: var(--space-4);">
-                            <button type="button" id="add-item-btn" class="btn btn-secondary">+ Add Item</button>
+                        <div id="items-list" style="display: flex; flex-direction: column; min-height: 100px;"></div>
+                        <div style="margin-top: var(--space-4); display: flex; gap: var(--space-3);">
+                            <button type="button" id="add-item-btn" class="btn btn-secondary" style="flex: 1; border-style: dashed; background: transparent; color: var(--color-primary-600); font-weight: 600;">
+                                + Add Product from Catalog
+                            </button>
+                            <button type="button" id="add-custom-item-btn" class="btn btn-secondary" style="flex: 1; border-style: dashed; background: transparent; color: var(--color-gray-600); font-weight: 600;">
+                                ✍️ Add Custom Item
+                            </button>
                         </div>
                         
                         <div style="margin-top: var(--space-6); text-align: right; font-size: var(--text-lg); font-weight: 600;">
@@ -86,46 +98,262 @@ export const renderCreateOrder = async () => {
         </div>
     `;
 
-    // Init Repeater
-    const repeater = new FormRepeater({
-        containerId: 'items-repeater',
-        itemTemplate: (id, data) => `
-            <div class="order-item-card">
-                <div class="input-group">
-                    <label style="font-size: 11px; color: var(--color-gray-500); margin-bottom: 4px;">ITEM</label>
-                    <select name="items[${id}][name]" required class="product-select" onchange="window.updatePrice(this)" style="width: 100%;">
-                        ${productOptions}
-                    </select>
+    const renderItems = () => {
+        const list = document.getElementById('items-list');
+        if (!list) return;
+
+        if (selectedItems.length === 0) {
+            list.innerHTML = `
+                <div style="padding: 32px; text-align: center; color: var(--color-gray-400); border: 2px dashed var(--color-gray-100); border-radius: var(--radius-lg);">
+                    No items added yet. Click "+ Add Product" to begin.
                 </div>
-                <div class="input-group">
-                    <label style="font-size: 11px; color: var(--color-gray-500); margin-bottom: 4px;">QTY</label>
-                    <input type="number" name="items[${id}][quantity]" required min="1" value="${data?.quantity || 1}" class="calc-trigger" style="width: 100%;">
+            `;
+            updateTotal();
+            return;
+        }
+
+        list.innerHTML = selectedItems.map((item, index) => `
+            <div class="animate-fade-in" style="
+                display: grid; 
+                grid-template-columns: 80px 2fr 100px 120px auto; 
+                gap: var(--space-4); 
+                align-items: center; 
+                padding: var(--space-3); 
+                background: white; 
+                border-bottom: 1px solid var(--color-gray-100);
+            ">
+                <img src="${item.imageUrl || ''}" onerror="this.src='https://placehold.co/80x80?text=📦'" 
+                     style="width: 60px; height: 60px; border-radius: var(--radius-md); object-fit: cover; background: var(--color-gray-50);">
+                
+                <div>
+                    <div style="font-weight: 600; color: var(--color-gray-900);">${item.name}</div>
+                    <div style="font-size: 12px; color: var(--color-gray-500);">${item.weight || ''}</div>
                 </div>
-                <div class="input-group">
-                    <label style="font-size: 11px; color: var(--color-gray-500); margin-bottom: 4px;">PRICE</label>
-                    <input type="number" name="items[${id}][price]" required min="0" step="0.01" value="${data?.price || ''}" class="calc-trigger price-input" style="width: 100%;">
+
+                <div>
+                    <input type="number" class="input qty-input" data-index="${index}" value="${item.quantity}" min="1" style="width: 100%; text-align: center;">
                 </div>
-                <div style="padding-top: 16px;">
-                    <button type="button" class="btn btn-destructive remove-item-btn" title="Remove Item" style="padding: 8px 12px; font-weight: bold;">
-                        Remove
-                    </button>
+
+                <div style="text-align: right; font-weight: 600;">
+                    ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.price * item.quantity)}
                 </div>
+
+                <button type="button" class="btn btn-ghost btn-sm remove-item-btn" data-index="${index}" style="color: var(--color-destructive);">
+                    🗑️
+                </button>
             </div>
-        `,
-        // Pre-select function needed to set dropdown value after render
-        onAdd: (el, data) => {
-            bindCalcEvents();
-            if (data && data.name) {
-                const select = el.querySelector('.product-select');
-                if (select) select.value = data.name;
+        `).join('');
+
+        // Attach listeners
+        list.querySelectorAll('.qty-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                selectedItems[idx].quantity = parseInt(e.target.value) || 1;
+                renderItems();
+            });
+        });
+
+        list.querySelectorAll('.remove-item-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.closest('button').dataset.index);
+                selectedItems.splice(idx, 1);
+                renderItems();
+            });
+        });
+
+        updateTotal();
+    };
+
+    const updateTotal = () => {
+        const total = selectedItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
+        const el = document.getElementById('total-preview');
+        if (el) {
+            el.textContent = formatCurrency(total);
+        }
+    };
+
+    // Modal Product Picker
+    const openProductPicker = () => {
+        let activeCategory = 'all';
+        let searchQuery = '';
+
+        const modal = new Modal({
+            title: 'Select Products',
+            size: 'large',
+            content: `
+                <div style="display: flex; flex-direction: column; gap: var(--space-4); height: 70vh;">
+                    <!-- Filter Bar -->
+                    <div style="display: flex; gap: var(--space-4); align-items: center; padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-gray-200);">
+                        <div style="position: relative; flex: 1;">
+                            <span style="position: absolute; left: 12px; top: 10px;">🔍</span>
+                            <input type="text" id="product-search" class="input" placeholder="Search products..." style="padding-left: 40px; width: 100%;">
+                        </div>
+                        <select id="category-picker-filter" class="input" style="width: 200px;">
+                            <option value="all">All Categories</option>
+                            ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- Product Grid -->
+                    <div id="product-grid" style="
+                        display: grid; 
+                        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); 
+                        gap: var(--space-4); 
+                        overflow-y: auto;
+                        padding-right: 4px;
+                    ">
+                        <!-- Products rendered here -->
+                    </div>
+                </div>
+            `,
+            confirmText: 'Done',
+            onConfirm: () => {
+                renderItems();
+                return true;
             }
-        },
-        onRemove: () => calculateTotal()
+        });
+
+        modal.open();
+
+        const grid = document.getElementById('product-grid');
+        const searchInput = document.getElementById('product-search');
+        const categorySelect = document.getElementById('category-picker-filter');
+
+        const filterAndRender = () => {
+            const filtered = products.filter(p => {
+                const matchesCat = activeCategory === 'all' || p.categoryId === activeCategory;
+                const name = p.displayName || '';
+                const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase());
+                return matchesCat && matchesSearch;
+            });
+
+            grid.innerHTML = filtered.map(p => {
+                const isSelected = selectedItems.some(item => item.productId === p.id);
+                return `
+                    <div class="product-card" data-id="${p.id}" style="
+                        border: 2px solid ${isSelected ? 'var(--color-primary-500)' : 'var(--color-gray-100)'};
+                        border-radius: var(--radius-lg);
+                        padding: var(--space-3);
+                        cursor: pointer;
+                        transition: all var(--transition-fast);
+                        background: white;
+                        display: flex;
+                        flex-direction: column;
+                        gap: var(--space-2);
+                    ">
+                        <img src="${p.imageUrl || ''}" onerror="this.src='https://placehold.co/150x150?text=📦'" 
+                             style="width: 100%; height: 120px; object-fit: cover; border-radius: var(--radius-md); background: var(--color-gray-50);">
+                        <div style="font-weight: 600; font-size: 14px; line-height: 1.2; height: 34px; overflow: hidden;">${p.displayName || 'Unnamed Product'}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
+                            <span style="color: var(--color-primary-600); font-weight: 700;">${p.price || 0} Som</span>
+                            ${isSelected ? '<span style="color: var(--color-primary-500);">✅</span>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Card Click
+            grid.querySelectorAll('.product-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const id = card.dataset.id;
+                    const p = products.find(prod => prod.id === id);
+                    const idx = selectedItems.findIndex(item => item.productId === id);
+
+                    if (idx > -1) {
+                        selectedItems.splice(idx, 1);
+                    } else {
+                        selectedItems.push({
+                            productId: p.id,
+                            name: p.displayName,
+                            name_en: p.name_en || p.displayName,
+                            name_ru: p.name_ru || '',
+                            name_kg: p.name_kg || '',
+                            price: p.price,
+                            quantity: 1,
+                            imageUrl: p.imageUrl,
+                            weight: p.weight
+                        });
+                    }
+                    filterAndRender();
+                });
+            });
+        };
+
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            filterAndRender();
+        });
+
+        categorySelect.addEventListener('change', (e) => {
+            activeCategory = e.target.value;
+            filterAndRender();
+        });
+
+        filterAndRender();
+    };
+
+    // Custom Item Logic
+    document.getElementById('add-custom-item-btn').addEventListener('click', () => {
+        const modal = new Modal({
+            title: '✍️ Add Custom Item',
+            content: `
+                <form id="custom-item-form">
+                    <div class="input-group">
+                        <label>Product Name (English)</label>
+                        <input type="text" name="name_en" placeholder="Handcrafted honey..." required>
+                    </div>
+                    <div class="input-group">
+                        <label>Product Name (Russian)</label>
+                        <input type="text" name="name_ru" placeholder="Мед ручной работы...">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="input-group">
+                            <label>Price (SOM)</label>
+                            <input type="number" name="price" value="0" step="0.01" required>
+                        </div>
+                        <div class="input-group">
+                            <label>Weight / Unit</label>
+                            <input type="text" name="weight" placeholder="500g">
+                        </div>
+                    </div>
+                </form>
+            `,
+            onConfirm: () => {
+                const form = document.getElementById('custom-item-form');
+                if (!form.reportValidity()) return false;
+
+                const data = Object.fromEntries(new FormData(form).entries());
+                const price = parseFloat(data.price) || 0;
+
+                selectedItems.push({
+                    productId: 'custom-' + Date.now(),
+                    name: data.name_en,
+                    name_en: data.name_en,
+                    name_ru: data.name_ru || data.name_en,
+                    name_kg: '',
+                    price: price,
+                    quantity: 1,
+                    imageUrl: '',
+                    weight: data.weight || ''
+                });
+
+                renderItems();
+                return true;
+            }
+        });
+        modal.open();
     });
 
-    repeater.init();
+    // Initial Render Items & Default Date
+    setTimeout(() => {
+        renderItems();
+        // Set default date to Today
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('orderDate').value = today;
+    }, 0);
 
-    document.getElementById('add-item-btn').addEventListener('click', () => repeater.addItem());
+    document.getElementById('add-item-btn').addEventListener('click', openProductPicker);
+
 
     // Auto-Fill Logic
     const customerInput = document.getElementById('customerName');
@@ -138,15 +366,19 @@ export const renderCreateOrder = async () => {
         if (lastItems && lastItems.length > 0) {
             // Confirm with user
             if (confirm(`Found a previous order for ${val}. Auto-fill items?`)) {
-                // Clear existing? Or append? usually clear
-                document.getElementById('items-repeater').innerHTML = '';
-                lastItems.forEach(item => {
-                    // Ensure price is maintained or updated? Better to use current price or last price?
-                    // Let's use last price for history accuracy, user can change.
-                    repeater.addItem(item);
-                });
+                selectedItems = lastItems.map(item => ({
+                    productId: item.productId || '',
+                    name: item.name,
+                    name_en: item.name_en || item.name,
+                    name_ru: item.name_ru || '',
+                    name_kg: item.name_kg || '',
+                    price: item.price,
+                    quantity: item.quantity,
+                    imageUrl: item.imageUrl || '',
+                    weight: item.weight || ''
+                }));
+                renderItems();
                 notificationService.success("Items auto-filled from last order");
-                calculateTotal();
             }
         }
     });
@@ -197,45 +429,20 @@ export const renderCreateOrder = async () => {
     });
 
 
-    // Helper to update price when product selected
-    window.updatePrice = (selectEl) => {
-        const option = selectEl.options[selectEl.selectedIndex];
-        const price = option.getAttribute('data-price');
-        if (price) {
-            const row = selectEl.closest('div[style*="display: grid"]');
-            const priceInput = row.querySelector('.price-input');
-            if (priceInput) {
-                // Only update price if it's empty or user just selected (simple heuristic)
-                priceInput.value = price;
-                calculateTotal();
-            }
-        }
-    };
-
-    // Calc Logic
-    function calculateTotal() {
-        const data = repeater.getData();
-        const total = data.reduce((sum, item) => {
-            return sum + ((parseInt(item.quantity) || 0) * (parseFloat(item.price) || 0));
-        }, 0);
-        document.getElementById('total-preview').textContent =
-            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total);
-    }
-
-    function bindCalcEvents() {
-        document.querySelectorAll('.calc-trigger').forEach(input => {
-            input.removeEventListener('input', calculateTotal);
-            input.addEventListener('input', calculateTotal);
-        });
-    }
-
     // Form Submit
     document.getElementById('create-order-form').addEventListener('submit', (e) => {
         e.preventDefault();
+
+        if (selectedItems.length === 0) {
+            notificationService.error("Please add at least one product");
+            return;
+        }
+
         const formData = {
             customerName: document.getElementById('customerName').value,
+            orderDate: document.getElementById('orderDate').value,
             notes: document.getElementById('notes').value,
-            items: repeater.getData()
+            items: selectedItems
         };
         createOrderController.handleCreateOrder(formData);
     });

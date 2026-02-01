@@ -15,14 +15,15 @@ export const createStatusBadge = (status) => {
         <span class="status-badge" style="
             display: inline-flex;
             align-items: center;
-            padding: 2px 8px;
-            border-radius: var(--radius-full);
+            padding: 4px 10px;
+            border-radius: 6px;
             background-color: ${config.bg};
             color: ${config.color};
-            font-size: var(--text-xs);
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.5px;
+            line-height: 1;
         ">
             ${status}
         </span>

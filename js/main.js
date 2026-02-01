@@ -10,12 +10,10 @@ import { renderCreateOrder } from "./views/createOrderView.js";
 import { renderOrderDetail } from "./views/orderDetailView.js";
 import { renderInvoices, renderInvoiceDetail } from "./views/invoiceView.js";
 import { renderCustomers } from "./views/customerView.js";
+import { renderCustomerDetail } from "./views/customerDetailView.js";
+import { renderSettings } from "./views/settingsView.js";
 
 async function initApp() {
-    if (window.location.pathname.endsWith('index.html')) {
-        history.replaceState({}, '', '/');
-    }
-
     try {
         // Initialize Auth
         await authService.init();
@@ -28,6 +26,8 @@ async function initApp() {
         router.addRoute(ROUTES.INVOICES, renderInvoices);
         router.addRoute(ROUTES.INVOICE_DETAIL, renderInvoiceDetail);
         router.addRoute(ROUTES.CUSTOMERS, renderCustomers);
+        router.addRoute(ROUTES.CUSTOMER_DETAIL, renderCustomerDetail);
+        router.addRoute(ROUTES.SETTINGS, renderSettings);
 
         // Init Router (load current URL)
         await router.handleLocationChange();

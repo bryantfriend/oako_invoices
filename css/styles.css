@@ -12,8 +12,7 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     height: 100vh;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
     line-height: 1.5;
 }
 
@@ -214,102 +213,38 @@ textarea:focus {
     color: var(--color-gray-400);
 }
 
-/* Mobile Responsiveness */
-.hamburger-btn {
-    display: none;
+/* Dashboard V2 Utilities */
+.btn-icon {
     background: none;
     border: none;
-    font-size: 24px;
-    cursor: pointer;
-    color: var(--color-gray-700);
-    padding: var(--space-2);
-    margin-right: var(--space-2);
-}
-
-.sidebar-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 15;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-normal);
-}
-
-.sidebar-overlay.open {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-@media (max-width: 768px) {
-    .page-container {
-        padding: var(--space-4);
-        max-width: 100%;
-        margin: 0;
-    }
-
-    .sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        height: 100vh;
-        transform: translateX(-100%);
-        box-shadow: var(--shadow-xl);
-    }
-
-    .metrics-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .top-bar .user-email {
-        display: none;
-    }
-
-
-    .sidebar.open {
-        transform: translateX(0);
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
-
-    .hamburger-btn {
-        display: block;
-        min-width: 44px;
-        min-height: 44px;
-    }
-}
-
-/* ===============================
-   Order Items – Responsive Fix
-================================ */
-
-.order-item-card {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr auto;
-    gap: var(--space-4);
+    font-size: 16px;
+    padding: 6px;
+    border-radius: 6px;
+    transition: all var(--transition-fast);
+    display: inline-flex;
     align-items: center;
-    padding: var(--space-4);
+    justify-content: center;
+}
+
+.btn-icon:hover {
+    background: var(--color-gray-100);
+    transform: scale(1.1);
+}
+
+.segmented-control .time-btn:hover {
+    color: var(--color-primary-600);
+}
+
+/* Sticky Header & Table Polish */
+thead th {
+    position: sticky;
+    top: 0;
     background: white;
-    border: 1px solid var(--color-gray-200);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-4);
-    box-shadow: var(--shadow-sm);
+    z-index: 20;
+    box-shadow: 0 1px 0 #e2e8f0;
 }
 
-.order-item-card .input-group {
-    margin: 0;
-}
-
-/* MOBILE */
-@media (max-width: 768px) {
-    .order-item-card {
-        grid-template-columns: 1fr;
-        gap: var(--space-3);
-    }
-
-    .order-item-card button {
-        width: 100%;
-    }
+table {
+    border-collapse: separate;
+    border-spacing: 0;
 }

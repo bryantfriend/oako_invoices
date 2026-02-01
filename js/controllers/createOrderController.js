@@ -29,6 +29,7 @@ export const createOrderController = {
 
         const orderPayload = {
             customerName: formData.customerName,
+            orderDate: formData.orderDate,
             notes: formData.notes,
             items: items,
             totalAmount: totalAmount,
@@ -42,9 +43,9 @@ export const createOrderController = {
         }
 
         try {
-            const orderId = await orderService.createOrder(orderPayload, user.uid);
-            notificationService.success("Order created successfully");
-            router.navigate(ROUTES.ORDER_DETAIL.replace(':id', orderId));
+            await orderService.createOrder(orderPayload, user.uid);
+            notificationService.success("Order created as Draft");
+            router.navigate(ROUTES.DASHBOARD);
         } catch (error) {
             notificationService.error("Failed to create order");
         }

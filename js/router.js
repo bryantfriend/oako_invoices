@@ -2,39 +2,29 @@ import { ROUTES } from "./core/constants.js";
 import { guardService } from "./core/guardService.js";
 import { authService } from "./core/authService.js";
 
-// Detect base path (e.g., /oako_invoices)
-const BASE_PATH = window.location.pathname.startsWith('/oako_invoices') ? '/oako_invoices' : '';
-
 function normalizePath(path) {
-    let normalized = path;
-    // Strip base path if present
-    if (BASE_PATH && normalized.startsWith(BASE_PATH)) {
-        normalized = normalized.substring(BASE_PATH.length);
-    }
-    // Handle root or index.html
-    if (normalized === '/index.html' || normalized === '') return '/';
-    return normalized;
+    if (path === '/index.html') return '/';
+    return path;
 }
 
 
 class Router {
     constructor() {
         this.routes = {};
-        this.currentPath = window.location.pathname;
-        window.addEventListener('popstate', this.handleLocationChange.bind(this));
+        window.addEventListener('hashchange', this.handleLocationChange.bind(this));
 
-        // Intercept links
+        // Intercept links starting with #/
         document.addEventListener('click', (e) => {
-            if (e.target.matches('a') || e.target.closest('a')) {
-                const link = e.target.matches('a') ? e.target : e.target.closest('a');
+            const link = e.target.closest('a');
+            if (link) {
                 const href = link.getAttribute('href');
-
-                // If the link has the base path, strip it for internal navigation logic
-                // But generally we expect internal links to be written typically as "/" or "/orders"
-
-                if (href && href.startsWith('/')) {
-                    e.preventDefault();
-                    this.navigate(href);
+                // Only intercept internal relative or hash links
+                if (href && (href.startsWith('#/') || (href.startsWith('/') && !href.startsWith('//')))) {
+                    // Normalize slash links to hash links
+                    if (href.startsWith('/')) {
+                        e.preventDefault();
+                        this.navigate(href);
+                    }
                 }
             }
         });
@@ -45,18 +35,15 @@ class Router {
     }
 
     async navigate(path) {
-        // Ensure path starts with /
-        const route = path.startsWith('/') ? path : '/' + path;
-
-        // Prepend base path for history
-        const fullPath = (BASE_PATH === '/' ? '' : BASE_PATH) + route;
-
-        window.history.pushState({}, '', fullPath);
-        await this.handleLocationChange();
+        // Always navigate using hash for better subfolder support
+        window.location.hash = path;
     }
 
     async handleLocationChange() {
-        let path = normalizePath(window.location.pathname);
+        let path = window.location.hash.slice(1) || '/';
+
+        // Normalize any weird double slashes
+        if (path.startsWith('//')) path = path.slice(1);
 
         // =========================
         // AUTH GUARD
@@ -86,8 +73,8 @@ class Router {
 
             // Param match: /orders/:id
             if (routePath.includes(':')) {
-                const routeParts = routePath.split('/');
-                const pathParts = path.split('/');
+                const routeParts = routePath.split('/').filter(p => p);
+                const pathParts = path.split('/').filter(p => p);
 
                 if (routeParts.length === pathParts.length) {
                     let isMatch = true;
@@ -115,7 +102,12 @@ class Router {
         // RENDER
         // =========================
         if (matchedRoute) {
-            await this.routes[matchedRoute](params);
+            try {
+                await this.routes[matchedRoute](params);
+            } catch (err) {
+                console.error("View Render Error:", err);
+                this.navigate(ROUTES.DASHBOARD);
+            }
         } else {
             console.warn("No route found for", path);
             this.navigate(ROUTES.DASHBOARD);

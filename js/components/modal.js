@@ -6,6 +6,7 @@ export class Modal {
         confirmText = 'Confirm',
         cancelText = 'Cancel',
         type = 'primary', // primary | destructive
+        size = 'medium',  // small | medium | large | xlarge
         closeOnBackdrop = true,
         closeOnEsc = true
     }) {
@@ -15,6 +16,7 @@ export class Modal {
         this.confirmText = confirmText;
         this.cancelText = cancelText;
         this.type = type;
+        this.size = size;
         this.closeOnBackdrop = closeOnBackdrop;
         this.closeOnEsc = closeOnEsc;
 
@@ -60,27 +62,36 @@ export class Modal {
             z-index: 1000;
         `;
 
-        const btnClass =
-            this.type === 'destructive' ? 'btn-destructive' : 'btn-primary';
+        const btnClass = this.type === 'destructive' ? 'btn-destructive' : 'btn-primary';
+        const sizeMap = {
+            small: '400px',
+            medium: '600px',
+            large: '900px',
+            xlarge: '1200px'
+        };
+        const maxWidth = sizeMap[this.size] || sizeMap.medium;
 
         backdrop.innerHTML = `
             <div class="modal-content animate-slide-up" style="
                 background: white;
                 border-radius: var(--radius-lg);
                 padding: var(--space-6);
-                width: 90%;
-                max-width: 500px;
+                width: 95%;
+                max-width: ${maxWidth};
+                max-height: 90vh;
+                display: flex;
+                flex-direction: column;
                 box-shadow: var(--shadow-lg);
             ">
-                <h3 style="margin-bottom: var(--space-4); font-size: var(--text-lg);">
+                <h3 style="margin-bottom: var(--space-4); font-size: var(--text-lg); flex-shrink: 0;">
                     ${this.title}
                 </h3>
 
-                <div class="modal-body" style="margin-bottom: var(--space-6);">
+                <div class="modal-body" style="margin-bottom: var(--space-6); overflow-y: auto; flex: 1;">
                     ${this.content}
                 </div>
 
-                <div style="display: flex; justify-content: flex-end; gap: var(--space-2);">
+                <div style="display: flex; justify-content: flex-end; gap: var(--space-2); flex-shrink: 0;">
                     <button class="btn btn-secondary cancel-btn">
                         ${this.cancelText}
                     </button>

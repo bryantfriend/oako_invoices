@@ -1,17 +1,18 @@
-export const formatCurrency = (amount, currency = 'USD') => {
-    return new Intl.NumberFormat('en-US', {
+export const formatCurrency = (amount, currency = 'KGS') => {
+    return new Intl.NumberFormat('ru-KG', {
         style: 'currency',
-        currency: currency
+        currency: currency,
+        minimumFractionDigits: 0
     }).format(amount);
 };
 
-export const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
+export const formatDate = (val) => {
+    if (!val) return '-';
+    const date = val.toDate ? val.toDate() : new Date(val);
+    return new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
     }).format(date);
 };
 
