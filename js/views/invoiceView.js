@@ -381,7 +381,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                 @media print {
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                    @page { margin: 0; size: A4 portrait; }
+                    @page { margin: 5mm; size: A4 portrait; }
                     body { margin: 0; padding: 0; overflow: visible !important; }
                     header, nav, #sidebar, #top-bar, .btn, div[style*="position: sticky"] { display: none !important; }
                     
@@ -400,17 +400,19 @@ export const renderInvoiceDetail = async ({ id }) => {
                     
                     .invoice-page {
                         display: block !important;
-                        margin: 0 !important; /* Standardized to left for print to match page size */
+                        margin: 0 !important;
                         box-shadow: none !important;
                         page-break-inside: avoid;
                         transform: none !important;
-                        height: 297mm !important;
-                        width: 210mm !important;
+                        /* Use min-height instead of fixed height for print flexibility */
+                        min-height: 287mm !important; 
+                        width: 200mm !important;
                         position: relative !important;
                         top: 0 !important;
                         left: 0 !important;
-                        overflow: hidden !important;
+                        overflow: visible !important;
                         box-sizing: border-box !important;
+                        background: white !important;
                     }
                     .invoice-page:not(:last-child) {
                         page-break-after: always !important;
