@@ -21,13 +21,15 @@ export const renderCustomers = async () => {
 
     const renderHeaderContainer = () => {
         const header = document.createElement('div');
+        header.className = 'flex-mobile-column';
         header.style.display = 'flex';
         header.style.justifyContent = 'space-between';
         header.style.alignItems = 'center';
         header.style.marginBottom = 'var(--space-6)';
+        header.style.gap = 'var(--space-4)';
 
         header.innerHTML = `
-            <div style="display: flex; gap: var(--space-4); align-items: center;">
+            <div class="flex-mobile-column" style="display: flex; gap: var(--space-4); align-items: center; width: 100%;">
                 <select id="category-filter" class="input" style="width: auto; padding: 6px 12px;">
                     <option value="all">All Categories</option>
                     <option value="A" ${categoryFilter === 'A' ? 'selected' : ''}>Category A (Premium)</option>

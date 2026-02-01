@@ -11,8 +11,8 @@ export class DataTable {
 
     render() {
         return `
-            <div style="overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200);">
-                <table style="width: 100%; border-collapse: collapse; background: white; font-size: var(--text-sm);">
+            <div style="overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); -webkit-overflow-scrolling: touch;">
+                <table style="width: 100%; min-width: 800px; border-collapse: collapse; background: white; font-size: var(--text-sm);">
                     <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
                         <tr>
                             ${this.columns.map(col => {

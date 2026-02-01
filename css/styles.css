@@ -340,4 +340,11 @@ table {
         flex-direction: column !important;
         align-items: stretch !important;
     }
+
+    .flex-mobile-column>*,
+    .flex-mobile-column>.btn,
+    .flex-mobile-column>select,
+    .flex-mobile-column>input {
+        width: 100% !important;
+    }
 }
