@@ -45,5 +45,16 @@ export const orderDetailController = {
         // Then navigate to invoice view or trigger generation
         // For now, assume it navigates
         return true;
+    },
+
+    async updateNotes(id, notes) {
+        try {
+            await orderService.updateOrder(id, { notes });
+            notificationService.success("Notes updated");
+            return true;
+        } catch (error) {
+            notificationService.error("Failed to update notes");
+            return false;
+        }
     }
 };

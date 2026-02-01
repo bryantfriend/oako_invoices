@@ -92,7 +92,19 @@ export const renderOrderDetail = async ({ id }) => {
                 
                 ${createCard({
         title: 'Customer Notes',
-        content: `<p style="color: var(--color-gray-600); white-space: pre-wrap;">${order.notes || 'No notes provided.'}</p>`
+        actions: `<button id="edit-notes-btn" class="btn btn-ghost btn-sm" style="font-size: 12px; color: var(--color-primary-600);">Edit</button>`,
+        content: `
+                        <div id="notes-view-mode">
+                             <p style="color: var(--color-gray-600); white-space: pre-wrap; margin: 0;">${order.notes || 'No notes provided.'}</p>
+                        </div>
+                        <div id="notes-edit-mode" style="display: none; flex-direction: column; gap: var(--space-3);">
+                            <textarea id="notes-textarea" class="input" rows="4" style="width: 100%; font-family: inherit; resize: vertical;">${order.notes || ''}</textarea>
+                            <div style="display: flex; gap: var(--space-2); justify-content: flex-end;">
+                                <button id="cancel-notes-edit" class="btn btn-secondary btn-sm">Cancel</button>
+                                <button id="save-notes-btn" class="btn btn-primary btn-sm">Save Notes</button>
+                            </div>
+                        </div>
+                    `
     })}
             </div>
 
@@ -328,6 +340,39 @@ export const renderOrderDetail = async ({ id }) => {
             if (confirm(`Change status to ${newStatus}?`)) {
                 await orderDetailController.updateStatus(id, newStatus);
                 renderOrderDetail({ id });
+            }
+        });
+    }
+
+    // Notes Editing Logic
+    const editNotesBtn = document.getElementById('edit-notes-btn');
+    const cancelNotesBtn = document.getElementById('cancel-notes-edit');
+    const saveNotesBtn = document.getElementById('save-notes-btn');
+    const viewMode = document.getElementById('notes-view-mode');
+    const editMode = document.getElementById('notes-edit-mode');
+    const notesTextarea = document.getElementById('notes-textarea');
+
+    if (editNotesBtn && cancelNotesBtn && saveNotesBtn && viewMode && editMode) {
+        editNotesBtn.addEventListener('click', () => {
+            viewMode.style.display = 'none';
+            editMode.style.display = 'flex';
+            editNotesBtn.style.display = 'none';
+            notesTextarea.focus();
+        });
+
+        cancelNotesBtn.addEventListener('click', () => {
+            viewMode.style.display = 'block';
+            editMode.style.display = 'none';
+            editNotesBtn.style.display = 'block';
+            notesTextarea.value = order.notes || '';
+        });
+
+        saveNotesBtn.addEventListener('click', async () => {
+            const newNotes = notesTextarea.value;
+            const success = await orderDetailController.updateNotes(id, newNotes);
+            if (success) {
+                order.notes = newNotes; // Update local copy
+                renderOrderDetail({ id }); // Re-render to refresh view
             }
         });
     }
