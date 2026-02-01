@@ -378,6 +378,11 @@ export const renderDashboard = async () => {
             onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.id)),
             actions: (row) => `
                 <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                    ${row.status === 'confirmed' ? `
+                        <button class="btn-icon" onclick="event.stopPropagation(); window.markAsFulfilled('${row.id}')" title="Mark Fulfilled" style="color: #6366f1; background: #eef2ff;">
+                            📦
+                        </button>
+                    ` : ''}
                     ${['confirmed', 'fulfilled'].includes(row.status) ? `
                         <button class="btn-icon" onclick="event.stopPropagation(); window.markAsPaid('${row.id}')" title="Mark Paid" style="color: #10b981; background: #ecfdf5;">
                             ✓
@@ -461,6 +466,12 @@ export const renderDashboard = async () => {
         window.markAsPaid = async (id) => {
             const { orderService } = await import("../services/orderService.js");
             await orderService.updateOrderStatus(id, 'paid');
+            renderDashboard();
+        };
+
+        window.markAsFulfilled = async (id) => {
+            const { orderService } = await import("../services/orderService.js");
+            await orderService.updateOrderStatus(id, 'fulfilled');
             renderDashboard();
         };
 

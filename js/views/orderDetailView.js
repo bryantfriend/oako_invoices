@@ -112,6 +112,23 @@ export const renderOrderDetail = async ({ id }) => {
                             <div style="display: flex; flex-direction: column; gap: var(--space-2);">
                                 ${renderStatusActions(order)}
                             </div>
+
+                            <hr style="border: 0; border-top: 1px solid var(--color-gray-200);">
+                            
+                            <div style="display: flex; flex-direction: column; gap: var(--space-2);">
+                                <label style="font-size: 11px; font-weight: 700; color: var(--color-gray-400); text-transform: uppercase;">Manual Override</label>
+                                <div style="display: flex; gap: var(--space-2); align-items: center;">
+                                    <div id="status-lock-btn" style="cursor: pointer; font-size: 16px; padding: 4px; background: var(--color-gray-50); border-radius: 4px; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">
+                                        ${['fulfilled', 'paid'].includes(order.status) ? '🔒' : '🔓'}
+                                    </div>
+                                    <select id="manual-status-selector" class="input" style="flex: 1; font-size: 13px; height: 32px; padding: 0 8px; ${['fulfilled', 'paid'].includes(order.status) ? 'pointer-events: none; opacity: 0.6;' : ''}">
+                                        ${Object.entries(ORDER_STATUS).map(([key, val]) => `
+                                            <option value="${val}" ${order.status === val ? 'selected' : ''}>${val.charAt(0).toUpperCase() + val.slice(1)}</option>
+                                        `).join('')}
+                                    </select>
+                                    <button id="apply-manual-status" class="btn btn-secondary btn-sm" style="height: 32px; display: ${['fulfilled', 'paid'].includes(order.status) ? 'none' : 'block'};">Apply</button>
+                                </div>
+                            </div>
                         </div>
                     `
     })}
@@ -280,6 +297,40 @@ export const renderOrderDetail = async ({ id }) => {
             });
         });
     });
+
+    // Manual Status Override Logic
+    const lockBtn = document.getElementById('status-lock-btn');
+    const statusSelect = document.getElementById('manual-status-selector');
+    const applyBtn = document.getElementById('apply-manual-status');
+
+    if (lockBtn && statusSelect && applyBtn) {
+        lockBtn.addEventListener('click', () => {
+            const isLocked = lockBtn.textContent.trim() === '🔒';
+            if (isLocked) {
+                if (confirm("Allow manual status change for this completed order?")) {
+                    lockBtn.textContent = '🔓';
+                    statusSelect.style.pointerEvents = 'auto';
+                    statusSelect.style.opacity = '1';
+                    applyBtn.style.display = 'block';
+                }
+            } else {
+                lockBtn.textContent = '🔒';
+                statusSelect.style.pointerEvents = 'none';
+                statusSelect.style.opacity = '0.6';
+                applyBtn.style.display = 'none';
+            }
+        });
+
+        applyBtn.addEventListener('click', async () => {
+            const newStatus = statusSelect.value;
+            if (newStatus === order.status) return;
+
+            if (confirm(`Change status to ${newStatus}?`)) {
+                await orderDetailController.updateStatus(id, newStatus);
+                renderOrderDetail({ id });
+            }
+        });
+    }
 };
 
 function renderStatusActions(order) {

@@ -43,20 +43,20 @@ export const renderCreateOrder = async () => {
                                 <label for="customerName">Customer / Company</label>
                                 <div style="display: flex; gap: var(--space-2);">
                                     <div style="position: relative; flex: 1;">
-                                        <span style="position: absolute; left: 10px; top: 10px;">🔍</span>
-                                        <input type="text" id="customerName" name="customerName" list="customer-list" 
-                                            required placeholder="Search company..." 
+                                        <span style="position: absolute; left: 10px; top: 10px;">🏢</span>
+                                        <input type="text" id="customerName" name="customerName" 
+                                            required placeholder="Enter or select company..." 
                                             style="padding-left: 36px; width: 100%;" autocomplete="off">
-                                        <datalist id="customer-list">
-                                            ${customerDatalist}
-                                        </datalist>
                                     </div>
+                                    <button type="button" id="select-customer-btn" class="btn btn-secondary" title="Select from List" style="padding: 0 12px; font-size: 14px;">
+                                        📋
+                                    </button>
                                     <button type="button" id="quick-add-customer-btn" class="btn btn-secondary" title="Add New Customer" style="padding: 0 12px;">
                                         ➕
                                     </button>
                                 </div>
                                 <small style="color: var(--color-gray-500); cursor: pointer;" id="auto-fill-hint">
-                                    ✨ Tip: Select a company to check for previous orders
+                                    ✨ Tip: Use 📋 to see all companies by category
                                 </small>
                             </div>
                             <div class="input-group">
@@ -381,6 +381,86 @@ export const renderCreateOrder = async () => {
                 notificationService.success("Items auto-filled from last order");
             }
         }
+    });
+
+    // Customer Picker Modal
+    document.getElementById('select-customer-btn').addEventListener('click', () => {
+        let selectedCategory = 'all';
+        let searchQuery = '';
+
+        const modal = new Modal({
+            title: 'Select Customer',
+            size: 'large',
+            content: `
+                <div style="display: flex; flex-direction: column; gap: var(--space-4); min-height: 500px;">
+                    <div style="display: flex; gap: var(--space-3); align-items: center; background: var(--color-gray-50); padding: 12px; border-radius: 8px;">
+                        <input type="text" id="modal-cust-search" class="input" placeholder="Search name or phone..." style="flex: 1;">
+                        <select id="modal-cust-category" class="input" style="width: 150px;">
+                            <option value="all">All Categories</option>
+                            <option value="A">Category A</option>
+                            <option value="B">Category B</option>
+                            <option value="C">Category C</option>
+                        </select>
+                    </div>
+                    <div id="modal-customer-table-container" style="flex: 1; overflow-y: auto;"></div>
+                </div>
+            `,
+            footer: false
+        });
+
+        modal.open();
+
+        const renderTable = () => {
+            const filtered = customers.filter(c => {
+                const matchesCat = selectedCategory === 'all' || c.category === selectedCategory;
+                const matchesQuery = (c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    (c.phone || '').includes(searchQuery);
+                return matchesCat && matchesQuery;
+            });
+
+            const table = new DataTable({
+                columns: [
+                    {
+                        key: 'category',
+                        label: 'Cat',
+                        render: (val) => `<div style="width: 24px; height: 24px; border-radius: 4px; background: #f0f9ff; color: #0369a1; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px;">${val || 'C'}</div>`
+                    },
+                    { key: 'companyName', label: 'Company', render: (val) => `<strong>${val}</strong>` },
+                    { key: 'phone', label: 'Phone' },
+                    { key: 'city', label: 'City' }
+                ],
+                data: filtered,
+                onRowClick: (row) => {
+                    customerInput.value = row.companyName;
+                    customerInput.dispatchEvent(new Event('change')); // Trigger auto-fill logic
+                    modal.close();
+                }
+            });
+
+            document.getElementById('modal-customer-table-container').innerHTML = table.render();
+
+            // Re-bind row clicks since DataTable might just return string
+            document.querySelectorAll('#modal-customer-table-container .data-row').forEach((rowEl, idx) => {
+                rowEl.addEventListener('click', () => {
+                    const row = filtered[idx];
+                    customerInput.value = row.companyName;
+                    customerInput.dispatchEvent(new Event('change'));
+                    modal.close();
+                });
+            });
+        };
+
+        document.getElementById('modal-cust-search').addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            renderTable();
+        });
+
+        document.getElementById('modal-cust-category').addEventListener('change', (e) => {
+            selectedCategory = e.target.value;
+            renderTable();
+        });
+
+        renderTable();
     });
 
     // Quick Add Customer Logic
