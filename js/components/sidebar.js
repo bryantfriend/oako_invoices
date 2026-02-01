@@ -20,6 +20,7 @@ export class Sidebar {
                 ${this.createNavItem('Orders', ROUTES.DASHBOARD, '📊')}
                 ${this.createNavItem('Create Order', ROUTES.CREATE_ORDER, '➕')}
                 ${this.createNavItem('Invoices', ROUTES.INVOICES, '📄')}
+                ${this.createNavItem('Inventory', ROUTES.INVENTORY, '🍞')}
                 ${this.createNavItem('Customers', ROUTES.CUSTOMERS, '👥')}
                 ${this.createNavItem('Settings', ROUTES.SETTINGS, '⚙️')}
             </nav>

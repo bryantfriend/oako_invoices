@@ -11,6 +11,7 @@ import { renderOrderDetail } from "./views/orderDetailView.js";
 import { renderInvoices, renderInvoiceDetail } from "./views/invoiceView.js";
 import { renderCustomers } from "./views/customerView.js";
 import { renderCustomerDetail } from "./views/customerDetailView.js";
+import { renderInventory } from "./views/inventoryView.js";
 import { renderSettings } from "./views/settingsView.js";
 
 async function initApp() {
@@ -25,6 +26,7 @@ async function initApp() {
         router.addRoute(ROUTES.ORDER_DETAIL, renderOrderDetail);
         router.addRoute(ROUTES.INVOICES, renderInvoices);
         router.addRoute(ROUTES.INVOICE_DETAIL, renderInvoiceDetail);
+        router.addRoute(ROUTES.INVENTORY, renderInventory);
         router.addRoute(ROUTES.CUSTOMERS, renderCustomers);
         router.addRoute(ROUTES.CUSTOMER_DETAIL, renderCustomerDetail);
         router.addRoute(ROUTES.SETTINGS, renderSettings);

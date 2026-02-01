@@ -2,6 +2,8 @@ import { layoutView } from "./layoutView.js";
 import { settingsController } from "../controllers/settingsController.js";
 import { createCard } from "../components/card.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
+import { productService } from "../services/productService.js";
+import { inventoryService } from "../services/inventoryService.js";
 
 export const renderSettings = async () => {
     layoutView.render();
@@ -10,7 +12,13 @@ export const renderSettings = async () => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const settings = await settingsController.loadSettings() || {};
+    const [settings, allCategories, inventorySettings] = await Promise.all([
+        settingsController.loadSettings(),
+        productService.getAllCategories(),
+        inventoryService.getInventorySettings()
+    ]);
+
+    const enabledCatIds = inventorySettings.enabledCategories || [];
 
     container.innerHTML = `
         <div class="animate-slide-up" style="max-width: 800px; margin: 0 auto;">
@@ -79,6 +87,23 @@ export const renderSettings = async () => {
                     `
     })}
 
+                ${createCard({
+        title: 'Inventory Categories',
+        content: `
+                        <p style="font-size: 13px; color: var(--color-gray-500); margin-bottom: 16px;">
+                            Select which product categories should be tracked in the Inventory tab.
+                        </p>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
+                            ${allCategories.map(cat => `
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+                                    <input type="checkbox" name="inventory_cat" value="${cat.id}" ${enabledCatIds.includes(cat.id) ? 'checked' : ''}>
+                                    ${cat.name}
+                                </label>
+                            `).join('')}
+                        </div>
+                    `
+    })}
+
                 <div style="display: flex; justify-content: flex-end; margin-top: var(--space-6); gap: var(--space-4); align-items: center;">
                     <div id="save-status" style="font-size: 14px; color: var(--color-gray-500);"></div>
                     <button type="submit" class="btn btn-primary">Save All Settings</button>
@@ -131,8 +156,15 @@ export const renderSettings = async () => {
         const data = Object.fromEntries(formData.entries());
         data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
 
-        const success = await settingsController.updateSettings(data);
-        saveStatus.textContent = success ? "Saved Successfully" : "Error Saving";
+        // Extract inventory categories
+        const enabledCategories = formData.getAll('inventory_cat');
+
+        const [settingsSuccess, inventorySuccess] = await Promise.all([
+            settingsController.updateSettings(data),
+            inventoryService.updateInventorySettings({ enabledCategories })
+        ]);
+
+        saveStatus.textContent = (settingsSuccess && inventorySuccess) ? "Saved Successfully" : "Error Saving";
         setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
     });
 };

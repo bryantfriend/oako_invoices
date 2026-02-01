@@ -16,6 +16,7 @@ export const ROUTES = {
     INVOICE_DETAIL: '/invoices/:id',
     CUSTOMERS: '/customers',
     CUSTOMER_DETAIL: '/customers/:id',
+    INVENTORY: '/inventory',
     SETTINGS: '/settings'
 };
 

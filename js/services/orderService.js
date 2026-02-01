@@ -123,7 +123,11 @@ export const orderService = {
     },
 
     async updateOrderStatus(id, status) {
-        return this.updateOrder(id, { status });
+        const updates = { status };
+        if (status === ORDER_STATUS.FULFILLED || status === ORDER_STATUS.PAID) {
+            updates.fulfilledAt = serverTimestamp();
+        }
+        return this.updateOrder(id, updates);
     },
 
     async deleteOrder(id) {

@@ -426,9 +426,9 @@ export const renderCreateOrder = async () => {
                         label: 'Cat',
                         render: (val) => `<div style="width: 24px; height: 24px; border-radius: 4px; background: #f0f9ff; color: #0369a1; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px;">${val || 'C'}</div>`
                     },
-                    { key: 'companyName', label: 'Company', render: (val) => `<strong>${val}</strong>` },
-                    { key: 'phone', label: 'Phone' },
-                    { key: 'city', label: 'City' }
+                    { key: 'companyName', label: 'Company', render: (val, row) => `<strong>${val || row.name || 'Unknown'}</strong>` },
+                    { key: 'phone', label: 'Phone', render: (val) => val || '-' },
+                    { key: 'city', label: 'City', render: (val) => val || '-' }
                 ],
                 data: filtered,
                 onRowClick: (row) => {
@@ -444,7 +444,7 @@ export const renderCreateOrder = async () => {
             document.querySelectorAll('#modal-customer-table-container .data-row').forEach((rowEl, idx) => {
                 rowEl.addEventListener('click', () => {
                     const row = filtered[idx];
-                    customerInput.value = row.companyName;
+                    customerInput.value = row.companyName || row.name;
                     customerInput.dispatchEvent(new Event('change'));
                     modal.close();
                 });
