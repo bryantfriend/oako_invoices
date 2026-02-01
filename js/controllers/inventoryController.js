@@ -2,7 +2,7 @@ import { inventoryService } from "../services/inventoryService.js";
 import { productService } from "../services/productService.js";
 import { orderService } from "../services/orderService.js";
 import { ORDER_STATUS } from "../core/constants.js";
-import { notificationService } from "../notificationService.js";
+import { notificationService } from "../core/notificationService.js";
 
 export const inventoryController = {
     /**
