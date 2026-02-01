@@ -461,42 +461,94 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }
 
                 @media print {
-                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                    @page { margin: 5mm; size: A4 portrait; }
-                    body { margin: 0; padding: 0; overflow: visible !important; }
-                    header, nav, #sidebar, #top-bar, .btn, div[style*="position: sticky"] { display: none !important; }
-                    
-                    ::-webkit-scrollbar { display: none !important; }
-
-                    #invoice-doc-container {
-                        display: block !important;
-                        position: static !important;
-                        width: 100% !important;
-                        height: auto !important;
-                        padding: 0 !important;
-                        margin: 0 !important;
-                        background: white !important;
-                        overflow: visible !important;
+                    /* Force background colors and images */
+                    * { 
+                        -webkit-print-color-adjust: exact !important; 
+                        print-color-adjust: exact !important; 
+                        color-adjust: exact !important;
                     }
                     
+                    @page { 
+                        margin: 0; 
+                        size: A4 portrait; 
+                    }
+                    
+                    /* Reset global layout constraints that might clip content */
+                    html, body { 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        height: auto !important; 
+                        overflow: visible !important; 
+                        background: white !important;
+                    }
+                    
+                    #app, 
+                    #sidebar,
+                    .main-content, 
+                    .page-container,
+                    #invoice-doc-container {
+                        display: block !important;
+                        height: auto !important;
+                        width: 100% !important;
+                        min-width: 0 !important;
+                        overflow: visible !important;
+                        position: static !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        transform: none !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                    }
+
+                    /* Hide all UI elements except the invoice content */
+                    header, 
+                    nav, 
+                    #sidebar, 
+                    #top-bar, 
+                    .btn, 
+                    .loading-screen, 
+                    #toast-container, 
+                    #modal-container,
+                    div[style*="position: sticky"],
+                    div[style*="z-index: 100"],
+                    .period-btn,
+                    #zoom-slider,
+                    input[type="range"] { 
+                        display: none !important; 
+                    }
+                    
+                    ::-webkit-scrollbar { 
+                        display: none !important; 
+                    }
+
+                    /* Ensure all pages are visible and properly broken */
                     .invoice-page {
                         display: block !important;
-                        margin: 0 !important;
-                        box-shadow: none !important;
-                        page-break-inside: avoid;
-                        transform: none !important;
-                        /* Use min-height instead of fixed height for print flexibility */
-                        min-height: 287mm !important; 
-                        width: 200mm !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
                         position: relative !important;
                         top: 0 !important;
                         left: 0 !important;
-                        overflow: visible !important;
+                        margin: 0 auto !important;
+                        padding: 15mm !important; /* Standard print margin */
+                        width: 210mm !important;
+                        min-height: 297mm !important;
+                        height: auto !important;
                         box-sizing: border-box !important;
+                        page-break-after: always !important;
+                        page-break-inside: avoid !important;
+                        transform: none !important;
+                        box-shadow: none !important;
                         background: white !important;
                     }
-                    .invoice-page:not(:last-child) {
-                        page-break-after: always !important;
+
+                    .invoice-page:last-child {
+                        page-break-after: auto !important;
+                    }
+
+                    /* Fix text colors for print readability */
+                    .invoice-page * {
+                        overflow: visible !important;
                     }
                 }
             </style>
