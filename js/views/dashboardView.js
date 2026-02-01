@@ -51,8 +51,6 @@ export const renderDashboard = async () => {
                     display: grid; 
                     grid-template-rows: auto auto auto auto 1fr; 
                     gap: 12px; 
-                    height: calc(100vh - 120px); 
-                    overflow: hidden;
                 ">
                     
                     <!-- ROW 1: TOOLBAR -->
