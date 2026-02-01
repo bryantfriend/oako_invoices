@@ -32,11 +32,24 @@ export const renderDashboard = async () => {
     let filteredOrders = [];
     let currentPeriod = '30d';
     let filters = { status: 'all', drill: null };
+    let sort = { key: 'orderDate', order: 'desc' };
 
     // Initial Fetch
     const { orders } = await dashboardController.loadDashboard();
     allOrders = orders;
     filteredOrders = [...allOrders];
+
+    const handleSort = (key) => {
+        if (sort.key === key) {
+            sort.order = sort.order === 'asc' ? 'desc' : 'asc';
+        } else {
+            sort.key = key;
+            sort.order = 'asc';
+        }
+        applyFilters();
+    };
+
+    window.handleTableSort = handleSort;
 
     const renderUI = () => {
         cleanupCharts();
@@ -346,6 +359,23 @@ export const renderDashboard = async () => {
 
             return matchesStatus && matchesDrill;
         });
+
+        // Apply Sorting
+        filteredOrders.sort((a, b) => {
+            let valA = a[sort.key];
+            let valB = b[sort.key];
+
+            // Handle special cases (dates, nested objects)
+            if (sort.key === 'orderDate') {
+                valA = valA?.toDate ? valA.toDate() : new Date(valA);
+                valB = valB?.toDate ? valB.toDate() : new Date(valB);
+            }
+
+            if (valA < valB) return sort.order === 'asc' ? -1 : 1;
+            if (valA > valB) return sort.order === 'asc' ? 1 : -1;
+            return 0;
+        });
+
         refreshTable();
     };
 
@@ -375,6 +405,8 @@ export const renderDashboard = async () => {
                 { key: 'status', label: 'Status', align: 'center', render: (val) => createStatusBadge(val) }
             ],
             data: filteredOrders,
+            sortKey: sort.key,
+            sortOrder: sort.order,
             onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.id)),
             actions: (row) => `
                 <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">

@@ -17,47 +17,128 @@ export const renderInvoices = async () => {
     container.innerHTML = LoadingSkeleton();
 
     // Load Data
-    const invoices = await invoiceController.loadAllInvoices();
+    const allInvoices = await invoiceController.loadAllInvoices();
+    const customers = [...new Set(allInvoices.map(i => i.customerName))].sort();
 
-    // Create Table
-    const table = new DataTable({
-        columns: [
-            { key: 'invoiceNumber', label: 'Invoice #', render: (val) => `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${val}</span>` },
-            { key: 'customerName', label: 'Customer', render: (val) => `<span style="color: #1e3318; font-weight: 500;">${val}</span>` },
-            { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate(val?.toDate ? val.toDate() : val)}</span>` },
-            { key: 'totalAmount', label: 'Amount', render: (val) => `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>` },
-        ],
-        data: invoices,
-        onRowClick: true,
-        actions: (row) => `
-            <div style="display: flex; gap: 4px;">
-                <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.viewInvoice('${row.id}')">
-                    View
-                </button>
-                <button class="btn btn-destructive btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.deleteInvoice('${row.id}')">
-                    🗑️
-                </button>
-            </div>
-        `
-    });
+    let filtered = [...allInvoices];
+    let sort = { key: 'createdAt', order: 'desc' };
+    let filters = { customer: 'all', period: 'month' }; // default to this month
 
-    container.innerHTML = `
-        <div class="animate-fade-in">
-             ${createCard({
-        title: 'All Invoices',
-        content: table.render()
-    })}
-        </div>
-    `;
+    const applyInvoicesFilters = () => {
+        filtered = allInvoices.filter(inv => {
+            const matchesCustomer = filters.customer === 'all' || inv.customerName === filters.customer;
 
-    // Row Click Listeners
-    const rows = container.querySelectorAll('.data-row');
-    rows.forEach(row => {
-        row.addEventListener('click', () => {
-            const id = row.dataset.id;
-            router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));
+            const date = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+            const now = new Date();
+            const matchesPeriod = filters.period === 'all' || (
+                date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
+            );
+
+            return matchesCustomer && matchesPeriod;
         });
-    });
+
+        // Apply Sort
+        filtered.sort((a, b) => {
+            let valA = a[sort.key];
+            let valB = b[sort.key];
+
+            if (sort.key === 'createdAt') {
+                valA = valA?.toDate ? valA.toDate() : new Date(valA);
+                valB = valB?.toDate ? valB.toDate() : new Date(valB);
+            }
+
+            if (valA < valB) return sort.order === 'asc' ? -1 : 1;
+            if (valA > valB) return sort.order === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        renderTable();
+    };
+
+    window.handleTableSort = (key) => {
+        if (sort.key === key) {
+            sort.order = sort.order === 'asc' ? 'desc' : 'asc';
+        } else {
+            sort.key = key;
+            sort.order = 'asc';
+        }
+        applyInvoicesFilters();
+    };
+
+    const renderTable = () => {
+        const table = new DataTable({
+            columns: [
+                { key: 'invoiceNumber', label: 'Invoice #', render: (val) => `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${val}</span>` },
+                { key: 'customerName', label: 'Customer', render: (val) => `<span style="color: #1e3318; font-weight: 500;">${val}</span>` },
+                { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate(val?.toDate ? val.toDate() : val)}</span>` },
+                { key: 'totalAmount', label: 'Amount', render: (val) => `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>` },
+            ],
+            data: filtered,
+            sortKey: sort.key,
+            sortOrder: sort.order,
+            onRowClick: true,
+            actions: (row) => `
+                <div style="display: flex; gap: 4px;">
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.viewInvoice('${row.id}')">
+                        View
+                    </button>
+                    <button class="btn btn-destructive btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.deleteInvoice('${row.id}')">
+                        🗑️
+                    </button>
+                </div>
+            `
+        });
+
+        container.innerHTML = `
+            <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-4);">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200);">
+                    <div style="display: flex; gap: var(--space-4); align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <label style="font-size: 12px; font-weight: 600; color: var(--color-gray-500);">Customer:</label>
+                            <select id="filter-customer" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-gray-200); font-size: 13px;">
+                                <option value="all">All Customers</option>
+                                ${customers.map(c => `<option value="${c}" ${filters.customer === c ? 'selected' : ''}>${c}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="height: 20px; width: 1px; background: var(--color-gray-200);"></div>
+                        <div style="display: flex; gap: 4px; background: var(--color-gray-50); padding: 4px; border-radius: 8px;">
+                            <button class="period-btn btn btn-sm ${filters.period === 'month' ? 'btn-primary' : 'btn-ghost'}" data-period="month" style="font-size: 11px; padding: 4px 10px;">This Month</button>
+                            <button class="period-btn btn btn-sm ${filters.period === 'all' ? 'btn-primary' : 'btn-ghost'}" data-period="all" style="font-size: 11px; padding: 4px 10px;">All Time</button>
+                        </div>
+                    </div>
+                </div>
+
+                ${createCard({
+            title: 'Invoices',
+            content: table.render()
+        })}
+            </div>
+        `;
+
+        // Row Click Listeners
+        container.querySelectorAll('.data-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const id = row.dataset.id;
+                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));
+            });
+        });
+
+        // Event Listeners for filters
+        document.getElementById('filter-customer').addEventListener('change', (e) => {
+            filters.customer = e.target.value;
+            applyInvoicesFilters();
+        });
+
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                filters.period = btn.dataset.period;
+                applyInvoicesFilters();
+            });
+        });
+    };
+
+    // Initial Render
+    applyInvoicesFilters();
 
     // Global Action Helper
     window.viewInvoice = (id) => router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));

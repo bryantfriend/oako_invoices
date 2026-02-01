@@ -1,9 +1,12 @@
 export class DataTable {
-    constructor({ columns, data, onRowClick, actions }) {
-        this.columns = columns; // [{ key, label, render }]
+    constructor({ columns, data, onRowClick, actions, onSort, sortKey, sortOrder }) {
+        this.columns = columns; // [{ key, label, render, sortable }]
         this.data = data || [];
         this.onRowClick = onRowClick;
         this.actions = actions; // function(row) -> html
+        this.onSort = onSort; // function(key)
+        this.sortKey = sortKey;
+        this.sortOrder = sortOrder; // 'asc' | 'desc'
     }
 
     render() {
@@ -12,14 +15,30 @@ export class DataTable {
                 <table style="width: 100%; border-collapse: collapse; background: white; font-size: var(--text-sm);">
                     <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
                         <tr>
-                            ${this.columns.map(col => `
-                                <th style="
-                                    text-align: ${col.align || 'left'}; 
-                                    padding: 12px 16px; 
-                                    font-weight: 600; 
-                                    color: var(--color-gray-600);
-                                ">${col.label}</th>
-                            `).join('')}
+                            ${this.columns.map(col => {
+            const isSortable = col.sortable !== false;
+            const isActive = this.sortKey === col.key;
+            const indicator = isActive ? (this.sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
+            return `
+                                    <th 
+                                        class="${isSortable ? 'sortable-header' : ''}"
+                                        data-key="${col.key}"
+                                        style="
+                                            text-align: ${col.align || 'left'}; 
+                                            padding: 12px 16px; 
+                                            font-weight: 600; 
+                                            color: ${isActive ? 'var(--color-primary-700)' : 'var(--color-gray-600)'};
+                                            cursor: ${isSortable ? 'pointer' : 'default'};
+                                            user-select: none;
+                                            white-space: nowrap;
+                                            transition: background 0.2s;
+                                        "
+                                        ${isSortable ? `onclick="window.handleTableSort('${col.key}')"` : ''}
+                                    >
+                                        ${col.label}${indicator}
+                                    </th>
+                                `;
+        }).join('')}
                             ${this.actions ? '<th style="padding: 12px 16px;"></th>' : ''}
                         </tr>
                     </thead>
