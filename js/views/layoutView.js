@@ -84,7 +84,7 @@ class LayoutView {
 
 
     updateTitle(title) {
-        const titleEl = document.querySelector('#top-bar > div:first-child');
+        const titleEl = document.getElementById('top-bar-title');
         if (titleEl) titleEl.textContent = title;
     }
 }
