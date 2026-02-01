@@ -184,24 +184,24 @@ export const renderCreateOrder = async () => {
             content: `
                 <div style="display: flex; flex-direction: column; gap: var(--space-4); height: 70vh;">
                     <!-- Filter Bar -->
-                    <div style="display: flex; gap: var(--space-4); align-items: center; padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-gray-200);">
+                    <div class="flex-mobile-column" style="display: flex; gap: var(--space-4); align-items: center; padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-gray-200);">
                         <div style="position: relative; flex: 1;">
                             <span style="position: absolute; left: 12px; top: 10px;">🔍</span>
                             <input type="text" id="product-search" class="input" placeholder="Search products..." style="padding-left: 40px; width: 100%;">
                         </div>
-                        <select id="category-picker-filter" class="input" style="width: 200px;">
+                        <select id="category-picker-filter" class="input" style="width: 200px; min-width: 150px;">
                             <option value="all">All Categories</option>
                             ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
                         </select>
                     </div>
 
                     <!-- Product Grid -->
-                    <div id="product-grid" style="
+                    <div id="product-grid" class="grid-cols-mobile-2" style="
                         display: grid; 
                         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); 
-                        gap: var(--space-4); 
+                        gap: var(--space-3); 
                         overflow-y: auto;
-                        padding-right: 4px;
+                        padding: 4px;
                     ">
                         <!-- Products rendered here -->
                     </div>
@@ -234,7 +234,7 @@ export const renderCreateOrder = async () => {
                     <div class="product-card" data-id="${p.id}" style="
                         border: 2px solid ${isSelected ? 'var(--color-primary-500)' : 'var(--color-gray-100)'};
                         border-radius: var(--radius-lg);
-                        padding: var(--space-3);
+                        padding: var(--space-2);
                         cursor: pointer;
                         transition: all var(--transition-fast);
                         background: white;
@@ -243,11 +243,11 @@ export const renderCreateOrder = async () => {
                         gap: var(--space-2);
                     ">
                         <img src="${p.imageUrl || ''}" onerror="this.src='https://placehold.co/150x150?text=📦'" 
-                             style="width: 100%; height: 120px; object-fit: cover; border-radius: var(--radius-md); background: var(--color-gray-50);">
-                        <div style="font-weight: 600; font-size: 14px; line-height: 1.2; height: 34px; overflow: hidden;">${p.displayName || 'Unnamed Product'}</div>
+                             style="width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-md); background: var(--color-gray-50);">
+                        <div style="font-weight: 600; font-size: 13px; line-height: 1.2; height: 32px; overflow: hidden; color: var(--color-gray-800);">${p.displayName || 'Unnamed Product'}</div>
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
-                            <span style="color: var(--color-primary-600); font-weight: 700;">${p.price || 0} Som</span>
-                            ${isSelected ? '<span style="color: var(--color-primary-500);">✅</span>' : ''}
+                            <span style="color: var(--color-primary-600); font-weight: 700; font-size: 12px;">${p.price || 0} c.</span>
+                            ${isSelected ? '<span style="font-size: 14px;">✅</span>' : ''}
                         </div>
                     </div>
                 `;
@@ -394,9 +394,9 @@ export const renderCreateOrder = async () => {
             size: 'large',
             content: `
                 <div style="display: flex; flex-direction: column; gap: var(--space-4); min-height: 500px;">
-                    <div style="display: flex; gap: var(--space-3); align-items: center; background: var(--color-gray-50); padding: 12px; border-radius: 8px;">
+                    <div class="flex-mobile-column" style="display: flex; gap: var(--space-3); align-items: center; background: var(--color-gray-50); padding: 12px; border-radius: 8px;">
                         <input type="text" id="modal-cust-search" class="input" placeholder="Search name or phone..." style="flex: 1;">
-                        <select id="modal-cust-category" class="input" style="width: 150px;">
+                        <select id="modal-cust-category" class="input" style="width: 150px; min-width: 120px;">
                             <option value="all">All Categories</option>
                             <option value="A">Category A</option>
                             <option value="B">Category B</option>

@@ -335,4 +335,9 @@ table {
     .grid-cols-mobile-2 {
         grid-template-columns: repeat(2, 1fr) !important;
     }
+
+    .flex-mobile-column {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
 }
