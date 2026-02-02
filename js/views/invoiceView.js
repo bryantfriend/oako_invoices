@@ -432,7 +432,12 @@ export const renderInvoiceDetail = async ({ id }) => {
             const copyPages = renderDocument(currentLang, true);
 
             originalPages.forEach((page, i) => {
-                finalHtml += page + (copyPages[i] || '');
+                finalHtml += `
+                    <div class="print-sheet">
+                        ${page}
+                        ${copyPages[i] || ''}
+                    </div>
+                `;
             });
         } else {
             const renderedPages = renderDocument(currentLang);
@@ -485,7 +490,17 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: relative !important;
                         top: 0 !important;
                         margin-bottom: 20px;
-                        opacity: 0.8;
+                        opacity: 1;
+                        border: 1px solid #ddd;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    }
+                    
+                    #invoice-doc-container.printing-2up-portrait .print-sheet {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 20px;
+                        margin-bottom: 40px;
                     }
                 }
 
@@ -558,27 +573,38 @@ export const renderInvoiceDetail = async ({ id }) => {
                     }
 
                     /* Portrait 2-up (Sideways Stack) */
+                    .print-sheet {
+                        display: block !important;
+                        position: relative !important;
+                        width: 210mm !important;
+                        height: 297mm !important;
+                        page-break-after: always !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+
                     body.printing-2up-portrait .invoice-page {
                         width: 297mm !important; 
                         height: 210mm !important; 
                         position: absolute !important;
                         left: 0 !important;
-                        transform: rotate(90deg) translate(0, -297mm) scale(0.7071) !important;
-                        transform-origin: bottom left !important;
+                        transform: translate(210mm, 0) scale(0.7071) rotate(90deg) !important;
+                        transform-origin: top left !important;
                         margin: 0 !important;
                         padding: 8mm 12mm !important;
                         page-break-after: auto !important;
                     }
 
-                    /* First of pair (Top half of page) */
-                    body.printing-2up-portrait .invoice-page:nth-child(2n-1) {
+                    /* First of pair (Top half of sheet) */
+                    body.printing-2up-portrait .invoice-page:nth-child(1) {
                         top: 0 !important;
+                        background: white !important;
                     }
 
-                    /* Second of pair (Bottom half of page) */
-                    body.printing-2up-portrait .invoice-page:nth-child(2n) {
+                    /* Second of pair (Bottom half of sheet) */
+                    body.printing-2up-portrait .invoice-page:nth-child(2) {
                         top: 148.5mm !important;
-                        page-break-after: always !important;
+                        background: white !important;
                     }
 
                     .invoice-page:last-child {
