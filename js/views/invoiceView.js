@@ -286,6 +286,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     transform: scale(${invoiceScale});
                     transform-origin: top center;
                     transition: transform 0.2s ease;
+                    --zoom-scale: ${invoiceScale};
                     ${pageNum === currentPage ? '' : 'position: absolute; top: -10000px;'}
                 ">
                     <!-- Header (Only on Page 1 or reduced on others) -->
@@ -588,7 +589,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         display: block !important;
                         position: relative !important;
                         width: 210mm !important;
-                        height: 296mm !important; /* Safety buffer */
+                        height: 297mm !important; 
                         page-break-after: always !important;
                         overflow: hidden !important;
                         margin: 0 !important;
@@ -598,9 +599,11 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                     .sheet-half {
                         width: 210mm !important;
-                        height: 148mm !important;
+                        height: 148.5mm !important;
                         position: relative !important;
                         overflow: hidden !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
                     }
 
                     body.printing-2up-portrait .invoice-page {
@@ -615,6 +618,8 @@ export const renderInvoiceDetail = async ({ id }) => {
                         padding: 10mm 15mm !important;
                         page-break-after: auto !important;
                         background: white !important;
+                        display: block !important;
+                        visibility: visible !important;
                     }
 
                     .invoice-page:last-child {
