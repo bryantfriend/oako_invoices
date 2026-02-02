@@ -505,14 +505,14 @@ export const renderInvoiceDetail = async ({ id }) => {
                         margin-bottom: 40px;
                         box-shadow: 0 10px 30px rgba(0,0,0,0.1);
                         position: relative;
+                        font-size: 0;
                     }
 
                     #invoice-doc-container.printing-2up-portrait .sheet-half {
                         width: 100%;
                         height: 50%;
                         position: relative;
-                        border-bottom: 2px dashed #f0f0f0;
-                        overflow: hidden;
+                        border-bottom: 1px dashed #f0f0f0;
                     }
                 }
 
@@ -589,21 +589,21 @@ export const renderInvoiceDetail = async ({ id }) => {
                         display: block !important;
                         position: relative !important;
                         width: 210mm !important;
-                        height: 297mm !important; 
+                        height: 296mm !important; /* Safety buffer */
                         page-break-after: always !important;
-                        overflow: hidden !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         background: white !important;
+                        font-size: 0 !important; /* Remove whitespace between blocks */
                     }
 
                     .sheet-half {
                         width: 210mm !important;
-                        height: 148.5mm !important;
+                        height: 148mm !important;
                         position: relative !important;
-                        overflow: hidden !important;
                         margin: 0 !important;
                         padding: 0 !important;
+                        display: block !important;
                     }
 
                     body.printing-2up-portrait .invoice-page {
@@ -612,7 +612,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
-                        transform: translate(-50%, -50%) rotate(90deg) scale(0.68) !important;
+                        transform: translate(-50%, -50%) rotate(90deg) scale(0.64) !important;
                         transform-origin: center center !important;
                         margin: 0 !important;
                         padding: 10mm 15mm !important;
@@ -620,6 +620,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         background: white !important;
                         display: block !important;
                         visibility: visible !important;
+                        box-sizing: border-box !important;
                     }
 
                     .invoice-page:last-child {
