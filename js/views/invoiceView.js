@@ -434,8 +434,8 @@ export const renderInvoiceDetail = async ({ id }) => {
             originalPages.forEach((page, i) => {
                 finalHtml += `
                     <div class="print-sheet">
-                        ${page}
-                        ${copyPages[i] || ''}
+                        <div class="sheet-half">${page}</div>
+                        <div class="sheet-half">${copyPages[i] || ''}</div>
                     </div>
                 `;
             });
@@ -487,20 +487,31 @@ export const renderInvoiceDetail = async ({ id }) => {
                     /* Small screen preview adjustment */
                     #invoice-doc-container.printing-2up-portrait .invoice-page {
                         display: block !important;
-                        position: relative !important;
-                        top: 0 !important;
-                        margin-bottom: 20px;
+                        position: absolute !important;
+                        top: 50% !important;
+                        left: 50% !important;
+                        transform: translate(-50%, -50%) scale(0.6) rotate(90deg) !important;
                         opacity: 1;
                         border: 1px solid #ddd;
                         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                     }
                     
                     #invoice-doc-container.printing-2up-portrait .print-sheet {
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        gap: 20px;
+                        display: block !important;
+                        width: 210mm;
+                        height: 297mm;
+                        background: white;
                         margin-bottom: 40px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                        position: relative;
+                    }
+
+                    #invoice-doc-container.printing-2up-portrait .sheet-half {
+                        width: 100%;
+                        height: 50%;
+                        position: relative;
+                        border-bottom: 2px dashed #f0f0f0;
+                        overflow: hidden;
                     }
                 }
 
@@ -577,33 +588,32 @@ export const renderInvoiceDetail = async ({ id }) => {
                         display: block !important;
                         position: relative !important;
                         width: 210mm !important;
-                        height: 297mm !important;
+                        height: 296mm !important; /* Safety buffer */
                         page-break-after: always !important;
+                        overflow: hidden !important;
                         margin: 0 !important;
                         padding: 0 !important;
-                    }
-
-                    body.printing-2up-portrait .invoice-page {
-                        width: 297mm !important; 
-                        height: 210mm !important; 
-                        position: absolute !important;
-                        left: 0 !important;
-                        transform: translate(210mm, 0) scale(0.7071) rotate(90deg) !important;
-                        transform-origin: top left !important;
-                        margin: 0 !important;
-                        padding: 8mm 12mm !important;
-                        page-break-after: auto !important;
-                    }
-
-                    /* First of pair (Top half of sheet) */
-                    body.printing-2up-portrait .invoice-page:nth-child(1) {
-                        top: 0 !important;
                         background: white !important;
                     }
 
-                    /* Second of pair (Bottom half of sheet) */
-                    body.printing-2up-portrait .invoice-page:nth-child(2) {
-                        top: 148.5mm !important;
+                    .sheet-half {
+                        width: 210mm !important;
+                        height: 148mm !important;
+                        position: relative !important;
+                        overflow: hidden !important;
+                    }
+
+                    body.printing-2up-portrait .invoice-page {
+                        width: 210mm !important;
+                        height: 297mm !important;
+                        position: absolute !important;
+                        top: 50% !important;
+                        left: 50% !important;
+                        transform: translate(-50%, -50%) rotate(90deg) scale(0.68) !important;
+                        transform-origin: center center !important;
+                        margin: 0 !important;
+                        padding: 10mm 15mm !important;
+                        page-break-after: auto !important;
                         background: white !important;
                     }
 
