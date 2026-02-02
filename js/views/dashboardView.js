@@ -57,7 +57,7 @@ export const renderDashboard = async () => {
         const alerts = dashboardController.getRiskAlerts(allOrders);
 
         container.innerHTML = `
-            <div class="dashboard-v2 animate-fade-in" style="display: flex; flex-direction: column; gap: 16px; padding-bottom: 40px;">
+            <div class="dashboard-v2 animate-fade-in" style="display: flex; flex-direction: column; gap: 16px; padding-bottom: 40px; width: 100%;">
                 
                 <!-- V5 DASHBOARD GRID -->
                 <div style="

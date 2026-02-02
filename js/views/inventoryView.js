@@ -22,12 +22,24 @@ export const renderInventory = async () => {
         return;
     }
 
+    if (data.length === 0) {
+        container.innerHTML = `
+            <div class="p-8 text-center" style="display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%;">
+                <div style="font-size: 48px;">📦</div>
+                <h3 style="font-weight: 700; color: var(--color-gray-800);">No Inventory Enabled</h3>
+                <p style="color: var(--color-gray-500); max-width: 400px;">Please go to Settings > Inventory and select which product categories you want to track production for.</p>
+                <button class="btn btn-primary" onclick="router.navigate(ROUTES.SETTINGS)">Go to Settings</button>
+            </div>
+        `;
+        return;
+    }
+
     renderMainView(container, today, data);
 };
 
 const renderMainView = (container, date, categories) => {
     container.innerHTML = `
-        <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-6);">
+        <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-6); width: 100%;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: var(--space-4);">
                     <div style="font-size: 14px; color: var(--color-gray-500);">

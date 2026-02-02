@@ -66,7 +66,7 @@ export const renderCustomerDetail = async ({ id }) => {
         </div>
     `;
 
-    container.innerHTML = `<div class="animate-fade-in">${headerHtml}</div>`;
+    container.innerHTML = `<div class="animate-fade-in" style="width: 100%;">${headerHtml}</div>`;
 
     // 2. Orders Table
     const table = new DataTable({

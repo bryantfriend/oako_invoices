@@ -232,6 +232,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     let currentLang = 'en';
     let currentPage = 1;
     let invoiceScale = 1.0;
+    let isLandscape2Up = false;
 
     const ITEMS_PER_PAGE_FIRST = 10;
     const ITEMS_PER_PAGE_OTHER = 15;
@@ -272,7 +273,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 <div class="invoice-page ${pageNum === currentPage ? 'active-page' : ''}" data-page="${pageNum}" style="
                     background: white; 
                     padding: 40px; 
-                    height: 297mm;
+                    height: 296mm;
                     width: 210mm;
                     margin: 0 auto;
                     color: #1e3318;
@@ -438,14 +439,18 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <span style="font-size: 12px; font-weight: 600;">Zoom:</span>
                     <input type="range" id="zoom-slider" min="0.4" max="1.5" step="0.05" value="${invoiceScale}" style="width: 100px;">
                     <span style="font-size: 11px; width: 35px;">${Math.round(invoiceScale * 100)}%</span>
-                    <button id="fit-page" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 10px;">Fit Height</button>
                 </div>
 
-                <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ Print PDF</button>
+                <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
+                    <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
+                    <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices side-by-side on Landscape A4">📄 Landscape 2-up</button>
+                </div>
             </div>
             
-            <div id="invoice-doc-container" class="animate-fade-in" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center;">
-                ${renderDocument(currentLang)}
+            <div id="invoice-doc-container" class="animate-fade-in ${isLandscape2Up ? 'landscape-2up' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
+                <div class="print-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+                    ${renderDocument(currentLang)}
+                </div>
             </div>
 
             <style>
@@ -461,6 +466,21 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }
 
                 @media print {
+                    /* State handling for different print modes */
+                    body.printing-landscape-2up {
+                        width: 297mm !important;
+                    }
+
+                    @page { 
+                        margin: 0; 
+                        size: A4 portrait; 
+                    }
+
+                    body.printing-landscape-2up @page {
+                        size: A4 landscape;
+                        margin: 0;
+                    }
+                    
                     /* Force background colors and images */
                     * { 
                         -webkit-print-color-adjust: exact !important; 
@@ -468,12 +488,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         color-adjust: exact !important;
                     }
                     
-                    @page { 
-                        margin: 0; 
-                        size: A4 portrait; 
-                    }
-                    
-                    /* Reset global layout constraints that might clip content */
+                    /* Reset global layout constraints */
                     html, body { 
                         margin: 0 !important; 
                         padding: 0 !important; 
@@ -483,7 +498,6 @@ export const renderInvoiceDetail = async ({ id }) => {
                     }
                     
                     #app, 
-                    #sidebar,
                     .main-content, 
                     .page-container,
                     #invoice-doc-container {
@@ -500,28 +514,26 @@ export const renderInvoiceDetail = async ({ id }) => {
                         box-shadow: none !important;
                     }
 
-                    /* Hide all UI elements except the invoice content */
-                    header, 
-                    nav, 
-                    #sidebar, 
-                    #top-bar, 
-                    .btn, 
-                    .loading-screen, 
-                    #toast-container, 
-                    #modal-container,
-                    div[style*="position: sticky"],
-                    div[style*="z-index: 100"],
-                    .period-btn,
-                    #zoom-slider,
-                    input[type="range"] { 
+                    /* Landscape 2-up logic */
+                    body.printing-landscape-2up .print-wrapper {
+                        display: flex !important;
+                        flex-direction: row !important;
+                        flex-wrap: wrap !important;
+                        align-items: flex-start !important;
+                        justify-content: flex-start !important;
+                        width: 297mm !important;
+                        transform: none !important;
+                    }
+
+                    /* Hide all UI elements */
+                    header, nav, #sidebar, #top-bar, .btn, .loading-screen, #toast-container, #modal-container,
+                    div[style*="position: sticky"], div[style*="z-index: 100"], .period-btn, #zoom-slider, input[type="range"] { 
                         display: none !important; 
                     }
                     
-                    ::-webkit-scrollbar { 
-                        display: none !important; 
-                    }
+                    ::-webkit-scrollbar { display: none !important; }
 
-                    /* Ensure all pages are visible and properly broken */
+                    /* Portrait standard page */
                     .invoice-page {
                         display: block !important;
                         visibility: visible !important;
@@ -530,10 +542,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                         top: 0 !important;
                         left: 0 !important;
                         margin: 0 auto !important;
-                        padding: 15mm !important; /* Standard print margin */
+                        padding: 10mm 15mm !important; 
                         width: 210mm !important;
-                        min-height: 297mm !important;
-                        height: auto !important;
+                        height: 296mm !important; /* Safety buffer to avoid blank 2nd page */
+                        min-height: 296mm !important;
                         box-sizing: border-box !important;
                         page-break-after: always !important;
                         page-break-inside: avoid !important;
@@ -542,11 +554,27 @@ export const renderInvoiceDetail = async ({ id }) => {
                         background: white !important;
                     }
 
+                    /* Change to Landscape 2-up if class present */
+                    body.printing-landscape-2up .invoice-page {
+                        width: 148.5mm !important; /* Half of A4 Landscape */
+                        height: 210mm !important;
+                        min-height: 210mm !important;
+                        padding: 8mm 10mm !important;
+                        transform: none !important;
+                        page-break-after: auto !important; /* Allow side-by-side */
+                        display: inline-block !important;
+                        float: left !important;
+                    }
+
+                    /* Force clear after every 2 pages in landscape */
+                    body.printing-landscape-2up .invoice-page:nth-child(2n) {
+                        page-break-after: always !important;
+                    }
+
                     .invoice-page:last-child {
                         page-break-after: auto !important;
                     }
 
-                    /* Fix text colors for print readability */
                     .invoice-page * {
                         overflow: visible !important;
                     }
@@ -562,20 +590,23 @@ export const renderInvoiceDetail = async ({ id }) => {
 
         document.getElementById('zoom-slider').addEventListener('input', (e) => {
             invoiceScale = parseFloat(e.target.value);
-            // Partial refresh - just update the transform on active page
             const activePage = container.querySelector('.invoice-page.active-page');
             if (activePage) activePage.style.transform = `scale(${invoiceScale})`;
             e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
         });
 
-        document.getElementById('fit-page').addEventListener('click', () => {
-            const containerHeight = document.getElementById('invoice-doc-container').clientHeight - 100;
-            const pageHeightInMm = 297;
-            const pxPerMm = 3.78; // Approx px per mm
-            const pageHeightInPx = pageHeightInMm * pxPerMm;
+        document.getElementById('btn-print-portrait').addEventListener('click', () => {
+            document.body.classList.remove('printing-landscape-2up');
+            window.print();
+        });
 
-            invoiceScale = Math.min(containerHeight / pageHeightInPx, 1.2);
-            refreshBody();
+        document.getElementById('btn-print-landscape').addEventListener('click', () => {
+            document.body.classList.add('printing-landscape-2up');
+            // We need to make sure all pages are visible for the print engine to pick them up
+            // although our @media print already does this with display: block !important
+            window.print();
+            // Clean up after print dialog closes (though it might not trigger until after)
+            setTimeout(() => document.body.classList.remove('printing-landscape-2up'), 1000);
         });
     };
 

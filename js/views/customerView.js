@@ -178,9 +178,9 @@ export const renderCustomers = async () => {
     };
 
     container.innerHTML = `
-        <div class="animate-fade-in">
-            <div id="header-wrapper"></div>
-            <div id="table-wrapper"></div>
+        <div class="animate-fade-in" style="width: 100%;">
+            <div id="header-wrapper" style="width: 100%;"></div>
+            <div id="table-wrapper" style="width: 100%;"></div>
         </div>
     `;
 
