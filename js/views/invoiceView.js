@@ -491,10 +491,11 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
-                        transform: translate(-50%, -50%) scale(0.6) rotate(90deg) !important;
+                        transform: translate(-50%, -50%) scale(0.65) rotate(90deg) !important;
                         opacity: 1;
                         border: 1px solid #ddd;
                         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                        padding: 30px !important;
                     }
                     
                     #invoice-doc-container.printing-2up-portrait .print-sheet {
@@ -589,21 +590,23 @@ export const renderInvoiceDetail = async ({ id }) => {
                         display: block !important;
                         position: relative !important;
                         width: 210mm !important;
-                        height: 296mm !important; /* Safety buffer */
+                        height: 295mm !important; /* Cap height to prevent 2nd page overflow */
                         page-break-after: always !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         background: white !important;
-                        font-size: 0 !important; /* Remove whitespace between blocks */
+                        font-size: 0 !important;
+                        overflow: hidden !important;
                     }
 
                     .sheet-half {
                         width: 210mm !important;
-                        height: 148mm !important;
+                        height: 147.5mm !important; /* Half of 295mm */
                         position: relative !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         display: block !important;
+                        overflow: hidden !important;
                     }
 
                     body.printing-2up-portrait .invoice-page {
@@ -612,10 +615,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
-                        transform: translate(-50%, -50%) rotate(90deg) scale(0.64) !important;
+                        transform: translate(-50%, -50%) rotate(90deg) scale(0.70) !important;
                         transform-origin: center center !important;
                         margin: 0 !important;
-                        padding: 10mm 15mm !important;
+                        padding: 25px 35px !important; /* Reduced padding for more content space */
                         page-break-after: auto !important;
                         background: white !important;
                         display: block !important;
