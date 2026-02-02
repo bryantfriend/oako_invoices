@@ -232,12 +232,12 @@ export const renderInvoiceDetail = async ({ id }) => {
     let currentLang = 'en';
     let currentPage = 1;
     let invoiceScale = 1.0;
-    let isLandscape2Up = false;
+    let is2UpMode = false;
 
     const ITEMS_PER_PAGE_FIRST = 10;
     const ITEMS_PER_PAGE_OTHER = 15;
 
-    const renderDocument = (lang) => {
+    const renderDocument = (lang, isCopy = false) => {
         const t = INVOICE_I18N[lang];
         const s = invoice.settings || liveSettings || {};
         if (!s.logoUrl && liveSettings?.logoUrl) s.logoUrl = liveSettings.logoUrl;
@@ -292,14 +292,14 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 40px;">
                         <div style="flex: 1;">
                              <div style="width: 180px; min-height: 40px;">
-                                ${s.logoUrl ? `<img src="${s.logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
+                                 ${s.logoUrl ? `<img src="${s.logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
                              </div>
                         </div>
                         <div style="text-align: right; flex: 1;">
                              <div style="display: inline-block; text-align: left;">
-                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t.invoice} #${invoice.invoiceNumber}</div>
+                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t.invoice} #${invoice.invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
                                  <div style="font-size: 11px; color: #5a7052;">${t.date}: ${formatDate(invoice.createdAt)}</div>
-                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t.phone}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isLandscape2Up ? '(Copy)' : ''}</div>`}
+                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t.phone}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
                              </div>
                         </div>
                     </div>
@@ -424,15 +424,18 @@ export const renderInvoiceDetail = async ({ id }) => {
         const totalPages = Math.ceil((items.length - ITEMS_PER_PAGE_FIRST) / ITEMS_PER_PAGE_OTHER) + 1;
         const realTotalPages = items.length <= ITEMS_PER_PAGE_FIRST ? 1 : totalPages;
 
-        const renderedPages = renderDocument(currentLang);
         let finalHtml = '';
 
-        if (isLandscape2Up) {
-            // Interleave pages: Page 1, Page 1, Page 2, Page 2...
-            renderedPages.forEach(page => {
-                finalHtml += page + page; // Duplicate
+        if (is2UpMode) {
+            // Render BOTH versions (Original and Copy) for interleaving
+            const originalPages = renderDocument(currentLang, false);
+            const copyPages = renderDocument(currentLang, true);
+
+            originalPages.forEach((page, i) => {
+                finalHtml += page + (copyPages[i] || '');
             });
         } else {
+            const renderedPages = renderDocument(currentLang);
             finalHtml = renderedPages.join('');
         }
 
@@ -455,11 +458,11 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
-                    <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices side-by-side on Landscape A4">📄 Landscape 2-up</button>
+                    <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices stacked on Portrait A4">📄 2-up Portrait</button>
                 </div>
             </div>
             
-            <div id="invoice-doc-container" class="animate-fade-in ${isLandscape2Up ? 'landscape-2up' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
+            <div id="invoice-doc-container" class="animate-fade-in ${is2UpMode ? 'printing-2up-portrait' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
                 <div class="print-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
                     ${finalHtml}
                 </div>
@@ -475,22 +478,21 @@ export const renderInvoiceDetail = async ({ id }) => {
                     .invoice-page.active-page {
                         display: block;
                     }
+
+                    /* Small screen preview adjustment */
+                    #invoice-doc-container.printing-2up-portrait .invoice-page {
+                        display: block !important;
+                        position: relative !important;
+                        top: 0 !important;
+                        margin-bottom: 20px;
+                        opacity: 0.8;
+                    }
                 }
 
                 @media print {
-                    /* State handling for different print modes */
-                    body.printing-landscape-2up {
-                        width: 297mm !important;
-                    }
-
                     @page { 
                         margin: 0; 
                         size: A4 portrait; 
-                    }
-
-                    body.printing-landscape-2up @page {
-                        size: A4 landscape;
-                        margin: 0;
                     }
                     
                     /* Force background colors and images */
@@ -526,17 +528,6 @@ export const renderInvoiceDetail = async ({ id }) => {
                         box-shadow: none !important;
                     }
 
-                    /* Landscape 2-up logic */
-                    body.printing-landscape-2up .print-wrapper {
-                        display: flex !important;
-                        flex-direction: row !important;
-                        flex-wrap: wrap !important;
-                        align-items: flex-start !important;
-                        justify-content: flex-start !important;
-                        width: 297mm !important;
-                        transform: none !important;
-                    }
-
                     /* Hide all UI elements */
                     header, nav, #sidebar, #top-bar, .btn, .loading-screen, #toast-container, #modal-container,
                     div[style*="position: sticky"], div[style*="z-index: 100"], .period-btn, #zoom-slider, input[type="range"] { 
@@ -556,7 +547,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         margin: 0 auto !important;
                         padding: 10mm 15mm !important; 
                         width: 210mm !important;
-                        height: 296mm !important; /* Safety buffer to avoid blank 2nd page */
+                        height: 296mm !important; 
                         min-height: 296mm !important;
                         box-sizing: border-box !important;
                         page-break-after: always !important;
@@ -566,20 +557,27 @@ export const renderInvoiceDetail = async ({ id }) => {
                         background: white !important;
                     }
 
-                    /* Change to Landscape 2-up if class present */
-                    body.printing-landscape-2up .invoice-page {
-                        width: 148.5mm !important; /* Half of A4 Landscape */
-                        height: 210mm !important;
-                        min-height: 210mm !important;
-                        padding: 8mm 10mm !important;
-                        transform: none !important;
-                        page-break-after: auto !important; /* Allow side-by-side */
-                        display: inline-block !important;
-                        float: left !important;
+                    /* Portrait 2-up (Sideways Stack) */
+                    body.printing-2up-portrait .invoice-page {
+                        width: 297mm !important; 
+                        height: 210mm !important; 
+                        position: absolute !important;
+                        left: 0 !important;
+                        transform: rotate(90deg) translate(0, -297mm) scale(0.7071) !important;
+                        transform-origin: bottom left !important;
+                        margin: 0 !important;
+                        padding: 8mm 12mm !important;
+                        page-break-after: auto !important;
                     }
 
-                    /* Force clear after every 2 pages in landscape */
-                    body.printing-landscape-2up .invoice-page:nth-child(2n) {
+                    /* First of pair (Top half of page) */
+                    body.printing-2up-portrait .invoice-page:nth-child(2n-1) {
+                        top: 0 !important;
+                    }
+
+                    /* Second of pair (Bottom half of page) */
+                    body.printing-2up-portrait .invoice-page:nth-child(2n) {
+                        top: 148.5mm !important;
                         page-break-after: always !important;
                     }
 
@@ -608,21 +606,21 @@ export const renderInvoiceDetail = async ({ id }) => {
         });
 
         document.getElementById('btn-print-portrait').addEventListener('click', () => {
-            document.body.classList.remove('printing-landscape-2up');
+            document.body.classList.remove('printing-2up-portrait');
             window.print();
         });
 
         document.getElementById('btn-print-landscape').addEventListener('click', () => {
-            isLandscape2Up = true;
+            is2UpMode = true;
             refreshBody(); // Render duplicate pages in DOM
 
-            document.body.classList.add('printing-landscape-2up');
+            document.body.classList.add('printing-2up-portrait');
             window.print();
 
             // Revert to normal view
             setTimeout(() => {
-                document.body.classList.remove('printing-landscape-2up');
-                isLandscape2Up = false;
+                document.body.classList.remove('printing-2up-portrait');
+                is2UpMode = false;
                 refreshBody();
             }, 1000);
         });
