@@ -299,7 +299,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                              <div style="display: inline-block; text-align: left;">
                              <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t.invoice} #${invoice.invoiceNumber}</div>
                                  <div style="font-size: 11px; color: #5a7052;">${t.date}: ${formatDate(invoice.createdAt)}</div>
-                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t.phone}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages}</div>`}
+                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t.phone}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isLandscape2Up ? '(Copy)' : ''}</div>`}
                              </div>
                         </div>
                     </div>
@@ -415,7 +415,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     </div>
                 </div>
             `;
-        }).join('');
+        });
     };
 
     const refreshBody = () => {
@@ -423,6 +423,18 @@ export const renderInvoiceDetail = async ({ id }) => {
         const items = invoice.items || [];
         const totalPages = Math.ceil((items.length - ITEMS_PER_PAGE_FIRST) / ITEMS_PER_PAGE_OTHER) + 1;
         const realTotalPages = items.length <= ITEMS_PER_PAGE_FIRST ? 1 : totalPages;
+
+        const renderedPages = renderDocument(currentLang);
+        let finalHtml = '';
+
+        if (isLandscape2Up) {
+            // Interleave pages: Page 1, Page 1, Page 2, Page 2...
+            renderedPages.forEach(page => {
+                finalHtml += page + page; // Duplicate
+            });
+        } else {
+            finalHtml = renderedPages.join('');
+        }
 
         container.innerHTML = `
             <div style="display: flex; gap: 15px; justify-content: center; padding: 15px; border-bottom: 1px solid var(--color-gray-200); background: #f7fafc; position: sticky; top: 0; z-index: 100;">
@@ -449,7 +461,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             
             <div id="invoice-doc-container" class="animate-fade-in ${isLandscape2Up ? 'landscape-2up' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
                 <div class="print-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
-                    ${renderDocument(currentLang)}
+                    ${finalHtml}
                 </div>
             </div>
 
@@ -601,12 +613,18 @@ export const renderInvoiceDetail = async ({ id }) => {
         });
 
         document.getElementById('btn-print-landscape').addEventListener('click', () => {
+            isLandscape2Up = true;
+            refreshBody(); // Render duplicate pages in DOM
+
             document.body.classList.add('printing-landscape-2up');
-            // We need to make sure all pages are visible for the print engine to pick them up
-            // although our @media print already does this with display: block !important
             window.print();
-            // Clean up after print dialog closes (though it might not trigger until after)
-            setTimeout(() => document.body.classList.remove('printing-landscape-2up'), 1000);
+
+            // Revert to normal view
+            setTimeout(() => {
+                document.body.classList.remove('printing-landscape-2up');
+                isLandscape2Up = false;
+                refreshBody();
+            }, 1000);
         });
     };
 
