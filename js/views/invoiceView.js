@@ -234,7 +234,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     let invoiceScale = 1.0;
     let is2UpMode = false;
 
-    const ITEMS_PER_PAGE_FIRST = 10;
+    const ITEMS_PER_PAGE_FIRST = 12;
     const ITEMS_PER_PAGE_OTHER = 15;
 
     const renderDocument = (lang, isCopy = false) => {
@@ -272,7 +272,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             return `
                 <div class="invoice-page ${pageNum === currentPage ? 'active-page' : ''}" data-page="${pageNum}" style="
                     background: white; 
-                    padding: 40px; 
+                    padding: 30px 40px; 
                     height: 296mm;
                     width: 210mm;
                     margin: 0 auto;
@@ -290,7 +290,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     ${pageNum === currentPage ? '' : 'position: absolute; top: -10000px;'}
                 ">
                     <!-- Header (Only on Page 1 or reduced on others) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 40px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 40px;">
                         <div style="flex: 1;">
                              <div style="width: 180px; min-height: 40px;">
                                  ${s.logoUrl ? `<img src="${s.logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
@@ -306,9 +306,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                     </div>
 
                     ${isFirst ? `
-                    <h2 style="font-size: 20px; font-weight: 500; color: #2e4a23; margin: 0 0 15px 0; border-bottom: 2px solid #ebf0e9; padding-bottom: 4px; letter-spacing: -0.5px;">${t.invoice}</h2>
+                    <h2 style="font-size: 20px; font-weight: 500; color: #2e4a23; margin: 0 0 10px 0; border-bottom: 2px solid #ebf0e9; padding-bottom: 4px; letter-spacing: -0.5px;">${t.invoice}</h2>
 
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 20px; gap: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 20px;">
                         <div style="flex: 1.2;">
                             <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; margin-bottom: 6px;">${t.billTo}</div>
                             <div style="font-size: 15px; font-weight: 700; color: #1e3318; margin-bottom: 4px;">${invoice.customerName}</div>
@@ -328,7 +328,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     ` : ''}
 
                     <!-- Product Table -->
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
                         <thead>
                             <tr style="background: #2e4a23; color: #fff;">
                                 <th style="padding: 8px 12px; text-align: left; border-radius: 4px 0 0 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${t.description}</th>
@@ -450,6 +450,12 @@ export const renderInvoiceDetail = async ({ id }) => {
                 <button id="lang-en" class="btn ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'} btn-sm">🇬🇧 EN</button>
                 <button id="lang-ru" class="btn ${currentLang === 'ru' ? 'btn-primary' : 'btn-secondary'} btn-sm">🇷🇺 RU</button>
                 
+                <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
+                    <span style="font-size: 12px; font-weight: 600;">Date:</span>
+                    <input type="date" id="invoice-date-picker" class="input" style="padding: 2px 8px; height: 32px; font-size: 13px; width: 140px;" 
+                           value="${(invoice.createdAt?.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt)).toISOString().split('T')[0]}">
+                </div>
+
                 <div style="flex: 1; display: flex; justify-content: center; align-items: center; gap: 15px;">
                     <button id="prev-page" class="btn btn-secondary btn-sm" ${currentPage === 1 ? 'disabled' : ''}>← Prev</button>
                     <span style="font-weight: 600; font-size: 14px; min-width: 80px; text-align: center;">Page ${currentPage} / ${realTotalPages}</span>
@@ -640,6 +646,19 @@ export const renderInvoiceDetail = async ({ id }) => {
         // Event Listeners
         document.getElementById('lang-en').addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
         document.getElementById('lang-ru').addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
+
+        document.getElementById('invoice-date-picker').addEventListener('change', async (e) => {
+            const newDate = e.target.value;
+            const success = await invoiceController.updateDate(id, newDate);
+            if (success) {
+                // Update local model
+                const d = new Date(newDate + 'T12:00:00');
+                invoice.createdAt = d;
+                invoice.dueDate = d;
+                refreshBody();
+            }
+        });
+
         document.getElementById('prev-page').addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
         document.getElementById('next-page').addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
 

@@ -28,5 +28,16 @@ export const invoiceController = {
             notificationService.error("Failed to generate invoice");
             return null;
         }
+    },
+
+    async updateDate(id, newDate) {
+        try {
+            await invoiceService.updateInvoiceDate(id, newDate);
+            notificationService.success("Invoice date updated");
+            return true;
+        } catch (error) {
+            notificationService.error("Failed to update invoice date");
+            return false;
+        }
     }
 };

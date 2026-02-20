@@ -9,7 +9,8 @@ import {
     where,
     orderBy,
     serverTimestamp,
-    deleteDoc
+    deleteDoc,
+    updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { orderService } from "./orderService.js";
 import { settingsService } from "./settingsService.js";
@@ -52,6 +53,17 @@ export const invoiceService = {
 
             const totalAmount = subtotal + taxAmount - discountAmount;
 
+            // Determine invoice date based on orderDate if exists, else serverTimestamp
+            let invoiceDate = serverTimestamp();
+            if (order.orderDate) {
+                // Convert YYYY-MM-DD string to Date object for persistent storage
+                const dateParts = order.orderDate.split('-');
+                if (dateParts.length === 3) {
+                    const d = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], 12, 0, 0);
+                    invoiceDate = d;
+                }
+            }
+
             const payload = {
                 orderId,
                 invoiceNumber,
@@ -66,8 +78,8 @@ export const invoiceService = {
                 discountAmount,
                 totalAmount, // grand total
                 settings, // Snapshot settings at time of creation
-                createdAt: serverTimestamp(),
-                dueDate: serverTimestamp() // could be config based
+                createdAt: invoiceDate,
+                dueDate: invoiceDate // could be config based
             };
 
             const docRef = await addDoc(collection(db, COLLECTION), payload);
@@ -97,6 +109,22 @@ export const invoiceService = {
             return true;
         } catch (error) {
             console.error("Error deleting invoice:", error);
+            throw error;
+        }
+    },
+
+    async updateInvoiceDate(id, newDate) {
+        try {
+            const docRef = doc(db, COLLECTION, id);
+            const dateObj = new Date(newDate + 'T12:00:00'); // Use noon to avoid TZ issues
+            await updateDoc(docRef, {
+                createdAt: dateObj,
+                dueDate: dateObj,
+                updatedAt: serverTimestamp()
+            });
+            return true;
+        } catch (error) {
+            console.error("Error updating invoice date:", error);
             throw error;
         }
     }

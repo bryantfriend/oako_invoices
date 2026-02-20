@@ -348,9 +348,11 @@ export const renderCreateOrder = async () => {
     // Initial Render Items & Default Date
     setTimeout(() => {
         renderItems();
-        // Set default date to Today
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('orderDate').value = today;
+        // Set default date to Tomorrow
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        document.getElementById('orderDate').value = tomorrowStr;
     }, 0);
 
     document.getElementById('add-item-btn').addEventListener('click', openProductPicker);

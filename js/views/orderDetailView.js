@@ -154,6 +154,10 @@ export const renderOrderDetail = async ({ id }) => {
                                 <span style="font-weight: 500;">${order.customerName}</span>
                             </div>
                             <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--color-gray-500);">Order Date</span>
+                                <span style="font-weight: 600; color: var(--color-primary-600);">${order.orderDate || formatDate(order.createdAt?.toDate?.() || order.createdAt)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
                                 <span style="color: var(--color-gray-500);">Created</span>
                                 <span>${formatDate(order.createdAt?.toDate?.() || order.createdAt)}</span>
                             </div>
