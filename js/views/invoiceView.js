@@ -234,8 +234,8 @@ export const renderInvoiceDetail = async ({ id }) => {
     let invoiceScale = 1.0;
     let is2UpMode = false;
 
-    const ITEMS_PER_PAGE_FIRST = 12;
-    const ITEMS_PER_PAGE_OTHER = 15;
+    const ITEMS_PER_PAGE_FIRST = 9;
+    const ITEMS_PER_PAGE_OTHER = 12;
 
     const renderDocument = (lang, isCopy = false) => {
         const t = INVOICE_I18N[lang];
@@ -368,7 +368,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                     ${isLast ? `
                     <!-- Summary Section -->
-                    <div style="display: flex; justify-content: flex-end; margin-bottom: 25px;">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 25px; page-break-inside: avoid;">
                         <div style="width: 280px;">
                             <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
                                 <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t.subtotal}</span>
@@ -387,7 +387,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     </div>
 
                     <!-- Footer -->
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; border-top: 1px solid #e2e8e0; padding-top: 15px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; border-top: 1px solid #e2e8e0; padding-top: 15px; margin-bottom: 20px; page-break-inside: avoid;">
                         <div style="flex: 1;">
                             <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; margin-bottom: 8px;">${t.notes}</div>
                             <div style="font-size: 11px; color: #5a7052; line-height: 1.5;">
