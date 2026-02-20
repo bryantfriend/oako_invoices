@@ -328,15 +328,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     ` : ''}
 
                     <!-- Product Table -->
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
-                        <thead>
-                            <tr style="background: #2e4a23; color: #fff;">
-                                <th style="padding: 8px 12px; text-align: left; border-radius: 4px 0 0 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${t.description}</th>
-                                <th style="padding: 8px 12px; text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${t.quantity}</th>
-                                <th style="padding: 8px 12px; text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${t.unitPrice}</th>
-                                <th style="padding: 8px 12px; text-align: right; border-radius: 0 4px 0 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">${t.total}</th>
-                            </tr>
-                        </thead>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
                         <tbody style="font-size: 12px;">
                             ${pageItems.map((item, idx) => {
                 // 1. Try Snapshot (Localized)
