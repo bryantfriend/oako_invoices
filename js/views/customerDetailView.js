@@ -81,17 +81,8 @@ export const renderCustomerDetail = async ({ id }) => {
         actions: (row) => `
              <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
                  <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.printOrder('${row.id}')" title="Print Invoice" style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; background: transparent; padding: 2px;">
-                    📄
+                    🖨️
                 </button>
-                ${!row.isPrinted ? `
-                    <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.togglePrinted('${row.id}', true)" style="background: #ef4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
-                        Needs to Print
-                    </button>
-                ` : `
-                    <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.togglePrinted('${row.id}', false)" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
-                        Printed Out
-                    </button>
-                `}
             </div>
         `
     });
