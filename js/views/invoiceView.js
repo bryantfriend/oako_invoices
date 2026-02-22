@@ -742,8 +742,12 @@ export const renderInvoiceDetail = async ({ id }) => {
                     type: 'primary',
                     onConfirm: async () => {
                         try {
-                            const { orderService } = await import("../services/orderService.js");
-                            await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+                            try {
+                                await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+                            } catch (updateErr) {
+                                console.warn("Could not sync print status to order (order may have been deleted):", updateErr);
+                                // We continue anyway so the user isn't stuck and the animation still plays
+                            }
 
                             // 1. Set global flag for the animation
                             window.highlightOrderId = invoice.orderId;
@@ -752,9 +756,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                             router.navigate(ROUTES.INVOICES);
 
                             const { notificationService } = await import("../core/notificationService.js");
-                            notificationService.success("Order marked as Printed");
+                            notificationService.success("Invoice Printed");
                         } catch (e) {
-                            console.error("Failed to mark as printed", e);
+                            console.error("Failed post-print routine", e);
                         }
                     }
                 });
