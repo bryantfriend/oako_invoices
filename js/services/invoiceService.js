@@ -53,16 +53,10 @@ export const invoiceService = {
 
             const totalAmount = subtotal + taxAmount - discountAmount;
 
-            // Determine invoice date based on orderDate if exists, else serverTimestamp
-            let invoiceDate = serverTimestamp();
-            if (order.orderDate) {
-                // Convert YYYY-MM-DD string to Date object for persistent storage
-                const dateParts = order.orderDate.split('-');
-                if (dateParts.length === 3) {
-                    const d = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], 12, 0, 0);
-                    invoiceDate = d;
-                }
-            }
+            // Determine invoice date based on serverTimestamp (i.e. today)
+            const d = new Date();
+            let invoiceDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0); // Noon today to avoid TZ math
+
 
             const payload = {
                 orderId,

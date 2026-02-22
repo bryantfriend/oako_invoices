@@ -17,7 +17,17 @@ export const renderInvoices = async () => {
     container.innerHTML = LoadingSkeleton();
 
     // Load Data
-    const allInvoices = await invoiceController.loadAllInvoices();
+    const [allInvoices, allOrders] = await Promise.all([
+        invoiceController.loadAllInvoices(),
+        import("../services/orderService.js").then(m => m.orderService.getAllOrders())
+    ]);
+
+    const orderMap = {};
+    allOrders.forEach(o => orderMap[o.id] = o);
+    allInvoices.forEach(inv => {
+        inv.isPrinted = orderMap[inv.orderId]?.isPrinted || false;
+    });
+
     const customers = [...new Set(allInvoices.map(i => i.customerName))].sort();
 
     let filtered = [...allInvoices];
@@ -69,7 +79,26 @@ export const renderInvoices = async () => {
         const table = new DataTable({
             columns: [
                 { key: 'invoiceNumber', label: 'Invoice #', render: (val) => `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${val}</span>` },
-                { key: 'customerName', label: 'Customer', render: (val) => `<span style="color: #1e3318; font-weight: 500;">${val}</span>` },
+                {
+                    key: 'customerName', label: 'Customer', render: (val, row) => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${val}</span>
+                        <div style="display: flex; gap: 4px; align-items: center;">
+                            <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.viewInvoice('${row.id}')" title="Print Invoice" style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; background: transparent; padding: 2px;">
+                                📄
+                            </button>
+                            ${!row.isPrinted ? `
+                                <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.toggleInvoicePrinted('${row.orderId}', true)" style="background: #ef4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
+                                    Needs to Print
+                                </button>
+                            ` : `
+                                <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.toggleInvoicePrinted('${row.orderId}', false)" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
+                                    Printed Out
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                ` },
                 { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate(val?.toDate ? val.toDate() : val)}</span>` },
                 { key: 'totalAmount', label: 'Amount', render: (val) => `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>` },
             ],
@@ -79,10 +108,10 @@ export const renderInvoices = async () => {
             onRowClick: true,
             actions: (row) => `
                 <div style="display: flex; gap: 4px;">
-                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.viewInvoice('${row.id}')">
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.viewInvoice('${row.id}')">
                         View
                     </button>
-                    <button class="btn btn-destructive btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.deleteInvoice('${row.id}')">
+                    <button class="btn btn-destructive btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteInvoice('${row.id}')">
                         🗑️
                     </button>
                 </div>
@@ -142,6 +171,14 @@ export const renderInvoices = async () => {
 
     // Global Action Helper
     window.viewInvoice = (id) => router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));
+
+    window.toggleInvoicePrinted = async (orderId, isPrintedState) => {
+        const { orderService } = await import("../services/orderService.js");
+        if (orderId) {
+            await orderService.updateOrder(orderId, { isPrinted: isPrintedState });
+            renderInvoices();
+        }
+    };
 
     window.deleteInvoice = (id) => {
         const { Modal } = import("../components/modal.js").then(({ Modal }) => {
@@ -207,9 +244,10 @@ export const renderInvoiceDetail = async ({ id }) => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const [invoice, allProducts] = await Promise.all([
+    const [invoice, allProducts, liveSettings] = await Promise.all([
         invoiceController.loadInvoice(id),
-        productService.getAllProducts()
+        productService.getAllProducts(),
+        import("../services/settingsService.js").then(m => m.settingsService.getInvoiceSettings())
     ]);
 
     if (!invoice) {
@@ -222,25 +260,24 @@ export const renderInvoiceDetail = async ({ id }) => {
         productMap[p.id] = p;
     });
 
-    // FALLBACK: If invoice has no snapshotted logo, get current global logo
-    let liveSettings = null;
-    if (!invoice.settings?.logoUrl) {
-        const { settingsService } = await import("../services/settingsService.js");
-        liveSettings = await settingsService.getInvoiceSettings();
-    }
+    // (liveSettings fetched unconditionally to always overwrite visibility flags)
 
-    let currentLang = 'en';
+    let currentLang = 'ru';
     let currentPage = 1;
     let invoiceScale = 1.0;
     let is2UpMode = false;
 
-    const ITEMS_PER_PAGE_FIRST = 9;
-    const ITEMS_PER_PAGE_OTHER = 12;
+    const ITEMS_PER_PAGE_FIRST = 10;
+    const ITEMS_PER_PAGE_OTHER = 13;
 
     const renderDocument = (lang, isCopy = false) => {
         const t = INVOICE_I18N[lang];
-        const s = invoice.settings || liveSettings || {};
+        // Merge liveSettings OVER invoice.settings so toggles apply retroactively to old invoices
+        const s = { ...(invoice.settings || {}), ...(liveSettings || {}) };
         if (!s.logoUrl && liveSettings?.logoUrl) s.logoUrl = liveSettings.logoUrl;
+
+        const notesText = lang === 'en' ? (s.notesEn || t.paymentTerms) : (s.notesRu || t.paymentTerms);
+        const bannerFootText = s.footerText || t.thanks;
 
         const items = invoice.items || [];
         const pages = [];
@@ -345,13 +382,13 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                 return `
                                     <tr style="background: ${idx % 2 === 0 ? '#fafaf8' : '#fff'}; border-bottom: 1px solid #e2e8e0;">
-                                        <td style="padding: 8px 12px;">
+                                        <td style="padding: 6px 10px;">
                                         <div style="font-weight: 600; color: #1e3318;">${itemName}</div>
                                             ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${item.weight}</div>` : ''}
                                         </td>
-                                        <td style="padding: 8px 12px; text-align: center; color: #1e3318;">${item.quantity}</td>
-                                        <td style="padding: 8px 12px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
-                                        <td style="padding: 8px 12px; text-align: right; font-weight: 700; color: #1e3318;">${formatCurrency(item.price * item.quantity)}</td>
+                                        <td style="padding: 6px 10px; text-align: center; color: #1e3318;">${item.quantity}</td>
+                                        <td style="padding: 6px 10px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
+                                        <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: #1e3318;">${formatCurrency(item.price * item.quantity)}</td>
                                     </tr>
                                 `;
             }).join('')}
@@ -381,14 +418,17 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <!-- Footer -->
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; border-top: 1px solid #e2e8e0; padding-top: 15px; margin-bottom: 20px; page-break-inside: avoid;">
                         <div style="flex: 1;">
+                            ${(s.showNotes !== false) ? `
                             <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; margin-bottom: 8px;">${t.notes}</div>
                             <div style="font-size: 11px; color: #5a7052; line-height: 1.5;">
-                                <div style="margin-bottom: 2px;">${t.paymentTerms}</div>
+                                <div style="margin-bottom: 2px;">${notesText}</div>
                                 <div style="font-weight: 500; font-family: monospace; background: #fafbf9; padding: 12px; border: 1px solid #ebf0e9; border-radius: 6px; font-size: 10px; line-height: 1.6;">
                                     ${(s.bankInfo || t.bankInfo).split('\n').map(line => `<div style="margin-bottom: 2px;">• ${line.trim()}</div>`).join('')}
                                 </div>
                             </div>
+                            ` : ''}
                         </div>
+                        ${(s.showQrCode !== false) ? `
                         <div style="text-align: center;">
                             <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
                                 <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
@@ -399,13 +439,16 @@ export const renderInvoiceDetail = async ({ id }) => {
                             </div>
                             <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Scan to pay</div>
                         </div>
+                        ` : ''}
                     </div>
                     ` : ''}
 
                     <!-- Banner Foot -->
+                    ${(s.showFooter !== false) ? `
                     <div style="position: absolute; bottom: 20px; left: 0; right: 0; padding: 12px; text-align: center; color: #5a7052; font-size: 10px;">
-                        — ${s.footerText || t.thanks} —
+                        — ${bannerFootText} —
                     </div>
+                    ` : ''}
                 </div>
             `;
         });
@@ -489,7 +532,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
-                        transform: translate(-50%, -50%) scale(0.65) rotate(90deg) !important;
+                        transform: translate(-50%, -50%) rotate(-90deg) scale(0.68) !important;
                         opacity: 1;
                         border: 1px solid #ddd;
                         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
@@ -613,7 +656,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
-                        transform: translate(-50%, -50%) rotate(90deg) scale(0.70) !important;
+                        transform: translate(-50%, -50%) rotate(-90deg) scale(0.68) !important;
                         transform-origin: center center !important;
                         margin: 0 !important;
                         padding: 25px 35px !important; /* Reduced padding for more content space */

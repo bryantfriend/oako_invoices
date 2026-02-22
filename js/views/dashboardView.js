@@ -385,21 +385,43 @@ export const renderDashboard = async () => {
                 {
                     key: 'status', label: 'Cat', align: 'center', render: (val, row) => {
                         const cat = (row.customerCategory || 'C');
-                        return `<div style="width: 24px; height: 24px; border-radius: 4px; background: #f0f9ff; color: #0369a1; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px;">${cat}</div>`;
+                        const catColor = row.isPrinted ? '#10b981' : '#ef4444';
+                        const catBg = row.isPrinted ? '#d1fae5' : '#fee2e2';
+                        return `<div style="width: 24px; height: 24px; border-radius: 4px; background: ${catBg}; color: ${catColor}; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px;">${cat}</div>`;
                     }
                 },
-                { key: 'id', label: 'Order ID', render: (val) => `<span style="color: #64748b; font-size: 11px;">#${val.slice(-6)}</span>` },
-                { key: 'customerName', label: 'Customer', render: (val) => `<span style="font-weight: 700; color: #1e293b;">${val}</span>` },
-                { key: 'orderDate', label: 'Date', render: (val) => formatDate(val) },
-                { key: 'totalAmount', label: 'Total', align: 'right', render: (val) => `<span style="font-weight: 700;">${formatCurrency(val)}</span>` },
+                { key: 'id', label: 'Order ID', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 11px;">#${val.slice(-6)}</span>` },
+                {
+                    key: 'customerName', label: 'Customer', render: (val, row) => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${val}</span>
+                        <div style="display: flex; gap: 4px; align-items: center;">
+                            <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.printOrder('${row.id}')" title="Print Invoice" style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; background: transparent; padding: 2px;">
+                                📄
+                            </button>
+                            ${!row.isPrinted ? `
+                                <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.togglePrinted('${row.id}', true)" style="background: #ef4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
+                                    Needs to Print
+                                </button>
+                            ` : `
+                                <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.togglePrinted('${row.id}', false)" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
+                                    Printed Out
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                ` },
+                { key: 'orderDate', label: 'Date', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
+                { key: 'totalAmount', label: 'Total', align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` },
                 {
                     key: 'agingDays',
                     label: 'Due',
                     align: 'right',
                     render: (val, row) => {
-                        if (row.status === 'paid' || row.status === 'draft') return '-';
-                        if (val === 0) return '<span style="color: #059669; font-weight: 700; font-size: 11px;">TODAY</span>';
-                        return `<span style="font-weight: 800; color: #b91c1c;">${val}d Overdue</span>`;
+                        const textColor = row.isPrinted ? '#10b981' : '#ef4444';
+                        if (row.status === 'paid' || row.status === 'draft') return `<span style="color: ${textColor};">-</span>`;
+                        if (val === 0) return `<span style="color: ${textColor}; font-weight: 700; font-size: 11px;">TODAY</span>`;
+                        return `<span style="font-weight: 800; color: ${textColor};">${val}d Overdue</span>`;
                     }
                 },
                 { key: 'status', label: 'Status', align: 'center', render: (val) => createStatusBadge(val) }
@@ -411,22 +433,19 @@ export const renderDashboard = async () => {
             actions: (row) => `
                 <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
                     ${row.status === 'confirmed' ? `
-                        <button class="btn-icon" onclick="event.stopPropagation(); window.markAsFulfilled('${row.id}')" title="Mark Fulfilled" style="color: #6366f1; background: #eef2ff;">
+                        <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'fulfill'); window.markAsFulfilled('${row.id}')" title="Mark Fulfilled" style="color: #6366f1; background: #eef2ff;">
                             📦
                         </button>
                     ` : ''}
                     ${['confirmed', 'fulfilled'].includes(row.status) ? `
-                        <button class="btn-icon" onclick="event.stopPropagation(); window.markAsPaid('${row.id}')" title="Mark Paid" style="color: #10b981; background: #ecfdf5;">
+                        <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'pay'); window.markAsPaid('${row.id}')" title="Mark Paid" style="color: #10b981; background: #ecfdf5;">
                             ✓
                         </button>
                     ` : ''}
-                    <button class="btn-icon" onclick="event.stopPropagation(); window.printOrder('${row.id}')" title="Print Invoice" style="color: #6366f1; background: #eef2ff;">
-                        📄
-                    </button>
                      <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">
                          <span style="opacity: 0.5; font-size: 12px;">👁️</span>
                     </button>
-                    ${row.status === 'draft' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.deleteOrder('${row.id}')"><span style="opacity: 0.5;">🗑️</span></button>` : ''}
+                    ${row.status === 'draft' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteOrder('${row.id}')"><span style="opacity: 0.5;">🗑️</span></button>` : ''}
                 </div>
             `
         });
@@ -519,6 +538,12 @@ export const renderDashboard = async () => {
             } catch (e) {
                 console.error("Error navigating to invoice:", e);
             }
+        };
+
+        window.togglePrinted = async (id, isPrintedState) => {
+            const { orderService } = await import("../services/orderService.js");
+            await orderService.updateOrder(id, { isPrinted: isPrintedState });
+            renderDashboard();
         };
 
         window.deleteOrder = async (id) => {

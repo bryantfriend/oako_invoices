@@ -90,3 +90,34 @@
     width: 100%;
     border-radius: var(--radius-lg);
 }
+
+/* Interactive SVG Click Animations */
+.click-anim-svg-container {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    animation: popAndFloat 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.15));
+}
+
+@keyframes popAndFloat {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.2) rotate(-20deg);
+    }
+
+    30% {
+        opacity: 1;
+        transform: translate(-50%, -100%) scale(1.3) rotate(10deg);
+    }
+
+    50% {
+        transform: translate(-50%, -120%) scale(1) rotate(0deg);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -200%) scale(1.1);
+    }
+}

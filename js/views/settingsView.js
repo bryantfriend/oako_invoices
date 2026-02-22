@@ -80,8 +80,30 @@ export const renderSettings = async () => {
                             <input type="text" name="qrText" value="${settings.qrText || ''}" placeholder="Scan to pay link...">
                             <small style="color: var(--color-gray-500);">This will be encoded into the QR code on the invoice.</small>
                         </div>
+                        <div style="display: flex; gap: 16px; margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                                <input type="checkbox" name="showQrCode" value="true" ${settings.showQrCode !== false ? 'checked' : ''}>
+                                Show QR Code
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                                <input type="checkbox" name="showNotes" value="true" ${settings.showNotes !== false ? 'checked' : ''}>
+                                Show Notes
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                                <input type="checkbox" name="showFooter" value="true" ${settings.showFooter !== false ? 'checked' : ''}>
+                                Show Banner Footer
+                            </label>
+                        </div>
+                        <div class="input-group" style="margin-bottom: 12px;">
+                            <label>Invoice Notes (English)</label>
+                            <textarea name="notesEn" rows="2" placeholder="Payment due within 30 days...">${settings.notesEn || 'Payment due within 30 days. Please transfer to account:'}</textarea>
+                        </div>
+                        <div class="input-group" style="margin-bottom: 12px;">
+                            <label>Invoice Notes (Russian)</label>
+                            <textarea name="notesRu" rows="2" placeholder="Оплата в течение 30 дней...">${settings.notesRu || 'Оплата в течение 30 дней. Перевод на счет:'}</textarea>
+                        </div>
                         <div class="input-group">
-                            <label>Invoice Footer Text</label>
+                            <label>Invoice Banner Footer Text</label>
                             <input type="text" name="footerText" value="${settings.footerText || 'Thanks for supporting sustainable agriculture!'}" placeholder="Message at the bottom...">
                         </div>
                     `
@@ -136,6 +158,9 @@ export const renderSettings = async () => {
             const formData = new FormData(document.getElementById('settings-form'));
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+            data.showQrCode = formData.get('showQrCode') === 'true';
+            data.showNotes = formData.get('showNotes') === 'true';
+            data.showFooter = formData.get('showFooter') === 'true';
 
             await settingsController.updateSettings(data);
             saveStatus.textContent = "Logo saved!";
@@ -155,6 +180,9 @@ export const renderSettings = async () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+        data.showQrCode = formData.get('showQrCode') === 'true';
+        data.showNotes = formData.get('showNotes') === 'true';
+        data.showFooter = formData.get('showFooter') === 'true';
 
         // Extract inventory categories
         const enabledCategories = formData.getAll('inventory_cat');

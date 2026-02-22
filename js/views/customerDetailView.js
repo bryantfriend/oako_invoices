@@ -71,18 +71,27 @@ export const renderCustomerDetail = async ({ id }) => {
     // 2. Orders Table
     const table = new DataTable({
         columns: [
-            { key: 'id', label: 'Order ID', render: (val) => `<span style="color: #64748b; font-size: 12px;">#${val.slice(-6)}</span>` },
-            { key: 'createdAt', label: 'Date', render: (val) => formatDate(val) },
+            { key: 'id', label: 'Order ID', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 12px;">#${val.slice(-6)}</span>` },
+            { key: 'createdAt', label: 'Date', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
             { key: 'status', label: 'Status', align: 'center', render: (val) => createStatusBadge(val) },
-            { key: 'totalAmount', label: 'Amount', align: 'right', render: (val) => `<span style="font-weight: 700;">${formatCurrency(val)}</span>` }
+            { key: 'totalAmount', label: 'Amount', align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` }
         ],
         data: orders,
         onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.id)),
         actions: (row) => `
-             <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                 <button class="btn-icon" onclick="event.stopPropagation(); window.printOrder('${row.id}')" title="Invoice" style="color: #6366f1; background: #eef2ff;">
-                    IP
+             <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                 <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.printOrder('${row.id}')" title="Print Invoice" style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; background: transparent; padding: 2px;">
+                    📄
                 </button>
+                ${!row.isPrinted ? `
+                    <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.togglePrinted('${row.id}', true)" style="background: #ef4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
+                        Needs to Print
+                    </button>
+                ` : `
+                    <button onclick="event.stopPropagation(); window.playClickAnimation(event, 'success'); window.togglePrinted('${row.id}', false)" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer; min-width: 90px;">
+                        Printed Out
+                    </button>
+                `}
             </div>
         `
     });
@@ -113,6 +122,12 @@ export const renderCustomerDetail = async ({ id }) => {
         } catch (e) {
             console.error("Error navigating to invoice:", e);
         }
+    };
+
+    window.togglePrinted = async (id, isPrintedState) => {
+        const { orderService } = await import("../services/orderService.js");
+        await orderService.updateOrder(id, { isPrinted: isPrintedState });
+        renderCustomerDetail({ id: customer.id });
     };
 
     // Import edit logic if needed, or rely on global scope if customerView loaded it (safest to re-import or use shared)
