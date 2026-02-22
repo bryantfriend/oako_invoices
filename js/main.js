@@ -39,11 +39,15 @@ async function initApp() {
             try {
                 const { productService } = await import("./services/productService.js");
                 const { customerController } = await import("./controllers/customerController.js");
+                const { orderService } = await import("./services/orderService.js");
+                const { invoiceService } = await import("./services/invoiceService.js");
 
                 // Fire and forget to populate IndexedDB cache
                 productService.getAllProducts();
                 productService.getAllCategories();
                 customerController.loadAllCustomers();
+                orderService.getAllOrders();
+                invoiceService.getAllInvoices();
             } catch (e) {
                 console.warn("Failed to preload offline data:", e);
             }

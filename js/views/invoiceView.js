@@ -143,6 +143,29 @@ export const renderInvoices = async () => {
             });
         });
 
+        document.getElementById('invoices-table').innerHTML = ''; // Clear skeleton
+        document.getElementById('invoices-table').appendChild(table.render());
+
+        // Process Post-Print Highlight Animation if redirected
+        if (window.highlightOrderId) {
+            setTimeout(() => {
+                // Find row by data-id (added to dataTable component rendering logic implicitly via row content OR we can just select by text if needed, 
+                // but let's look for the row containing the order ID in the toggle/view buttons)
+                const buttons = document.querySelectorAll('button[onclick*="' + window.highlightOrderId + '"]');
+                if (buttons.length > 0) {
+                    const row = buttons[0].closest('tr');
+                    if (row) {
+                        row.classList.add('row-success-anim');
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Remove class after animation finishes so it can re-trigger if needed
+                        setTimeout(() => row.classList.remove('row-success-anim'), 1500);
+                    }
+                }
+                // Clear the flag so it doesn't fire again on normal navigation
+                delete window.highlightOrderId;
+            }, 100); // small delay to ensure DOM paint attached
+        }
+
         // Event Listeners for filters
         document.getElementById('filter-customer').addEventListener('change', (e) => {
             filters.customer = e.target.value;
@@ -722,6 +745,13 @@ export const renderInvoiceDetail = async ({ id }) => {
                         try {
                             const { orderService } = await import("../services/orderService.js");
                             await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+
+                            // 1. Set global flag for the animation
+                            window.highlightOrderId = invoice.orderId;
+
+                            // 2. Redirect to Invoices collection gracefully
+                            router.navigate(ROUTES.INVOICES);
+
                             const { notificationService } = await import("../core/notificationService.js");
                             notificationService.success("Order marked as Printed");
                         } catch (e) {

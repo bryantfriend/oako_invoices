@@ -121,3 +121,27 @@
         transform: translate(-50%, -200%) scale(1.1);
     }
 }
+
+/* Success Highlight Animation for Table Rows */
+@keyframes highlightSuccessRow {
+    0% {
+        background-color: transparent;
+        transform: scale(1);
+    }
+
+    15% {
+        background-color: rgba(16, 185, 129, 0.2);
+        /* Emerald 500 at 20% */
+        transform: scale(1.02);
+    }
+
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+    }
+}
+
+.row-success-anim {
+    animation: highlightSuccessRow 1.5s ease-out forwards;
+    border-radius: var(--radius-md);
+}
