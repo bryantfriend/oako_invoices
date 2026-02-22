@@ -122,26 +122,58 @@
     }
 }
 
-/* Success Highlight Animation for Table Rows */
+/* Epic Success Highlight Animation for Table Rows */
 @keyframes highlightSuccessRow {
     0% {
         background-color: transparent;
-        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+        /* Red transparent */
+        transform: scale(1) translateY(0);
+        z-index: 10;
+        position: relative;
     }
 
     15% {
-        background-color: rgba(16, 185, 129, 0.2);
-        /* Emerald 500 at 20% */
-        transform: scale(1.02);
+        background-color: rgba(239, 68, 68, 0.15);
+        /* Red tinted bg */
+        box-shadow: 0 0 0 4px rgba(239, 68, 68, 1), 0 10px 25px rgba(239, 68, 68, 0.6);
+        /* Thick Red outline and glow */
+        transform: scale(1.03) translateY(-4px);
+        /* Pop out */
+    }
+
+    40% {
+        background-color: rgba(245, 158, 11, 0.15);
+        /* Transition through Amber */
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 1), 0 10px 25px rgba(245, 158, 11, 0.6);
+        transform: scale(1.04) translateY(-6px);
+    }
+
+    65% {
+        background-color: rgba(16, 185, 129, 0.25);
+        /* Green tinted bg */
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 1), 0 15px 35px rgba(16, 185, 129, 0.8);
+        /* Thick Green outline and massive glow */
+        transform: scale(1.04) translateY(-6px);
+    }
+
+    85% {
+        background-color: rgba(16, 185, 129, 0.1);
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.5), 0 5px 15px rgba(16, 185, 129, 0.3);
+        transform: scale(1.01) translateY(-1px);
     }
 
     100% {
         background-color: transparent;
-        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+        transform: scale(1) translateY(0);
+        z-index: auto;
+        position: static;
     }
 }
 
 .row-success-anim {
-    animation: highlightSuccessRow 1.5s ease-out forwards;
+    animation: highlightSuccessRow 3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
     border-radius: var(--radius-md);
+    transition: all 0.3s ease;
 }

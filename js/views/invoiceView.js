@@ -143,8 +143,7 @@ export const renderInvoices = async () => {
             });
         });
 
-        document.getElementById('invoices-table').innerHTML = ''; // Clear skeleton
-        document.getElementById('invoices-table').appendChild(table.render());
+
 
         // Process Post-Print Highlight Animation if redirected
         if (window.highlightOrderId) {
