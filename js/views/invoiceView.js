@@ -520,18 +520,18 @@ export const renderInvoiceDetail = async ({ id }) => {
                     /* Small screen preview adjustment */
                     #invoice-doc-container.printing-2up-portrait .invoice-page {
                         display: block !important;
-                        position: absolute !important;
-                        top: 50% !important;
-                        left: 50% !important;
+                        position: static !important;
                         box-sizing: border-box !important;
                         width: 210mm !important;
                         height: 297mm !important;
-                        transform: translate(-50%, -50%) rotate(-90deg) scale(0.68) !important;
+                        min-height: 297mm !important;
+                        max-height: 297mm !important;
+                        margin: -74.25mm 0 0 0 !important;
+                        transform-origin: center center !important;
+                        transform: rotate(-90deg) scale(0.68) !important;
                         opacity: 1;
-                        border: 1px solid #ddd;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                         padding: 15mm 20mm !important;
-                        margin: 0 !important;
+                        overflow: hidden !important;
                     }
                     
                     #invoice-doc-container.printing-2up-portrait .print-sheet {
@@ -652,22 +652,23 @@ export const renderInvoiceDetail = async ({ id }) => {
                     }
 
                     body.printing-2up-portrait .invoice-page {
+                        display: block !important;
+                        position: static !important;
+                        box-sizing: border-box !important;
                         width: 210mm !important;
                         height: 297mm !important;
-                        position: absolute !important;
-                        top: 50% !important;
-                        left: 50% !important;
-                        box-sizing: border-box !important;
-                        transform: translate(-50%, -50%) rotate(-90deg) scale(0.68) !important;
+                        min-height: 297mm !important;
+                        max-height: 297mm !important;
+                        margin: -74.25mm 0 0 0 !important;
                         transform-origin: center center !important;
-                        margin: 0 !important;
+                        transform: rotate(-90deg) scale(0.68) !important;
                         padding: 15mm 20mm !important;
                         page-break-after: auto !important;
                         background: white !important;
-                        display: block !important;
                         visibility: visible !important;
                         box-shadow: none !important;
                         border: none !important;
+                        overflow: hidden !important;
                     }
 
                     .invoice-page:last-child {
