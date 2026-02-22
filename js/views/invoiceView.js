@@ -40,9 +40,18 @@ export const renderInvoices = async () => {
 
             const date = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
             const now = new Date();
-            const matchesPeriod = filters.period === 'all' || (
-                date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
-            );
+            let matchesPeriod = filters.period === 'all';
+            if (filters.period === 'today') {
+                matchesPeriod = date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+            } else if (filters.period === 'week') {
+                const startOfWeek = new Date(now);
+                // Adjust to Monday as first day of week (common in Kyrgyzstan/Russia)
+                startOfWeek.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+                startOfWeek.setHours(0, 0, 0, 0);
+                matchesPeriod = date >= startOfWeek;
+            } else if (filters.period === 'month') {
+                matchesPeriod = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+            }
 
             return matchesCustomer && matchesPeriod;
         });
@@ -122,6 +131,8 @@ export const renderInvoices = async () => {
                         </div>
                         <div style="height: 20px; width: 1px; background: var(--color-gray-200);"></div>
                         <div style="display: flex; gap: 4px; background: var(--color-gray-50); padding: 4px; border-radius: 8px;">
+                            <button class="period-btn btn btn-sm ${filters.period === 'today' ? 'btn-primary' : 'btn-ghost'}" data-period="today" style="font-size: 11px; padding: 4px 10px;">Today</button>
+                            <button class="period-btn btn btn-sm ${filters.period === 'week' ? 'btn-primary' : 'btn-ghost'}" data-period="week" style="font-size: 11px; padding: 4px 10px;">This Week</button>
                             <button class="period-btn btn btn-sm ${filters.period === 'month' ? 'btn-primary' : 'btn-ghost'}" data-period="month" style="font-size: 11px; padding: 4px 10px;">This Month</button>
                             <button class="period-btn btn btn-sm ${filters.period === 'all' ? 'btn-primary' : 'btn-ghost'}" data-period="all" style="font-size: 11px; padding: 4px 10px;">All Time</button>
                         </div>
