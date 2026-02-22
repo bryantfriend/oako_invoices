@@ -532,11 +532,15 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
+                        box-sizing: border-box !important;
+                        width: 210mm !important;
+                        height: 297mm !important;
                         transform: translate(-50%, -50%) rotate(-90deg) scale(0.68) !important;
                         opacity: 1;
                         border: 1px solid #ddd;
                         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                        padding: 30px !important;
+                        padding: 15mm 20mm !important;
+                        margin: 0 !important;
                     }
                     
                     #invoice-doc-container.printing-2up-portrait .print-sheet {
@@ -544,17 +548,20 @@ export const renderInvoiceDetail = async ({ id }) => {
                         width: 210mm;
                         height: 297mm;
                         background: white;
-                        margin-bottom: 40px;
+                        margin: 0 auto 40px auto;
                         box-shadow: 0 10px 30px rgba(0,0,0,0.1);
                         position: relative;
                         font-size: 0;
+                        box-sizing: border-box;
                     }
 
                     #invoice-doc-container.printing-2up-portrait .sheet-half {
-                        width: 100%;
-                        height: 50%;
+                        width: 210mm;
+                        height: 148.5mm;
                         position: relative;
-                        border-bottom: 1px dashed #f0f0f0;
+                        border-bottom: 1px dashed #e2e8e0;
+                        box-sizing: border-box;
+                        overflow: hidden;
                     }
                 }
 
@@ -631,23 +638,26 @@ export const renderInvoiceDetail = async ({ id }) => {
                         display: block !important;
                         position: relative !important;
                         width: 210mm !important;
-                        height: 295mm !important; /* Cap height to prevent 2nd page overflow */
+                        height: 297mm !important; 
                         page-break-after: always !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         background: white !important;
                         font-size: 0 !important;
                         overflow: hidden !important;
+                        box-sizing: border-box !important;
                     }
 
                     .sheet-half {
                         width: 210mm !important;
-                        height: 147.5mm !important; /* Half of 295mm */
+                        height: 148.5mm !important;
                         position: relative !important;
                         margin: 0 !important;
                         padding: 0 !important;
                         display: block !important;
                         overflow: hidden !important;
+                        box-sizing: border-box !important;
+                        border-bottom: 1px dashed #f0f0f0 !important;
                     }
 
                     body.printing-2up-portrait .invoice-page {
@@ -656,15 +666,17 @@ export const renderInvoiceDetail = async ({ id }) => {
                         position: absolute !important;
                         top: 50% !important;
                         left: 50% !important;
+                        box-sizing: border-box !important;
                         transform: translate(-50%, -50%) rotate(-90deg) scale(0.68) !important;
                         transform-origin: center center !important;
                         margin: 0 !important;
-                        padding: 25px 35px !important; /* Reduced padding for more content space */
+                        padding: 15mm 20mm !important;
                         page-break-after: auto !important;
                         background: white !important;
                         display: block !important;
                         visibility: visible !important;
-                        box-sizing: border-box !important;
+                        box-shadow: none !important;
+                        border: none !important;
                     }
 
                     .invoice-page:last-child {
@@ -704,9 +716,35 @@ export const renderInvoiceDetail = async ({ id }) => {
             e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
         });
 
+        const handlePrintSuccess = async () => {
+            // Slight delay so the UI can settle back to normal before the modal pops
+            setTimeout(async () => {
+                const { Modal } = await import("../components/modal.js");
+                const modal = new Modal({
+                    title: 'Print Successful?',
+                    content: `<p style="font-size: 14px; margin-bottom: 20px; color: var(--color-gray-700);">Would you like to mark this invoice's order as <strong>Printed</strong>?</p>`,
+                    confirmText: 'Yes, Mark as Printed',
+                    cancelText: 'Skip',
+                    type: 'primary',
+                    onConfirm: async () => {
+                        try {
+                            const { orderService } = await import("../services/orderService.js");
+                            await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+                            const { notificationService } = await import("../core/notificationService.js");
+                            notificationService.success("Order marked as Printed");
+                        } catch (e) {
+                            console.error("Failed to mark as printed", e);
+                        }
+                    }
+                });
+                modal.open();
+            }, 500);
+        };
+
         document.getElementById('btn-print-portrait').addEventListener('click', () => {
             document.body.classList.remove('printing-2up-portrait');
             window.print();
+            handlePrintSuccess();
         });
 
         document.getElementById('btn-print-landscape').addEventListener('click', () => {
@@ -721,6 +759,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 document.body.classList.remove('printing-2up-portrait');
                 is2UpMode = false;
                 refreshBody();
+                handlePrintSuccess();
             }, 1000);
         });
     };
