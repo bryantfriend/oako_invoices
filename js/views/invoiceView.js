@@ -754,6 +754,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     onConfirm: async () => {
                         try {
                             try {
+                                const { orderService } = await import("../services/orderService.js");
                                 await orderService.updateOrder(invoice.orderId, { isPrinted: true });
                             } catch (updateErr) {
                                 console.warn("Could not sync print status to order (order may have been deleted):", updateErr);
