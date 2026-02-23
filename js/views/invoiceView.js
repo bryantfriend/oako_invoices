@@ -159,16 +159,14 @@ export const renderInvoices = async () => {
         // Process Post-Print Highlight Animation if redirected
         if (window.highlightOrderId) {
             setTimeout(() => {
-                // Find row by data-id (added to dataTable component rendering logic implicitly via row content OR we can just select by text if needed, 
-                // but let's look for the row containing the order ID in the toggle/view buttons)
-                const buttons = document.querySelectorAll('button[onclick*="' + window.highlightOrderId + '"]');
-                if (buttons.length > 0) {
-                    const row = buttons[0].closest('tr');
+                const highlightedInvoice = filtered.find(inv => inv.orderId === window.highlightOrderId);
+                if (highlightedInvoice) {
+                    const row = document.querySelector(`tr[data-id="${highlightedInvoice.id}"]`);
                     if (row) {
                         row.classList.add('row-success-anim');
                         row.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         // Remove class after animation finishes so it can re-trigger if needed
-                        setTimeout(() => row.classList.remove('row-success-anim'), 1500);
+                        setTimeout(() => row.classList.remove('row-success-anim'), 3000); // 3s matches the CSS
                     }
                 }
                 // Clear the flag so it doesn't fire again on normal navigation
