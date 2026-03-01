@@ -1,4 +1,5 @@
-import { dashboardService } from "../services/dashboardService.js";
+import { orderService } from "../services/orderService.js";
+import { customerService } from "../services/customerService.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
@@ -50,6 +51,7 @@ export const dashboardController = {
                 metrics: this.calculateMetrics(ordersWithCategory)
             };
         } catch (error) {
+            console.error("Dashboard Load Error:", error);
             notificationService.error(t('msg_load_fail'));
             return { orders: [], metrics: {} };
         }
@@ -93,20 +95,5 @@ export const dashboardController = {
 
     loadStats(orders, period) {
         return statsService.getDashboardStats(orders, period);
-    },
-
-    getRiskAlerts(orders) {
-        const criticalOverdue = orders.filter(o =>
-            ['confirmed', 'fulfilled'].includes(o.status) && (o.agingDays || 0) >= 14
-        );
-
-        if (criticalOverdue.length === 0) return null;
-
-        const totalRisk = criticalOverdue.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-        return {
-            count: criticalOverdue.length,
-            amount: totalRisk,
-            label: `${criticalOverdue.length} invoices overdue >14 days · ${totalRisk} сом at risk`
-        };
     }
 };
