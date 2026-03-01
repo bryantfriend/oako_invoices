@@ -450,7 +450,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     };
 
     const refreshBody = () => {
-        const dummyLang = INVOICE_I18N[currentLang];
+
         const items = invoice.items || [];
         const totalPages = Math.ceil((items.length - ITEMS_PER_PAGE_FIRST) / ITEMS_PER_PAGE_OTHER) + 1;
         const realTotalPages = items.length <= ITEMS_PER_PAGE_FIRST ? 1 : totalPages;
