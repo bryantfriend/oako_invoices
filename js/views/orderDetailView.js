@@ -4,6 +4,7 @@ import { createCard } from "../components/card.js";
 import { createStatusBadge } from "../components/statusBadge.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { Modal } from "../components/modal.js";
+import { t } from "../core/i18n.js";
 import { ORDER_STATUS, ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { router } from "../router.js";
@@ -216,7 +217,7 @@ export const renderOrderDetail = async ({ id }) => {
                 const { orderService } = await import("../services/orderService.js");
                 const { notificationService } = await import("../core/notificationService.js");
                 await orderService.updateOrderStatus(id, ORDER_STATUS.PAID);
-                notificationService.success("Order marked as Paid");
+                notificationService.success(t('msg_update_success'));
                 renderOrderDetail({ id });
                 return;
             }
@@ -225,7 +226,7 @@ export const renderOrderDetail = async ({ id }) => {
             const settings = await settingsService.getInvoiceSettings();
 
             const modal = new Modal({
-                title: 'Confirm Order & Generate Invoice',
+                title: t('btn_confirm'),
                 content: `
                     <div style="display: flex; flex-direction: column; gap: var(--space-4);">
                         <p>Are you sure you want to confirm this order? This will generate the official invoice.</p>

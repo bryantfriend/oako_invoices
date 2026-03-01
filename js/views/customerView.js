@@ -6,10 +6,11 @@ import { DataTable } from "../components/dataTable.js";
 import { createCard } from "../components/card.js";
 import { Modal } from "../components/modal.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
+import { t } from "../core/i18n.js";
 
 export const renderCustomers = async () => {
     layoutView.render();
-    layoutView.updateTitle("Customers");
+    layoutView.updateTitle(t("customer_title"));
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
@@ -41,7 +42,7 @@ export const renderCustomers = async () => {
                     ${isEditingLocked ? '🔒 Locked' : '🔓 Editing Enabled'}
                 </button>
             </div>
-            <button id="add-customer-btn" class="btn btn-primary">+ Add Customer</button>
+            <button id="add-customer-btn" class="btn btn-primary">+ ${t('dash_new_customer')}</button>
         `;
         return header;
     };
@@ -81,7 +82,7 @@ export const renderCustomers = async () => {
                 },
                 {
                     key: 'companyName',
-                    label: 'Company',
+                    label: t('table_company'),
                     render: (val, row) => {
                         const displayVal = val || row.name || '';
                         const safeVal = displayVal.replace(/"/g, '&quot;');
@@ -92,7 +93,7 @@ export const renderCustomers = async () => {
                 },
                 {
                     key: 'name',
-                    label: 'Contact Name',
+                    label: t('table_contact'),
                     render: (val, row) => {
                         const safeVal = (val || '').replace(/"/g, '&quot;');
                         return isEditingLocked
@@ -102,7 +103,7 @@ export const renderCustomers = async () => {
                 },
                 {
                     key: 'phone',
-                    label: 'Phone',
+                    label: t('table_phone'),
                     render: (val, row) => {
                         const safeVal = (val || '').replace(/"/g, '&quot;');
                         return isEditingLocked
@@ -112,7 +113,7 @@ export const renderCustomers = async () => {
                 },
                 {
                     key: 'email',
-                    label: 'Email',
+                    label: t('table_email'),
                     render: (val, row) => {
                         const safeVal = (val || '').replace(/"/g, '&quot;');
                         return isEditingLocked

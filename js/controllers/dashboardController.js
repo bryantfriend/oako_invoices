@@ -1,7 +1,7 @@
-import { orderService } from "../services/orderService.js";
-import { customerService } from "../services/customerService.js";
+import { dashboardService } from "../services/dashboardService.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
+import { t } from "../core/i18n.js";
 
 export const dashboardController = {
     async loadDashboard() {
@@ -50,7 +50,7 @@ export const dashboardController = {
                 metrics: this.calculateMetrics(ordersWithCategory)
             };
         } catch (error) {
-            notificationService.error("Failed to load dashboard data");
+            notificationService.error(t('msg_load_fail'));
             return { orders: [], metrics: {} };
         }
     },

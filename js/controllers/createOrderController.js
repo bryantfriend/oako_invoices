@@ -3,17 +3,18 @@ import { notificationService } from "../core/notificationService.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { authService } from "../core/authService.js";
+import { t } from "../core/i18n.js";
 
 export const createOrderController = {
     async handleCreateOrder(formData) {
         // Validation handled by HTML5 or manual check
         if (!formData.customerName) {
-            notificationService.error("Customer Name is required");
+            notificationService.error(t('val_required'));
             return;
         }
 
         if (!formData.items || formData.items.length === 0) {
-            notificationService.error("Add at least one item");
+            notificationService.error(t('msg_save_fail'));
             return;
         }
 
@@ -38,16 +39,16 @@ export const createOrderController = {
 
         const user = authService.getCurrentUser();
         if (!user) {
-            notificationService.error("You must be logged in");
+            notificationService.error(t('login_fail'));
             return;
         }
 
         try {
             await orderService.createOrder(orderPayload, user.uid);
-            notificationService.success("Order created as Draft");
+            notificationService.success(t('msg_save_success'));
             router.navigate(ROUTES.DASHBOARD);
         } catch (error) {
-            notificationService.error("Failed to create order");
+            notificationService.error(t('msg_save_fail'));
         }
     },
 

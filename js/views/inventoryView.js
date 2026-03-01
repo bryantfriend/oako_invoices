@@ -3,10 +3,11 @@ import { inventoryController } from "../controllers/inventoryController.js";
 import { createCard } from "../components/card.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { Modal } from "../components/modal.js";
+import { t } from "../core/i18n.js";
 
 export const renderInventory = async () => {
     layoutView.render();
-    layoutView.updateTitle("Inventory Tracking");
+    layoutView.updateTitle(t('inventory_title'));
 
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
@@ -65,10 +66,10 @@ const renderMainView = (container, date, categories) => {
                                 <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 500px;">
                                     <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
                                         <tr>
-                                            <th style="text-align: left; padding: 12px 16px;">Product Name</th>
+                                            <th style="text-align: left; padding: 12px 16px;">${t('table_item')}</th>
                                             <th style="text-align: center; padding: 12px 16px; width: 80px;">Sold</th>
                                             <th style="text-align: center; padding: 12px 16px; width: 120px;">Total Baked</th>
-                                            <th style="text-align: center; padding: 12px 16px; width: 80px;">Left</th>
+                                            <th style="text-align: center; padding: 12px 16px; width: 80px;">${t('table_stock')}</th>
                                             <th style="text-align: center; padding: 12px 16px; width: 60px;">Lock</th>
                                         </tr>
                                     </thead>

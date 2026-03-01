@@ -7,6 +7,7 @@ import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
+import { t } from "../core/i18n.js";
 
 // Global chart registry to prevent "broken" graphs
 let chartInstances = {};
@@ -22,7 +23,7 @@ const cleanupCharts = () => {
 
 export const renderDashboard = async () => {
     layoutView.render();
-    layoutView.updateTitle("Dashboard Overview");
+    layoutView.updateTitle(t("dash_title"));
 
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
@@ -89,7 +90,7 @@ export const renderDashboard = async () => {
                                 </div>
                             </div>
                         </div>
-                        <button id="create-order-btn" class="btn btn-primary" style="padding: 6px 16px; border-radius: 6px; font-weight: 700; font-size: 12px;">+ New Order</button>
+                        <button id="create-order-btn" class="btn btn-primary" style="padding: 6px 16px; border-radius: 6px; font-weight: 700; font-size: 12px;">+ ${t('dash_new_order')}</button>
                     </div>
 
                     <!-- ROW 2: KPIs -->
@@ -143,7 +144,7 @@ export const renderDashboard = async () => {
                     <div class="card" style="padding: 0; margin: 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
                         <div style="padding: 8px 12px; border-bottom: 1px solid var(--color-gray-100); display: flex; justify-content: space-between; align-items: center; background: #fff;">
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800);">Recent Orders</h3>
+                                <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800);">${t('dash_recent_orders')}</h3>
                                 <span style="background: #fee2e2; color: #b91c1c; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${filteredOrders.length}</span>
                             </div>
                             <select id="filter-status" style="border: 1px solid #eee; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: 600;">
@@ -390,9 +391,9 @@ export const renderDashboard = async () => {
                         return `<div style="width: 24px; height: 24px; border-radius: 4px; background: ${catBg}; color: ${catColor}; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px;">${cat}</div>`;
                     }
                 },
-                { key: 'id', label: 'Order ID', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 11px;">#${val.slice(-6)}</span>` },
+                { key: 'id', label: t('table_order_id'), render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 11px;">#${val.slice(-6)}</span>` },
                 {
-                    key: 'customerName', label: 'Customer', render: (val, row) => `
+                    key: 'customerName', label: t('table_customer'), render: (val, row) => `
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                         <span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${val}</span>
                         <div style="display: flex; gap: 4px; align-items: center;">
@@ -402,8 +403,8 @@ export const renderDashboard = async () => {
                         </div>
                     </div>
                 ` },
-                { key: 'orderDate', label: 'Date', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
-                { key: 'totalAmount', label: 'Total', align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` },
+                { key: 'orderDate', label: t('table_date'), render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
+                { key: 'totalAmount', label: t('table_total'), align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` },
                 {
                     key: 'agingDays',
                     label: 'Due',
@@ -415,7 +416,7 @@ export const renderDashboard = async () => {
                         return `<span style="font-weight: 800; color: ${textColor};">${val}d Overdue</span>`;
                     }
                 },
-                { key: 'status', label: 'Status', align: 'center', render: (val) => createStatusBadge(val) }
+                { key: 'status', label: t('table_status'), align: 'center', render: (val) => createStatusBadge(val) }
             ],
             data: filteredOrders,
             sortKey: sort.key,

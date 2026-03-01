@@ -61,7 +61,7 @@ async function initApp() {
 
     } catch (error) {
         console.error("App Init Error", error);
-        notificationService.error("Failed to initialize application");
+        notificationService.error(t('msg_load_fail'));
     }
 }
 
@@ -128,10 +128,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Offline / Online indicators
     window.addEventListener('online', () => {
-        notificationService.success("You are back online. Syncing data...");
+        notificationService.success(t('msg_online'));
     });
 
     window.addEventListener('offline', () => {
-        notificationService.error("You are working offline. Changes will save locally until connection is restored.");
+        notificationService.error(t('msg_offline'));
     });
 });

@@ -5,6 +5,7 @@ import { formatDate, formatCurrency } from "../core/formatters.js";
 import { createCard } from "../components/card.js";
 import { createStatusBadge } from "../components/statusBadge.js";
 import { DataTable } from "../components/dataTable.js";
+import { t, i18n } from "../core/i18n.js";
 
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
@@ -12,7 +13,7 @@ import { productService } from "../services/productService.js";
 
 export const renderInvoices = async () => {
     layoutView.render();
-    layoutView.updateTitle("Invoices");
+    layoutView.updateTitle(t('invoice_title'));
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
@@ -87,7 +88,7 @@ export const renderInvoices = async () => {
     const renderTable = () => {
         const table = new DataTable({
             columns: [
-                { key: 'invoiceNumber', label: 'Invoice #', render: (val) => `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${val}</span>` },
+                { key: 'invoiceNumber', label: t('table_invoice_num'), render: (val) => `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${val}</span>` },
                 {
                     key: 'customerName', label: 'Customer', render: (val, row) => `
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
@@ -109,7 +110,7 @@ export const renderInvoices = async () => {
             actions: (row) => `
                 <div style="display: flex; gap: 4px;">
                     <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.viewInvoice('${row.id}')">
-                        View
+                        ${t('btn_view') || 'View'}
                     </button>
                     <button class="btn btn-destructive btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteInvoice('${row.id}')">
                         🗑️
@@ -125,22 +126,22 @@ export const renderInvoices = async () => {
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <label style="font-size: 12px; font-weight: 600; color: var(--color-gray-500);">Customer:</label>
                             <select id="filter-customer" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-gray-200); font-size: 13px;">
-                                <option value="all">All Customers</option>
+                                <option value="all">${t('invoice_all_customers')}</option>
                                 ${customers.map(c => `<option value="${c}" ${filters.customer === c ? 'selected' : ''}>${c}</option>`).join('')}
                             </select>
                         </div>
                         <div style="height: 20px; width: 1px; background: var(--color-gray-200);"></div>
                         <div style="display: flex; gap: 4px; background: var(--color-gray-50); padding: 4px; border-radius: 8px;">
-                            <button class="period-btn btn btn-sm ${filters.period === 'today' ? 'btn-primary' : 'btn-ghost'}" data-period="today" style="font-size: 11px; padding: 4px 10px;">Today</button>
-                            <button class="period-btn btn btn-sm ${filters.period === 'week' ? 'btn-primary' : 'btn-ghost'}" data-period="week" style="font-size: 11px; padding: 4px 10px;">This Week</button>
-                            <button class="period-btn btn btn-sm ${filters.period === 'month' ? 'btn-primary' : 'btn-ghost'}" data-period="month" style="font-size: 11px; padding: 4px 10px;">This Month</button>
-                            <button class="period-btn btn btn-sm ${filters.period === 'all' ? 'btn-primary' : 'btn-ghost'}" data-period="all" style="font-size: 11px; padding: 4px 10px;">All Time</button>
+                            <button class="period-btn btn btn-sm ${filters.period === 'today' ? 'btn-primary' : 'btn-ghost'}" data-period="today" style="font-size: 11px; padding: 4px 10px;">${t('invoice_today')}</button>
+                            <button class="period-btn btn btn-sm ${filters.period === 'week' ? 'btn-primary' : 'btn-ghost'}" data-period="week" style="font-size: 11px; padding: 4px 10px;">${t('invoice_this_week')}</button>
+                            <button class="period-btn btn btn-sm ${filters.period === 'month' ? 'btn-primary' : 'btn-ghost'}" data-period="month" style="font-size: 11px; padding: 4px 10px;">${t('invoice_this_month')}</button>
+                            <button class="period-btn btn btn-sm ${filters.period === 'all' ? 'btn-primary' : 'btn-ghost'}" data-period="all" style="font-size: 11px; padding: 4px 10px;">${t('invoice_all_time')}</button>
                         </div>
                     </div>
                 </div>
 
                 ${createCard({
-            title: 'Invoices',
+            title: t('invoice_title'),
             content: table.render()
         })}
             </div>
@@ -217,48 +218,7 @@ export const renderInvoices = async () => {
     };
 };
 
-const INVOICE_I18N = {
-    en: {
-        invoice: "Invoice",
-        invoiceNumber: "Invoice number",
-        date: "Date",
-        billTo: "Bill to:",
-        description: "Description",
-        quantity: "Quantity",
-        unitPrice: "Unit Price",
-        total: "Total",
-        subtotal: "Subtotal",
-        vat: "VAT",
-        discount: "Discount",
-        grandTotal: "Grand Total",
-        notes: "Notes:",
-        paymentTerms: "Payment due within 30 days. Please transfer to account:",
-        bankInfo: "Bank of Kyrgyzstan,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Account To: KG12346712345789901<br>SWIFT: KGZBBBBB",
-        thanks: "Thanks for supporting sustainable agriculture!",
-        phone: "Phone",
-        website: "kyrgyz-organics.com"
-    },
-    ru: {
-        invoice: "Расходная накладная",
-        invoiceNumber: "Номер счёта",
-        date: "Дата",
-        billTo: "Получатель:",
-        description: "Описание",
-        quantity: "Кол-во",
-        unitPrice: "Цена",
-        total: "Итого",
-        subtotal: "Подытог",
-        vat: "НДС",
-        discount: "Скидка",
-        grandTotal: "Общая сумма",
-        notes: "Заметки:",
-        paymentTerms: "Оплата в течение 30 дней. Перевод на счет:",
-        bankInfo: "Банк Кыргызстана,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Счет: KG12346712345789901<br>SWIFT: KGZBBBBB",
-        thanks: "Спасибо за поддержку экологичного фермерства!",
-        phone: "Тел",
-        website: "kyrgyz-organics.ru"
-    }
-};
+
 
 export const renderInvoiceDetail = async ({ id }) => {
     layoutView.render();
@@ -300,13 +260,20 @@ export const renderInvoiceDetail = async ({ id }) => {
     const ITEMS_PER_PAGE_OTHER = 13;
 
     const renderDocument = (lang, isCopy = false) => {
-        const t = INVOICE_I18N[lang];
         // Merge liveSettings OVER invoice.settings so toggles apply retroactively to old invoices
         const s = { ...(invoice.settings || {}), ...(liveSettings || {}) };
         if (!s.logoUrl && (liveSettings && liveSettings.logoUrl)) s.logoUrl = liveSettings.logoUrl;
 
-        const notesText = lang === 'en' ? (s.notesEn || t.paymentTerms) : (s.notesRu || t.paymentTerms);
-        const bannerFootText = s.footerText || t.thanks;
+        const defaultBankInfo = lang === 'en'
+            ? "Bank of Kyrgyzstan,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Account To: KG12346712345789901<br>SWIFT: KGZBBBBB"
+            : (lang === 'kg' ? "Кыргызстан Банкы,<br>Кыргыз Органикс ЖЧКсы, KG12346712345789901<br>Эсеп: KG12346712345789901<br>SWIFT: KGZBBBBB" : "Банк Кыргызстана,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Счет: KG12346712345789901<br>SWIFT: KGZBBBBB");
+
+        const paymentTerms = lang === 'en'
+            ? "Payment due within 30 days. Please transfer to account:"
+            : (lang === 'kg' ? "Төлөм 30 күндүн ичинде. Сураныч, эсепке которуңуз:" : "Оплата в течение 30 дней. Перевод на счет:");
+
+        const notesText = lang === 'en' ? (s.notesEn || paymentTerms) : (lang === 'kg' ? (s.notesKg || paymentTerms) : (s.notesRu || paymentTerms));
+        const bannerFootText = s.footerText || t('print_thanks', lang);
 
         const items = invoice.items || [];
         const pages = [];
@@ -364,19 +331,19 @@ export const renderInvoiceDetail = async ({ id }) => {
                         </div>
                         <div style="text-align: right; flex: 1;">
                              <div style="display: inline-block; text-align: left;">
-                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t.invoice} #${invoice.invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
-                                 <div style="font-size: 11px; color: #5a7052;">${t.date}: ${formatDate(invoice.createdAt)}</div>
-                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t.phone}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
+                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t('print_invoice', lang)} #${invoice.invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
+                                 <div style="font-size: 11px; color: #5a7052;">${t('print_date', lang)}: ${formatDate(invoice.createdAt)}</div>
+                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t('table_phone', lang)}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
                              </div>
                         </div>
                     </div>
 
                     ${isFirst ? `
-                    <h2 style="font-size: 20px; font-weight: 500; color: #2e4a23; margin: 0 0 10px 0; border-bottom: 2px solid #ebf0e9; padding-bottom: 4px; letter-spacing: -0.5px;">${t.invoice}</h2>
+                    <h2 style="font-size: 20px; font-weight: 500; color: #2e4a23; margin: 0 0 10px 0; border-bottom: 2px solid #ebf0e9; padding-bottom: 4px; letter-spacing: -0.5px;">${t('print_invoice', lang)}</h2>
 
                     <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 20px;">
                         <div style="flex: 1.2;">
-                            <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; margin-bottom: 6px;">${t.billTo}</div>
+                            <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; margin-bottom: 6px;">${t('print_bill_to', lang)}</div>
                             <div style="font-size: 15px; font-weight: 700; color: #1e3318; margin-bottom: 4px;">${invoice.customerName}</div>
                             <div style="color: #435a3c; line-height: 1.5; font-size: 12px; max-width: 300px;">
                                  ${invoice.customerAddress || 'Republic of Kyrgyzstan'}
@@ -384,7 +351,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         </div>
                         <div style="text-align: right; flex: 0.8;">
                              <div style="background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #d8e2d4; display: inline-block; min-width: 200px; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-                                <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">DATE:</div>
+                                <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">${t('print_date', lang).toUpperCase()}:</div>
                                 <div style="font-size: 13px; color: #1e3318; margin-bottom: 8px; font-weight: 500;">${formatDate(invoice.createdAt)}</div>
                                 <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0;">TOTAL DUE:</div>
                                 <div style="font-size: 22px; font-weight: 800; color: #1e3318; letter-spacing: -1px;">${formatCurrency(grandTotal).replace('$', '')} <span style="font-size: 11px; font-weight: 400; color: #5a7052;">SOM</span></div>
@@ -402,6 +369,8 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                 if (lang === 'ru') {
                     itemName = item.name_ru || (liveProduct && liveProduct.name_ru) || item.name_en || (liveProduct && liveProduct.name_en) || item.name;
+                } else if (lang === 'kg') {
+                    itemName = item.name_kg || (liveProduct && liveProduct.name_kg) || item.name_en || (liveProduct && liveProduct.name_en) || item.name;
                 } else {
                     itemName = item.name_en || (liveProduct && liveProduct.name_en) || item.name;
                 }
@@ -426,16 +395,16 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 25px; page-break-inside: avoid;">
                         <div style="width: 280px;">
                             <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
-                                <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t.subtotal}</span>
+                                <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t('print_subtotal', lang)}</span>
                                 <span style="font-weight: 600; color: #1e3318; font-size: 11px;">${formatCurrency(subtotal)}</span>
                             </div>
                             ${taxAmount > 0 ? `
                             <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
-                                <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t.vat} (${taxRate}%)</span>
+                                <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t('print_vat', lang)} (${taxRate}%)</span>
                                 <span style="font-weight: 600; color: #1e3318; font-size: 11px;">${formatCurrency(taxAmount)}</span>
                             </div>` : ''}
                             <div style="margin-top: 10px; background: #2e4a23; color: #fff; padding: 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: baseline;">
-                                <span style="font-size: 10px; font-weight: 700; text-transform: uppercase;">${t.grandTotal}</span>
+                                <span style="font-size: 10px; font-weight: 700; text-transform: uppercase;">${t('print_grand_total', lang)}</span>
                                 <span style="font-size: 20px; font-weight: 800;">${formatCurrency(grandTotal)}</span>
                             </div>
                         </div>
@@ -445,11 +414,11 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; border-top: 1px solid #e2e8e0; padding-top: 15px; margin-bottom: 20px; page-break-inside: avoid;">
                         <div style="flex: 1;">
                             ${(s.showNotes !== false) ? `
-                            <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; margin-bottom: 8px;">${t.notes}</div>
+                            <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; margin-bottom: 8px;">${t('print_notes', lang)}</div>
                             <div style="font-size: 11px; color: #5a7052; line-height: 1.5;">
                                 <div style="margin-bottom: 2px;">${notesText}</div>
                                 <div style="font-weight: 500; font-family: monospace; background: #fafbf9; padding: 12px; border: 1px solid #ebf0e9; border-radius: 6px; font-size: 10px; line-height: 1.6;">
-                                    ${(s.bankInfo || t.bankInfo).split('\n').map(line => `<div style="margin-bottom: 2px;">• ${line.trim()}</div>`).join('')}
+                                    ${(s.bankInfo || defaultBankInfo).split('\n').map(line => `<div style="margin-bottom: 2px;">• ${line.trim()}</div>`).join('')}
                                 </div>
                             </div>
                             ` : ''}
@@ -459,11 +428,11 @@ export const renderInvoiceDetail = async ({ id }) => {
                             <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
                                 <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
                                      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px;">
-                                        ${Array(16).fill('<div style="width: 6px; height: 6px; background: #2e4a23;"></div>').join('')}
+                                         ${Array(16).fill('<div style="width: 6px; height: 6px; background: #2e4a23;"></div>').join('')}
                                     </div>
                                 </div>
                             </div>
-                            <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Scan to pay</div>
+                            <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">${t('print_scan_pay', lang)}</div>
                         </div>
                         ` : ''}
                     </div>

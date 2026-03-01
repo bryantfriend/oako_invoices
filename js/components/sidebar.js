@@ -1,6 +1,7 @@
 import { ROUTES } from "../core/constants.js";
 import { authService } from "../core/authService.js";
 import { router } from "../router.js";
+import { t } from "../core/i18n.js";
 
 export class Sidebar {
     constructor() {
@@ -17,17 +18,17 @@ export class Sidebar {
             </div>
             
             <nav class="sidebar-nav" style="padding: 16px; display: flex; flex-direction: column; gap: 4px;">
-                ${this.createNavItem('Orders', ROUTES.DASHBOARD, '📊')}
-                ${this.createNavItem('Create Order', ROUTES.CREATE_ORDER, '➕')}
-                ${this.createNavItem('Invoices', ROUTES.INVOICES, '📄')}
-                ${this.createNavItem('Inventory', ROUTES.INVENTORY, '🍞')}
-                ${this.createNavItem('Customers', ROUTES.CUSTOMERS, '👥')}
-                ${this.createNavItem('Settings', ROUTES.SETTINGS, '⚙️')}
+                ${this.createNavItem(t('sidebar_dashboard'), ROUTES.DASHBOARD, '📊')}
+                ${this.createNavItem(t('dash_new_order'), ROUTES.CREATE_ORDER, '➕')}
+                ${this.createNavItem(t('sidebar_invoices'), ROUTES.INVOICES, '📄')}
+                ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, '🍞')}
+                ${this.createNavItem(t('sidebar_customers'), ROUTES.CUSTOMERS, '👥')}
+                ${this.createNavItem(t('sidebar_settings'), ROUTES.SETTINGS, '⚙️')}
             </nav>
 
             <div class="sidebar-footer" style="padding: 16px; margin-top: auto; border-top: 1px solid var(--color-gray-200);">
                 <button id="logout-btn" class="btn btn-secondary" style="width: 100%; justify-content: flex-start;">
-                    🚪 Logout
+                    🚪 ${t('sidebar_logout')}
                 </button>
             </div>
         `;

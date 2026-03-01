@@ -1,12 +1,13 @@
 import { settingsService } from "../services/settingsService.js";
 import { notificationService } from "../core/notificationService.js";
+import { t } from "../core/i18n.js";
 
 export const settingsController = {
     async loadSettings() {
         try {
             return await settingsService.getInvoiceSettings();
         } catch (error) {
-            notificationService.error("Failed to load settings");
+            notificationService.error(t('msg_load_fail'));
             return null;
         }
     },
@@ -14,10 +15,10 @@ export const settingsController = {
     async updateSettings(data) {
         try {
             await settingsService.updateInvoiceSettings(data);
-            notificationService.success("Settings updated successfully");
+            notificationService.success(t('msg_save_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to update settings");
+            notificationService.error(t('msg_save_fail'));
             return false;
         }
     },
@@ -26,7 +27,7 @@ export const settingsController = {
         try {
             return await settingsService.uploadLogo(file);
         } catch (error) {
-            notificationService.error("Failed to upload logo");
+            notificationService.error(t('msg_save_fail'));
             throw error;
         }
     }

@@ -1,9 +1,11 @@
 import { Sidebar } from "../components/sidebar.js";
 import { authService } from "../core/authService.js";
+import { i18n } from "../core/i18n.js";
 
 class LayoutView {
     constructor() {
         this.sidebar = new Sidebar();
+        this.unsubscribeI18n = null;
     }
 
     render() {
@@ -29,13 +31,32 @@ class LayoutView {
                     Dashboard
                 </div>
             </div>
+            </div>
             <div style="display: flex; align-items: center; gap: var(--space-4);">
+                <!-- Language Selector -->
+                <div class="language-selector">
+                    <button class="language-btn" title="Change Language">
+                        🌐
+                    </button>
+                    <div class="language-dropdown">
+                        <button class="lang-option ${i18n.getLanguage() === 'en' ? 'active' : ''}" data-lang="en">
+                            <span class="lang-flag">🇺🇸</span> EN
+                        </button>
+                        <button class="lang-option ${i18n.getLanguage() === 'ru' ? 'active' : ''}" data-lang="ru">
+                            <span class="lang-flag">🇷🇺</span> RU
+                        </button>
+                        <button class="lang-option ${i18n.getLanguage() === 'kg' ? 'active' : ''}" data-lang="kg">
+                            <span class="lang-flag">🇰🇬</span> KG
+                        </button>
+                    </div>
+                </div>
+
                 <div class="user-info-desktop" style="display: flex; flex-direction: column; align-items: flex-end;">
                     <span style="font-size: var(--text-sm); font-weight: 600;">
                         ${user?.email || 'Admin'}
                     </span>
                     <span style="font-size: var(--text-xs); color: var(--color-gray-500);">
-                        Administrator
+                        ${i18n.t('topbar_admin')}
                     </span>
                 </div>
                 <div style="
@@ -78,8 +99,32 @@ class LayoutView {
 
         overlay?.addEventListener('click', closeMenu);
 
+        overlay?.addEventListener('click', closeMenu);
+
         // Auto-close on route change
         window.addEventListener('hashchange', closeMenu);
+
+        // Language Selector Events
+        const dropdownBtns = topBar.querySelectorAll('.lang-option');
+        dropdownBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const selectedLang = e.currentTarget.dataset.lang;
+                if (selectedLang && selectedLang !== i18n.getLanguage()) {
+                    i18n.setLanguage(selectedLang);
+                }
+            });
+        });
+
+        // Global State Binding
+        if (this.unsubscribeI18n) {
+            this.unsubscribeI18n();
+        }
+        this.unsubscribeI18n = i18n.subscribe(() => {
+            // Re-render the Layout (Updates Globe and Sidebar)
+            this.render();
+            // Re-render whatever view we are currently on (hash reload)
+            window.dispatchEvent(new CustomEvent('hashchange'));
+        });
     }
 
 

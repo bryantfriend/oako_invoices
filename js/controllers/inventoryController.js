@@ -3,6 +3,7 @@ import { productService } from "../services/productService.js";
 import { orderService } from "../services/orderService.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { notificationService } from "../core/notificationService.js";
+import { t } from "../core/i18n.js";
 
 export const inventoryController = {
     /**
@@ -67,7 +68,7 @@ export const inventoryController = {
             return categoriesWithProducts;
         } catch (error) {
             console.error("Error loading inventory data:", error);
-            notificationService.error("Failed to load inventory data");
+            notificationService.error(t('msg_load_fail'));
             return [];
         }
     },
@@ -88,11 +89,11 @@ export const inventoryController = {
                 });
             });
             await Promise.all(promises);
-            notificationService.success(`${locked ? 'Locked' : 'Unlocked'} all records`);
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
             console.error("Bulk update failed:", error);
-            notificationService.error("Bulk update failed");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     },
@@ -112,10 +113,10 @@ export const inventoryController = {
             );
 
             await Promise.all(promises);
-            notificationService.success("Imported yesterday's totals");
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
-            notificationService.error("Import failed");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     },

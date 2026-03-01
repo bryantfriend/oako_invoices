@@ -1,5 +1,6 @@
 import { customerService } from "../services/customerService.js";
 import { notificationService } from "../core/notificationService.js";
+import { t } from "../core/i18n.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 
@@ -8,7 +9,7 @@ export const customerController = {
         try {
             return await customerService.getAllCustomers();
         } catch (error) {
-            notificationService.error("Failed to load customers");
+            notificationService.error(t('msg_load_fail'));
             return [];
         }
     },
@@ -16,15 +17,15 @@ export const customerController = {
     async handleCreateCustomer(data) {
         try {
             if (!data.name) {
-                notificationService.error("Customer name is required");
+                notificationService.error(t('val_required'));
                 return;
             }
             await customerService.createCustomer(data);
-            notificationService.success("Customer created successfully");
+            notificationService.success(t('msg_save_success'));
             // Refresh or navigate logic dependent on where it's called
             return true;
         } catch (error) {
-            notificationService.error("Failed to create customer");
+            notificationService.error(t('msg_save_fail'));
             return false;
         }
     },
@@ -32,10 +33,10 @@ export const customerController = {
     async handleUpdateCustomer(id, data) {
         try {
             await customerService.updateCustomer(id, data);
-            notificationService.success("Customer updated");
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to update customer");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     },
@@ -44,7 +45,7 @@ export const customerController = {
         try {
             return await customerService.getCustomerById(id);
         } catch (error) {
-            notificationService.error("Failed to load customer");
+            notificationService.error(t('msg_load_fail'));
             return null;
         }
     },
@@ -58,19 +59,19 @@ export const customerController = {
     async archiveCustomer(id) {
         try {
             await customerService.updateCustomer(id, { archived: true });
-            notificationService.success("Customer archived");
+            notificationService.success(t('msg_delete_success'));
         } catch (error) {
-            notificationService.error("Failed to archive customer");
+            notificationService.error(t('msg_delete_fail'));
         }
     },
 
     async handleDeleteCustomer(id) {
         try {
             await customerService.deleteCustomer(id);
-            notificationService.success("Customer permanently deleted");
+            notificationService.success(t('msg_delete_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to delete customer");
+            notificationService.error(t('msg_delete_fail'));
             return false;
         }
     },
@@ -100,7 +101,7 @@ export const customerController = {
             };
         } catch (error) {
             console.error("Error loading customer detail:", error);
-            notificationService.error("Failed to load customer details");
+            notificationService.error(t('msg_load_fail'));
             return null;
         }
     }

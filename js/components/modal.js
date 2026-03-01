@@ -1,10 +1,12 @@
+import { t } from "../core/i18n.js";
+
 export class Modal {
     constructor({
         title = '',
         content = '',
         onConfirm = null,
-        confirmText = 'Confirm',
-        cancelText = 'Cancel',
+        confirmText = t('btn_confirm') || 'Confirm',
+        cancelText = t('btn_cancel') || 'Cancel',
         type = 'primary', // primary | destructive
         size = 'medium',  // small | medium | large | xlarge
         closeOnBackdrop = true,
@@ -143,7 +145,7 @@ export class Modal {
         const modal = new Modal({
             title,
             content: `<p>${message}</p>`,
-            confirmText: 'OK',
+            confirmText: t('btn_ok') || 'OK',
             cancelText: '',
             onConfirm: null
         });
@@ -154,7 +156,7 @@ export class Modal {
         const modal = new Modal({
             title,
             content: `<p>${message}</p>`,
-            confirmText: 'Confirm',
+            confirmText: t('btn_confirm') || 'Confirm',
             type: 'destructive',
             onConfirm
         });

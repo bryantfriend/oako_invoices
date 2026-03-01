@@ -1,18 +1,19 @@
 import { orderService } from "../services/orderService.js";
 import { notificationService } from "../core/notificationService.js";
 import { ORDER_STATUS } from "../core/constants.js";
+import { t } from "../core/i18n.js";
 
 export const orderDetailController = {
     async loadOrder(id) {
         try {
             const order = await orderService.getOrderById(id);
             if (!order) {
-                notificationService.error("Order not found");
+                notificationService.error(t('msg_load_fail'));
                 return null;
             }
             return order;
         } catch (error) {
-            notificationService.error("Failed to load order");
+            notificationService.error(t('msg_load_fail'));
             return null;
         }
     },
@@ -20,10 +21,10 @@ export const orderDetailController = {
     async updateStatus(id, newStatus) {
         try {
             await orderService.updateOrderStatus(id, newStatus);
-            notificationService.success(`Order status updated to ${newStatus}`);
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to update status");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     },
@@ -32,10 +33,10 @@ export const orderDetailController = {
         try {
             // Update items with adjusted quantities
             await orderService.updateOrder(id, { items });
-            notificationService.success("Quantities updated");
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to update quantities");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     },
@@ -50,10 +51,10 @@ export const orderDetailController = {
     async updateNotes(id, notes) {
         try {
             await orderService.updateOrder(id, { notes });
-            notificationService.success("Notes updated");
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to update notes");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     }

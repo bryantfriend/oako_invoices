@@ -1,12 +1,13 @@
 import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
+import { t } from "../core/i18n.js";
 
 export const invoiceController = {
     async loadInvoice(id) {
         try {
             return await invoiceService.getInvoice(id);
         } catch (error) {
-            notificationService.error("Failed to load invoice");
+            notificationService.error(t('msg_load_fail'));
             return null;
         }
     },
@@ -15,7 +16,7 @@ export const invoiceController = {
         try {
             return await invoiceService.getAllInvoices();
         } catch (error) {
-            notificationService.error("Failed to load invoices");
+            notificationService.error(t('msg_load_fail'));
             return [];
         }
     },
@@ -25,7 +26,7 @@ export const invoiceController = {
             const invoiceId = await invoiceService.createInvoice(orderId);
             return invoiceId;
         } catch (error) {
-            notificationService.error("Failed to generate invoice");
+            notificationService.error(t('msg_save_fail'));
             return null;
         }
     },
@@ -33,10 +34,10 @@ export const invoiceController = {
     async updateDate(id, newDate) {
         try {
             await invoiceService.updateInvoiceDate(id, newDate);
-            notificationService.success("Invoice date updated");
+            notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
-            notificationService.error("Failed to update invoice date");
+            notificationService.error(t('msg_update_fail'));
             return false;
         }
     }

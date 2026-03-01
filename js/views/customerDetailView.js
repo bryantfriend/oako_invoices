@@ -7,6 +7,7 @@ import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
+import { t } from "../core/i18n.js";
 
 export const renderCustomerDetail = async ({ id }) => {
     layoutView.render();
@@ -18,7 +19,7 @@ export const renderCustomerDetail = async ({ id }) => {
     const data = await customerController.loadCustomerDetail(id);
 
     if (!data) {
-        container.innerHTML = `<div class="p-8 text-center">Customer not found</div>`;
+        container.innerHTML = `<div class="p-8 text-center">${t('customer_not_found')}</div>`;
         return;
     }
 
@@ -42,25 +43,24 @@ export const renderCustomerDetail = async ({ id }) => {
                 <button class="btn btn-secondary" onclick="window.editCustomer('${customer.id}')">Edit Profile</button>
             </div>
 
-            <!-- KPI Cards -->
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
                 ${createCard({
-        title: 'Total Revenue',
+        title: t('dash_stat_revenue'),
         content: `<div style="font-size: 24px; font-weight: 800; color: #10b981;">${formatCurrency(stats.totalRevenue)}</div>`
     })}
                  ${createCard({
-        title: 'Total Orders',
+        title: t('dash_stat_orders'),
         content: `<div style="font-size: 24px; font-weight: 800; color: var(--color-gray-900);">${stats.totalOrders}</div>`
     })}
                  ${createCard({
-        title: 'Last Order',
+        title: t('stat_last_order'),
         content: `<div style="font-size: 24px; font-weight: 800; color: var(--color-gray-900);">${stats.lastOrderDate ? formatDate(stats.lastOrderDate) : 'Never'}</div>`
     })}
             </div>
             
             <!-- Orders List -->
             <div class="card" style="display: flex; flex-direction: column;">
-                <h3 style="padding: 16px; font-size: 16px; font-weight: 700; border-bottom: 1px solid var(--color-gray-100);">Order History</h3>
+                <h3 style="padding: 16px; font-size: 16px; font-weight: 700; border-bottom: 1px solid var(--color-gray-100);">${t('order_history')}</h3>
                 <div id="customer-orders-table"></div>
             </div>
         </div>
@@ -71,10 +71,10 @@ export const renderCustomerDetail = async ({ id }) => {
     // 2. Orders Table
     const table = new DataTable({
         columns: [
-            { key: 'id', label: 'Order ID', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 12px;">#${val.slice(-6)}</span>` },
-            { key: 'createdAt', label: 'Date', render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
-            { key: 'status', label: 'Status', align: 'center', render: (val) => createStatusBadge(val) },
-            { key: 'totalAmount', label: 'Amount', align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` }
+            { key: 'id', label: t('table_order_id'), render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 12px;">#${val.slice(-6)}</span>` },
+            { key: 'createdAt', label: t('table_date'), render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
+            { key: 'status', label: t('table_status'), align: 'center', render: (val) => createStatusBadge(val) },
+            { key: 'totalAmount', label: t('table_total'), align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` }
         ],
         data: orders,
         onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.id)),
@@ -99,7 +99,7 @@ export const renderCustomerDetail = async ({ id }) => {
         });
 
     } else {
-        tableWrapper.innerHTML = `<div style="padding: 32px; text-align: center; color: var(--color-gray-500);">No orders found for this customer.</div>`;
+        tableWrapper.innerHTML = `<div style="padding: 32px; text-align: center; color: var(--color-gray-500);">${t('no_orders_found')}</div>`;
     }
 
     // Helper for Invoice Navigation (Same as Dashboard)

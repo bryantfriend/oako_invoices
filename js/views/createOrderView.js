@@ -8,10 +8,11 @@ import { notificationService } from "../core/notificationService.js";
 import { Modal } from "../components/modal.js";
 import { DataTable } from "../components/dataTable.js";
 import { formatCurrency } from "../core/formatters.js";
+import { t } from "../core/i18n.js";
 
 export const renderCreateOrder = async () => {
     layoutView.render();
-    layoutView.updateTitle("Create New Order");
+    layoutView.updateTitle(t('order_create_title'));
 
     const container = document.getElementById('page-container');
 
@@ -381,7 +382,7 @@ export const renderCreateOrder = async () => {
                     weight: item.weight || ''
                 }));
                 renderItems();
-                notificationService.success("Items auto-filled from last order");
+                notificationService.success(t('msg_update_success'));
             }
         }
     });
@@ -392,7 +393,7 @@ export const renderCreateOrder = async () => {
         let searchQuery = '';
 
         const modal = new Modal({
-            title: 'Select Customer',
+            title: t('sidebar_customers'),
             size: 'large',
             content: `
                 <div style="display: flex; flex-direction: column; gap: var(--space-4); min-height: 500px;">
