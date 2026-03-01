@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kyrgyz-organics-v5';
+const CACHE_NAME = 'kyrgyz-organics-v6';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
