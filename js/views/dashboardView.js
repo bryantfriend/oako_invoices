@@ -23,7 +23,7 @@ const cleanupCharts = () => {
 
 export const renderDashboard = async () => {
     layoutView.render();
-    layoutView.updateTitle(t("dash_title"));
+    layoutView.updateTitle(t("sidebar_orders"));
 
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();

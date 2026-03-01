@@ -741,8 +741,8 @@ export const renderInvoiceDetail = async ({ id }) => {
                                 // 1. Set global flag for the animation
                                 window.highlightOrderId = invoice.orderId;
 
-                                // 2. Redirect to Invoices collection gracefully
-                                router.navigate(ROUTES.INVOICES);
+                                // 2. Redirect to Orders tab (Dashboard)
+                                router.navigate(ROUTES.DASHBOARD);
 
                                 const { notificationService } = await import("../core/notificationService.js");
                                 notificationService.success("Invoice Printed");

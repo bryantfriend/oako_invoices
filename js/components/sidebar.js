@@ -18,7 +18,7 @@ export class Sidebar {
             </div>
             
             <nav class="sidebar-nav" style="padding: 16px; display: flex; flex-direction: column; gap: 4px;">
-                ${this.createNavItem(t('sidebar_dashboard'), ROUTES.DASHBOARD, '📊')}
+                ${this.createNavItem(t('sidebar_orders'), ROUTES.DASHBOARD, '📊')}
                 ${this.createNavItem(t('dash_new_order'), ROUTES.CREATE_ORDER, '➕')}
                 ${this.createNavItem(t('sidebar_invoices'), ROUTES.INVOICES, '📄')}
                 ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, '🍞')}
