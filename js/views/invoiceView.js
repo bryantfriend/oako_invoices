@@ -239,7 +239,7 @@ const INVOICE_I18N = {
         website: "kyrgyz-organics.com"
     },
     ru: {
-        invoice: "Счёт-фактура",
+        invoice: "Расходная накладная",
         invoiceNumber: "Номер счёта",
         date: "Дата",
         billTo: "Получатель:",
@@ -801,3 +801,4 @@ export const renderInvoiceDetail = async ({ id }) => {
 
     refreshBody();
 };
+
