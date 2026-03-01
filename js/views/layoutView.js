@@ -28,7 +28,7 @@ class LayoutView {
                     <span></span>
                 </button>
                 <div id="top-bar-title" style="font-weight: 600; font-size: var(--text-lg); color: var(--color-gray-800);">
-                    Dashboard
+                    ${i18n.t('sidebar_orders')}
                 </div>
             </div>
             </div>
