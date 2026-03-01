@@ -659,6 +659,11 @@ export const renderInvoiceDetail = async ({ id }) => {
                         background: white !important;
                     }
 
+                    #invoice-doc-container > .print-wrapper > .invoice-page:last-of-type,
+                    .invoice-page:last-child {
+                        page-break-after: avoid !important;
+                    }
+
                     /* Portrait 2-up (Sideways Stack) */
                     .print-sheet {
                         display: block !important;
@@ -672,6 +677,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                         font-size: 0 !important;
                         overflow: hidden !important;
                         box-sizing: border-box !important;
+                    }
+
+                    #invoice-doc-container > .print-wrapper > .print-sheet:last-of-type {
+                        page-break-after: avoid !important;
                     }
 
                     .sheet-half {
@@ -704,10 +713,6 @@ export const renderInvoiceDetail = async ({ id }) => {
                         box-shadow: none !important;
                         border: none !important;
                         overflow: hidden !important;
-                    }
-
-                    .invoice-page:last-child {
-                        page-break-after: auto !important;
                     }
 
                     .invoice-page * {
