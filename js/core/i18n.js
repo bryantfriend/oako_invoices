@@ -116,6 +116,11 @@ const DICTIONARY = {
         msg_offline: "You are working offline. Changes will save locally.",
         msg_online: "You are back online. Syncing data...",
         msg_print_success: "Printed successfully",
+        modal_print_title: "Print Successful?",
+        modal_print_body: "Would you like to mark this invoice's order as <strong>Printed</strong>?",
+        btn_mark_printed: "Yes, Mark as Printed",
+        btn_skip: "Skip",
+        msg_invoice_printed: "Invoice Printed",
     },
     ru: {
         // Layout & Sidebar
@@ -234,6 +239,11 @@ const DICTIONARY = {
         msg_offline: "Вы работаете в автономном режиме. Изменения сохранятся локально.",
         msg_online: "Вы снова в сети. Синхронизация данных...",
         msg_print_success: "Напечатано успешно",
+        modal_print_title: "Печать прошла успешно?",
+        modal_print_body: "Хотите отметить заказ этого счета как <strong>Напечатанный</strong>?",
+        btn_mark_printed: "Да, отметить как напечатанный",
+        btn_skip: "Пропустить",
+        msg_invoice_printed: "Счет напечатан",
     },
     kg: {
         // Layout & Sidebar
@@ -352,6 +362,11 @@ const DICTIONARY = {
         msg_offline: "Сиз оффлайн режимде иштеп жатасыз. Өзгөртүүлөр локалдуу түрдө сакталат.",
         msg_online: "Сиз кайра онлайнсыз. Маалыматтар шайкештирилүүдө...",
         msg_print_success: "Ийгиликтүү басып чыгарылды",
+        modal_print_title: "Басып чыгаруу ийгиликтүү болдубу?",
+        modal_print_body: "Бул эсеп-фактуранын буйрутмасын <strong>Басып чыгарылды</strong> деп белгилөөнү каалайсызбы?",
+        btn_mark_printed: "Ооба, басып чыгарылды деп белгилөө",
+        btn_skip: "Өткөрүп жиберүү",
+        msg_invoice_printed: "Эсеп-фактура басып чыгарылды",
     }
 };
 

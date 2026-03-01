@@ -723,10 +723,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                 setTimeout(async () => {
                     const { Modal } = await import("../components/modal.js");
                     const modal = new Modal({
-                        title: 'Print Successful?',
-                        content: `<p style="font-size: 14px; margin-bottom: 20px; color: var(--color-gray-700);">Would you like to mark this invoice's order as <strong>Printed</strong>?</p>`,
-                        confirmText: 'Yes, Mark as Printed',
-                        cancelText: 'Skip',
+                        title: t('modal_print_title'),
+                        content: `<p style="font-size: 14px; margin-bottom: 20px; color: var(--color-gray-700);">${t('modal_print_body')}</p>`,
+                        confirmText: t('btn_mark_printed'),
+                        cancelText: t('btn_skip'),
                         type: 'primary',
                         onConfirm: async () => {
                             try {
@@ -745,7 +745,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                                 router.navigate(ROUTES.DASHBOARD);
 
                                 const { notificationService } = await import("../core/notificationService.js");
-                                notificationService.success("Invoice Printed");
+                                notificationService.success(t('msg_invoice_printed'));
                             } catch (e) {
                                 console.error("Failed post-print routine", e);
                             }
