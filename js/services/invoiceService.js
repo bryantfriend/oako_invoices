@@ -90,7 +90,7 @@ export const invoiceService = {
         // Added timeout wrapper to prevent hanging offline, allowing UI to show error instead of eternal loading
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error('Invoice fetch timeout')), 5000);
+            timeoutId = setTimeout(() => reject(new Error('Invoice fetch timeout')), 15000);
         });
 
         try {
@@ -107,7 +107,7 @@ export const invoiceService = {
         const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error('Invoices fetch timeout')), 5000);
+            timeoutId = setTimeout(() => reject(new Error('Invoices fetch timeout')), 15000);
         });
         const snap = await Promise.race([getDocs(q), timeoutPromise]);
         clearTimeout(timeoutId);

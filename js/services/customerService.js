@@ -23,7 +23,7 @@ export const customerService = {
             // We can add filtering/ordering back once index is created in Firebase
             let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Customers fetch timeout')), 5000);
+                timeoutId = setTimeout(() => reject(new Error('Customers fetch timeout')), 15000);
             });
             const snapshot = await Promise.race([getDocs(collection(db, COLLECTION)), timeoutPromise]);
             clearTimeout(timeoutId);
@@ -44,7 +44,7 @@ export const customerService = {
             const docRef = doc(db, COLLECTION, id);
             let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 5000);
+                timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 15000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
             clearTimeout(timeoutId);
