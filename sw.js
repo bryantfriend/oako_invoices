@@ -1,6 +1,5 @@
-const CACHE_NAME = 'kyrgyz-organics-v4';
+const CACHE_NAME = 'kyrgyz-organics-v5';
 const ASSETS_TO_CACHE = [
-    './',
     './index.html',
     './manifest.json',
     './css/variables.css',
@@ -14,10 +13,17 @@ const ASSETS_TO_CACHE = [
     './js/core/authService.js',
     './js/core/notificationService.js',
     './js/core/formatters.js',
+    './js/core/guardService.js',
+    './js/core/logger.js',
+    './js/core/store.js',
+    './js/core/validators.js',
     './js/components/card.js',
     './js/components/dataTable.js',
     './js/components/formRepeater.js',
     './js/components/modal.js',
+    './js/components/loadingSkeleton.js',
+    './js/components/sidebar.js',
+    './js/components/statusBadge.js',
     './js/views/layoutView.js',
     './js/views/loginView.js',
     './js/views/dashboardView.js',
@@ -28,13 +34,21 @@ const ASSETS_TO_CACHE = [
     './js/views/customerView.js',
     './js/views/customerDetailView.js',
     './js/views/settingsView.js',
+    './js/controllers/authController.js',
+    './js/controllers/createOrderController.js',
     './js/controllers/customerController.js',
+    './js/controllers/dashboardController.js',
+    './js/controllers/inventoryController.js',
     './js/controllers/invoiceController.js',
+    './js/controllers/orderDetailController.js',
+    './js/controllers/settingsController.js',
     './js/services/productService.js',
     './js/services/orderService.js',
     './js/services/invoiceService.js',
     './js/services/customerService.js',
-    './js/services/settingsService.js'
+    './js/services/inventoryService.js',
+    './js/services/settingsService.js',
+    './js/services/statsService.js'
 ];
 
 self.addEventListener('install', (event) => {

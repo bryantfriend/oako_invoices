@@ -17,9 +17,6 @@ const DOCUMENT_ID = 'invoice_config';
 
 export const settingsService = {
     async getInvoiceSettings() {
-        const docRef = doc(db, COLLECTION, DOCUMENT_ID);
-        const snap = await getDoc(docRef);
-
         const defaults = {
             companyName: 'Kyrgyz Organics',
             address: 'Republic of Kyrgyzstan',
@@ -32,7 +29,22 @@ export const settingsService = {
             footerText: 'Thanks for supporting sustainable agriculture!'
         };
 
-        return snap.exists() ? { ...defaults, ...snap.data() } : defaults;
+        try {
+            const docRef = doc(db, COLLECTION, DOCUMENT_ID);
+
+            // Added timeout wrapper to prevent hanging offline, returning defaults instead
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Settings fetch timeout')), 2500);
+            });
+            const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
+            clearTimeout(timeoutId);
+
+            return snap.exists() ? { ...defaults, ...snap.data() } : defaults;
+        } catch (error) {
+            console.warn("Failed to fetch settings, using defaults.", error);
+            return defaults;
+        }
     },
 
     async updateInvoiceSettings(data) {

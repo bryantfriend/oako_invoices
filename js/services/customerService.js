@@ -21,7 +21,12 @@ export const customerService = {
         try {
             // Simplified query to avoid index requirements for now
             // We can add filtering/ordering back once index is created in Firebase
-            const snapshot = await getDocs(collection(db, COLLECTION));
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Customers fetch timeout')), 5000);
+            });
+            const snapshot = await Promise.race([getDocs(collection(db, COLLECTION)), timeoutPromise]);
+            clearTimeout(timeoutId);
             let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             // Client-side filter and sort as a fallback
@@ -37,7 +42,12 @@ export const customerService = {
     async getCustomerById(id) {
         try {
             const docRef = doc(db, COLLECTION, id);
-            const docSnap = await getDoc(docRef);
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 5000);
+            });
+            const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
+            clearTimeout(timeoutId);
             return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
         } catch (error) {
             console.error("Error fetching customer:", error);

@@ -21,7 +21,12 @@ export const orderService = {
     async getAllOrders() {
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
-            const snapshot = await getDocs(q);
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Orders fetch timeout')), 5000);
+            });
+            const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
+            clearTimeout(timeoutId);
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error fetching orders:", error);
@@ -32,7 +37,12 @@ export const orderService = {
     async getOrderById(id) {
         try {
             const docRef = doc(db, COLLECTION, id);
-            const docSnap = await getDoc(docRef);
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Order fetch timeout')), 5000);
+            });
+            const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
+            clearTimeout(timeoutId);
             if (docSnap.exists()) {
                 return { id: docSnap.id, ...docSnap.data() };
             }

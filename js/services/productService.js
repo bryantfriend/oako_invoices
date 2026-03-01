@@ -18,7 +18,14 @@ export const productService = {
             // For safety in a "drop-in" scenario without knowing their indexes, let's just fetch all
             // and filter client side if the list isn't huge.
             const q = collection(db, COLLECTION);
-            const snapshot = await getDocs(q);
+
+            // Added timeout wrapper to prevent hanging offline
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Products fetch timeout')), 5000);
+            });
+            const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
+            clearTimeout(timeoutId);
 
             return snapshot.docs.map(doc => {
                 const data = doc.data();
@@ -41,7 +48,12 @@ export const productService = {
     async getAllCategories() {
         try {
             const q = collection(db, CATEGORIES_COLLECTION);
-            const snapshot = await getDocs(q);
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error('Categories fetch timeout')), 5000);
+            });
+            const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
+            clearTimeout(timeoutId);
             return snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {

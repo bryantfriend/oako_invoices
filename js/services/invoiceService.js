@@ -86,13 +86,31 @@ export const invoiceService = {
 
     async getInvoice(id) {
         const docRef = doc(db, COLLECTION, id);
-        const snap = await getDoc(docRef);
-        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+
+        // Added timeout wrapper to prevent hanging offline, allowing UI to show error instead of eternal loading
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Invoice fetch timeout')), 5000);
+        });
+
+        try {
+            const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
+            clearTimeout(timeoutId);
+            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        } catch (error) {
+            console.error("Failed to fetch invoice due to timeout or network:", error);
+            throw error;
+        }
     },
 
     async getAllInvoices() {
         const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
-        const snap = await getDocs(q);
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Invoices fetch timeout')), 5000);
+        });
+        const snap = await Promise.race([getDocs(q), timeoutPromise]);
+        clearTimeout(timeoutId);
         return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
 

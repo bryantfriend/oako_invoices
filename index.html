@@ -20,6 +20,22 @@
 
     <!-- Favicon placeholder -->
     <link rel="icon" href="data:,">
+
+    <script>
+        window.onerror = function (msg, url, line, col, error) {
+            const errDiv = document.createElement('div');
+            errDiv.style = "position: fixed; top: 0; left: 0; right: 0; background: red; color: white; z-index: 999999; padding: 20px; font-family: monospace; font-size: 16px; white-space: pre-wrap;";
+            errDiv.innerHTML = `<strong>JS ERROR:</strong> ${msg}<br>Location: ${url}:${line}:${col}<br>Stack: ${error ? error.stack : 'N/A'}`;
+            document.body.appendChild(errDiv);
+            return false;
+        };
+        window.addEventListener('unhandledrejection', function (event) {
+            const errDiv = document.createElement('div');
+            errDiv.style = "position: fixed; top: 0; left: 0; right: 0; background: darkred; color: white; z-index: 999999; padding: 20px; font-family: monospace; font-size: 16px; white-space: pre-wrap;";
+            errDiv.innerHTML = `<strong>PROMISE REJECTION:</strong> ${event.reason}<br>Stack: ${event.reason.stack}`;
+            document.body.appendChild(errDiv);
+        });
+    </script>
 </head>
 
 <body>

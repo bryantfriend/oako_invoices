@@ -25,7 +25,7 @@ export const renderInvoices = async () => {
     const orderMap = {};
     allOrders.forEach(o => orderMap[o.id] = o);
     allInvoices.forEach(inv => {
-        inv.isPrinted = orderMap[inv.orderId]?.isPrinted || false;
+        inv.isPrinted = (orderMap[inv.orderId] && orderMap[inv.orderId].isPrinted) || false;
     });
 
     const customers = [...new Set(allInvoices.map(i => i.customerName))].sort();
@@ -38,7 +38,7 @@ export const renderInvoices = async () => {
         filtered = allInvoices.filter(inv => {
             const matchesCustomer = filters.customer === 'all' || inv.customerName === filters.customer;
 
-            const date = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+            const date = (inv.createdAt && inv.createdAt.toDate) ? inv.createdAt.toDate() : new Date(inv.createdAt);
             const now = new Date();
             let matchesPeriod = filters.period === 'all';
             if (filters.period === 'today') {
@@ -62,8 +62,8 @@ export const renderInvoices = async () => {
             let valB = b[sort.key];
 
             if (sort.key === 'createdAt') {
-                valA = valA?.toDate ? valA.toDate() : new Date(valA);
-                valB = valB?.toDate ? valB.toDate() : new Date(valB);
+                valA = valA ? (valA.toDate ? valA.toDate() : new Date(valA)) : new Date(0);
+                valB = valB ? (valB.toDate ? valB.toDate() : new Date(valB)) : new Date(0);
             }
 
             if (valA < valB) return sort.order === 'asc' ? -1 : 1;
@@ -99,7 +99,7 @@ export const renderInvoices = async () => {
                         </div>
                     </div>
                 ` },
-                { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate(val?.toDate ? val.toDate() : val)}</span>` },
+                { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate((val && val.toDate) ? val.toDate() : val)}</span>` },
                 { key: 'totalAmount', label: 'Amount', render: (val) => `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>` },
             ],
             data: filtered,
@@ -203,7 +203,7 @@ export const renderInvoices = async () => {
     };
 
     window.deleteInvoice = (id) => {
-        const { Modal } = import("../components/modal.js").then(({ Modal }) => {
+        import("../components/modal.js").then(({ Modal }) => {
             Modal.confirm(
                 'Delete Invoice?',
                 'This will permanently remove the invoice record. The associated order will remain. This action cannot be undone.',
@@ -266,11 +266,18 @@ export const renderInvoiceDetail = async ({ id }) => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const [invoice, allProducts, liveSettings] = await Promise.all([
-        invoiceController.loadInvoice(id),
-        productService.getAllProducts(),
-        import("../services/settingsService.js").then(m => m.settingsService.getInvoiceSettings())
-    ]);
+    let invoice, allProducts, liveSettings;
+    try {
+        [invoice, allProducts, liveSettings] = await Promise.all([
+            invoiceController.loadInvoice(id),
+            productService.getAllProducts(),
+            import("../services/settingsService.js").then(m => m.settingsService.getInvoiceSettings())
+        ]);
+    } catch (e) {
+        console.error("error fetching invoice deps", e);
+        container.innerHTML = `<div class="p-8 text-center" style="color: #ef4444; font-weight: 500;">An error occurred while loading this invoice.</div>`;
+        return;
+    }
 
     if (!invoice) {
         container.innerHTML = `<div class="p-8 text-center">Invoice not found</div>`;
@@ -296,7 +303,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         const t = INVOICE_I18N[lang];
         // Merge liveSettings OVER invoice.settings so toggles apply retroactively to old invoices
         const s = { ...(invoice.settings || {}), ...(liveSettings || {}) };
-        if (!s.logoUrl && liveSettings?.logoUrl) s.logoUrl = liveSettings.logoUrl;
+        if (!s.logoUrl && (liveSettings && liveSettings.logoUrl)) s.logoUrl = liveSettings.logoUrl;
 
         const notesText = lang === 'en' ? (s.notesEn || t.paymentTerms) : (s.notesRu || t.paymentTerms);
         const bannerFootText = s.footerText || t.thanks;
@@ -390,16 +397,13 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
                         <tbody style="font-size: 12px;">
                             ${pageItems.map((item, idx) => {
-                // 1. Try Snapshot (Localized)
-                // 2. Try Live Catalog Fallback (Localized)
-                // 3. Try Snapshot (Generic Name)
                 const liveProduct = productMap[item.productId];
                 let itemName = item.name;
 
                 if (lang === 'ru') {
-                    itemName = item.name_ru || liveProduct?.name_ru || item.name_en || liveProduct?.name_en || item.name;
+                    itemName = item.name_ru || (liveProduct && liveProduct.name_ru) || item.name_en || (liveProduct && liveProduct.name_en) || item.name;
                 } else {
-                    itemName = item.name_en || liveProduct?.name_en || item.name;
+                    itemName = item.name_en || (liveProduct && liveProduct.name_en) || item.name;
                 }
 
                 return `
@@ -510,7 +514,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     <span style="font-size: 12px; font-weight: 600;">Date:</span>
                     <input type="date" id="invoice-date-picker" class="input" style="padding: 2px 8px; height: 32px; font-size: 13px; width: 140px;" 
-                           value="${(invoice.createdAt?.toDate ? invoice.createdAt.toDate() : new Date(invoice.createdAt)).toISOString().split('T')[0]}">
+                           value="${((invoice.createdAt && invoice.createdAt.toDate) ? invoice.createdAt.toDate() : new Date(invoice.createdAt)).toISOString().split('T')[0]}">
                 </div>
 
                 <div style="flex: 1; display: flex; justify-content: center; align-items: center; gap: 15px;">
@@ -713,92 +717,101 @@ export const renderInvoiceDetail = async ({ id }) => {
             </style>
         `;
 
-        // Event Listeners
-        document.getElementById('lang-en').addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
-        document.getElementById('lang-ru').addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
+        try {
+            // Event Listeners
+            document.getElementById('lang-en').addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
+            document.getElementById('lang-ru').addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
 
-        document.getElementById('invoice-date-picker').addEventListener('change', async (e) => {
-            const newDate = e.target.value;
-            const success = await invoiceController.updateDate(id, newDate);
-            if (success) {
-                // Update local model
-                const d = new Date(newDate + 'T12:00:00');
-                invoice.createdAt = d;
-                invoice.dueDate = d;
-                refreshBody();
-            }
-        });
+            document.getElementById('invoice-date-picker').addEventListener('change', async (e) => {
+                const newDate = e.target.value;
+                const success = await invoiceController.updateDate(id, newDate);
+                if (success) {
+                    // Update local model
+                    const d = new Date(newDate + 'T12:00:00');
+                    invoice.createdAt = d;
+                    invoice.dueDate = d;
+                    refreshBody();
+                }
+            });
 
-        document.getElementById('prev-page').addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
-        document.getElementById('next-page').addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
+            document.getElementById('prev-page').addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
+            document.getElementById('next-page').addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
 
-        document.getElementById('zoom-slider').addEventListener('input', (e) => {
-            invoiceScale = parseFloat(e.target.value);
-            const activePage = container.querySelector('.invoice-page.active-page');
-            if (activePage) activePage.style.transform = `scale(${invoiceScale})`;
-            e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
-        });
+            document.getElementById('zoom-slider').addEventListener('input', (e) => {
+                invoiceScale = parseFloat(e.target.value);
+                const activePage = container.querySelector('.invoice-page.active-page');
+                if (activePage) activePage.style.transform = `scale(${invoiceScale})`;
+                e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
+            });
 
-        const handlePrintSuccess = async () => {
-            // Slight delay so the UI can settle back to normal before the modal pops
-            setTimeout(async () => {
-                const { Modal } = await import("../components/modal.js");
-                const modal = new Modal({
-                    title: 'Print Successful?',
-                    content: `<p style="font-size: 14px; margin-bottom: 20px; color: var(--color-gray-700);">Would you like to mark this invoice's order as <strong>Printed</strong>?</p>`,
-                    confirmText: 'Yes, Mark as Printed',
-                    cancelText: 'Skip',
-                    type: 'primary',
-                    onConfirm: async () => {
-                        try {
+            const handlePrintSuccess = async () => {
+                // Slight delay so the UI can settle back to normal before the modal pops
+                setTimeout(async () => {
+                    const { Modal } = await import("../components/modal.js");
+                    const modal = new Modal({
+                        title: 'Print Successful?',
+                        content: `<p style="font-size: 14px; margin-bottom: 20px; color: var(--color-gray-700);">Would you like to mark this invoice's order as <strong>Printed</strong>?</p>`,
+                        confirmText: 'Yes, Mark as Printed',
+                        cancelText: 'Skip',
+                        type: 'primary',
+                        onConfirm: async () => {
                             try {
-                                const { orderService } = await import("../services/orderService.js");
-                                await orderService.updateOrder(invoice.orderId, { isPrinted: true });
-                            } catch (updateErr) {
-                                console.warn("Could not sync print status to order (order may have been deleted):", updateErr);
-                                // We continue anyway so the user isn't stuck and the animation still plays
+                                try {
+                                    const { orderService } = await import("../services/orderService.js");
+                                    await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+                                } catch (updateErr) {
+                                    console.warn("Could not sync print status to order (order may have been deleted):", updateErr);
+                                    // We continue anyway so the user isn't stuck and the animation still plays
+                                }
+
+                                // 1. Set global flag for the animation
+                                window.highlightOrderId = invoice.orderId;
+
+                                // 2. Redirect to Invoices collection gracefully
+                                router.navigate(ROUTES.INVOICES);
+
+                                const { notificationService } = await import("../core/notificationService.js");
+                                notificationService.success("Invoice Printed");
+                            } catch (e) {
+                                console.error("Failed post-print routine", e);
                             }
-
-                            // 1. Set global flag for the animation
-                            window.highlightOrderId = invoice.orderId;
-
-                            // 2. Redirect to Invoices collection gracefully
-                            router.navigate(ROUTES.INVOICES);
-
-                            const { notificationService } = await import("../core/notificationService.js");
-                            notificationService.success("Invoice Printed");
-                        } catch (e) {
-                            console.error("Failed post-print routine", e);
                         }
-                    }
-                });
-                modal.open();
-            }, 500);
-        };
+                    });
+                    modal.open();
+                }, 500);
+            };
 
-        document.getElementById('btn-print-portrait').addEventListener('click', () => {
-            document.body.classList.remove('printing-2up-portrait');
-            window.print();
-            handlePrintSuccess();
-        });
-
-        document.getElementById('btn-print-landscape').addEventListener('click', () => {
-            is2UpMode = true;
-            refreshBody(); // Render duplicate pages in DOM
-
-            document.body.classList.add('printing-2up-portrait');
-            window.print();
-
-            // Revert to normal view
-            setTimeout(() => {
+            document.getElementById('btn-print-portrait').addEventListener('click', () => {
                 document.body.classList.remove('printing-2up-portrait');
-                is2UpMode = false;
-                refreshBody();
+                window.print();
                 handlePrintSuccess();
-            }, 1000);
-        });
+            });
+
+            document.getElementById('btn-print-landscape').addEventListener('click', () => {
+                is2UpMode = true;
+                refreshBody(); // Render duplicate pages in DOM
+
+                document.body.classList.add('printing-2up-portrait');
+                window.print();
+
+                // Revert to normal view
+                setTimeout(() => {
+                    document.body.classList.remove('printing-2up-portrait');
+                    is2UpMode = false;
+                    refreshBody();
+                    handlePrintSuccess();
+                }, 1000);
+            });
+        } catch (e) {
+            console.error("error attaching listener in refreshBody", e);
+        }
     };
 
-    refreshBody();
+    try {
+        refreshBody();
+    } catch (err) {
+        console.error("render invoice detail fail", err);
+        container.innerHTML = `<div class="p-8 text-center" style="color: #ef4444; font-weight: 500;">Failed to render invoice. Some data may be missing or corrupt (possibly offline).</div>`;
+    }
 };
 
