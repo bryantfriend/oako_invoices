@@ -344,8 +344,8 @@ window.editCustomer = async (id) => {
 
 window.archiveCustomer = (id) => {
     Modal.confirm(
-        'Archive Customer',
-        'This customer will be hidden but not deleted.',
+        t('modal_archive_cust_title'),
+        t('modal_archive_cust_msg'),
         async () => {
             await customerController.archiveCustomer(id);
             renderCustomers();
@@ -355,8 +355,8 @@ window.archiveCustomer = (id) => {
 
 window.deleteCustomer = (id) => {
     Modal.confirm(
-        'Delete Customer Permanently',
-        'Are you sure? This will permanently remove the customer from the database. This action cannot be undone.',
+        t('modal_delete_cust_title'),
+        t('modal_delete_cust_msg'),
         async () => {
             const success = await customerController.handleDeleteCustomer(id);
             if (success) renderCustomers();

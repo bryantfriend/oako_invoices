@@ -539,7 +539,7 @@ export const renderDashboard = async () => {
         };
 
         window.deleteOrder = async (id) => {
-            if (confirm("Delete this draft?")) {
+            if (confirm(t('confirm_delete_draft'))) {
                 const { orderService } = await import("../services/orderService.js");
                 await orderService.deleteOrder(id);
                 renderDashboard();

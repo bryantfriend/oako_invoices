@@ -369,7 +369,7 @@ export const renderCreateOrder = async () => {
         const lastItems = await createOrderController.getLastOrderItems(val);
         if (lastItems && lastItems.length > 0) {
             // Confirm with user
-            if (confirm(`Found a previous order for ${val}. Auto-fill items?`)) {
+            if (confirm(t('confirm_autofill_order'))) {
                 selectedItems = lastItems.map(item => ({
                     productId: item.productId || '',
                     name: item.name,
@@ -504,7 +504,7 @@ export const renderCreateOrder = async () => {
 
                     // Optionally refresh datalist if needed for future searches,
                     // but for this flow specifically we just want to select it.
-                    notificationService.success(`Selected ${newName}`);
+                    notificationService.success(t('msg_selected') + newName);
                 }
                 return success;
             }
@@ -518,7 +518,7 @@ export const renderCreateOrder = async () => {
         e.preventDefault();
 
         if (selectedItems.length === 0) {
-            notificationService.error("Please add at least one product");
+            notificationService.error(t('err_add_product'));
             return;
         }
 

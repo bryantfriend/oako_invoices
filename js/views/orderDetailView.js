@@ -229,16 +229,16 @@ export const renderOrderDetail = async ({ id }) => {
                 title: t('btn_confirm'),
                 content: `
                     <div style="display: flex; flex-direction: column; gap: var(--space-4);">
-                        <p>Are you sure you want to confirm this order? This will generate the official invoice.</p>
+                        <p>${t('modal_confirm_order_msg')}</p>
                         
                         <div style="background: var(--color-gray-50); padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-gray-200);">
-                            <h4 style="margin-bottom: var(--space-3); color: var(--color-gray-700);">Financial Adjustments</h4>
+                            <h4 style="margin-bottom: var(--space-3); color: var(--color-gray-700);">${t('modal_fin_adjust')}</h4>
                             
                             <!-- Tax Section -->
                             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2);">
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="checkbox" id="modal-add-tax" checked> 
-                                    <span>Add VAT (Tax)</span>
+                                    <span>${t('modal_add_vat')}</span>
                                 </label>
                                 <div id="tax-rate-container" style="display: flex; align-items: center; gap: 4px;">
                                     <input type="number" id="modal-tax-rate" value="${settings.defaultTaxRate}" step="0.5" style="width: 60px; text-align: center;" class="input">
@@ -252,13 +252,13 @@ export const renderOrderDetail = async ({ id }) => {
                             <div style="display: flex; flex-direction: column; gap: var(--space-2);">
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                                     <input type="checkbox" id="modal-add-discount"> 
-                                    <span>Apply Discount</span>
+                                    <span>${t('modal_apply_discount')}</span>
                                 </label>
                                 
                                 <div id="discount-container" style="display: none; gap: var(--space-2); align-items: center;">
                                     <select id="modal-discount-type" class="input" style="width: auto;">
-                                        <option value="percent">Percent (%)</option>
-                                        <option value="fixed">Fixed Amount</option>
+                                        <option value="percent">${t('modal_discount_pct')}</option>
+                                        <option value="fixed">${t('modal_discount_fixed')}</option>
                                     </select>
                                     <input type="number" id="modal-discount-value" value="0" step="1" style="width: 80px;" class="input">
                                 </div>
@@ -271,7 +271,7 @@ export const renderOrderDetail = async ({ id }) => {
                         // we handle this in the view logic below the modal.open)
                     </script>
                 `,
-                confirmText: 'Confirm & Generate Invoice',
+                confirmText: t('btn_confirm_gen'),
                 type: newStatus === ORDER_STATUS.CANCELLED ? 'destructive' : 'primary',
                 onConfirm: async () => {
                     const addTax = document.getElementById('modal-add-tax')?.checked;
@@ -324,7 +324,7 @@ export const renderOrderDetail = async ({ id }) => {
         lockBtn.addEventListener('click', () => {
             const isLocked = lockBtn.textContent.trim() === '🔒';
             if (isLocked) {
-                if (confirm("Allow manual status change for this completed order?")) {
+                if (confirm(t('confirm_manual_status'))) {
                     lockBtn.textContent = '🔓';
                     statusSelect.style.pointerEvents = 'auto';
                     statusSelect.style.opacity = '1';
@@ -342,7 +342,7 @@ export const renderOrderDetail = async ({ id }) => {
             const newStatus = statusSelect.value;
             if (newStatus === order.status) return;
 
-            if (confirm(`Change status to ${newStatus}?`)) {
+            if (confirm(t('confirm_change_status') + newStatus + '?')) {
                 await orderDetailController.updateStatus(id, newStatus);
                 renderOrderDetail({ id });
             }

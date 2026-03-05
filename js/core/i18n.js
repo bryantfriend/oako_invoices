@@ -121,6 +121,25 @@ const DICTIONARY = {
         btn_mark_printed: "Yes, Mark as Printed",
         btn_skip: "Skip",
         msg_invoice_printed: "Invoice Printed",
+
+        // Added manually
+        confirm_manual_status: "Allow manual status change for this completed order?",
+        confirm_change_status: "Change status to ",
+        confirm_delete_draft: "Delete this draft?",
+        confirm_autofill_order: "Found a previous order for this customer. Auto-fill items?",
+        err_add_product: "Please add at least one product",
+        msg_selected: "Selected ",
+        modal_archive_cust_title: "Archive Customer",
+        modal_archive_cust_msg: "This customer will be hidden but not deleted.",
+        modal_delete_cust_title: "Delete Customer Permanently",
+        modal_delete_cust_msg: "Are you sure? This will permanently remove the customer from the database. This action cannot be undone.",
+        modal_confirm_order_msg: "Are you sure you want to confirm this order? This will generate the official invoice.",
+        modal_fin_adjust: "Financial Adjustments",
+        modal_add_vat: "Add VAT (Tax)",
+        modal_apply_discount: "Apply Discount",
+        modal_discount_pct: "Percent (%)",
+        modal_discount_fixed: "Fixed Amount",
+        btn_confirm_gen: "Confirm & Generate Invoice",
     },
     ru: {
         // Layout & Sidebar
@@ -244,6 +263,25 @@ const DICTIONARY = {
         btn_mark_printed: "Да, отметить как напечатанный",
         btn_skip: "Пропустить",
         msg_invoice_printed: "Счет напечатан",
+
+        // Added manually
+        confirm_manual_status: "Разрешить ручное изменение статуса для этого завершенного заказа?",
+        confirm_change_status: "Изменить статус на ",
+        confirm_delete_draft: "Удалить этот черновик?",
+        confirm_autofill_order: "Найден предыдущий заказ для этого клиента. Автозаполнить товары?",
+        err_add_product: "Пожалуйста, добавьте хотя бы один товар",
+        msg_selected: "Выбрано ",
+        modal_archive_cust_title: "Архивировать клиента",
+        modal_archive_cust_msg: "Этот клиент будет скрыт, но не удален.",
+        modal_delete_cust_title: "Удалить клиента навсегда",
+        modal_delete_cust_msg: "Вы уверены? Это навсегда удалит клиента из базы данных. Это действие нельзя отменить.",
+        modal_confirm_order_msg: "Вы уверены, что хотите подтвердить этот заказ? Будет сгенерирован официальный счет.",
+        modal_fin_adjust: "Финансовые корректировки",
+        modal_add_vat: "Добавить НДС (Налог)",
+        modal_apply_discount: "Применить скидку",
+        modal_discount_pct: "Процент (%)",
+        modal_discount_fixed: "Фиксированная сумма",
+        btn_confirm_gen: "Подтвердить и создать счет",
     },
     kg: {
         // Layout & Sidebar
@@ -367,6 +405,25 @@ const DICTIONARY = {
         btn_mark_printed: "Ооба, басып чыгарылды деп белгилөө",
         btn_skip: "Өткөрүп жиберүү",
         msg_invoice_printed: "Эсеп-фактура басып чыгарылды",
+
+        // Added manually
+        confirm_manual_status: "Аяктаган буйрутманын статусун кол менен өзгөртүүгө уруксат бересизби?",
+        confirm_change_status: "Статусту өзгөртүү: ",
+        confirm_delete_draft: "Бул черновикти өчүрөсүзбү?",
+        confirm_autofill_order: "Бул кардар үчүн мурунку буйрутма табылды. Товарларды авто-толтуруу керекпи?",
+        err_add_product: "Кеминде бир товарды кошуңуз",
+        msg_selected: "Тандалды ",
+        modal_archive_cust_title: "Кардарды архивдөө",
+        modal_archive_cust_msg: "Бул кардар жашырылат, бирок өчүрүлбөйт.",
+        modal_delete_cust_title: "Кардарды биротоло өчүрүү",
+        modal_delete_cust_msg: "Ишенесизби? Бул кардарды маалымат базасынан биротоло өчүрөт. Бул аракетти артка кайтаруу мүмкүн эмес.",
+        modal_confirm_order_msg: "Бул буйрутманы ырастоону чын эле каалайсызбы? Бул расмий эсеп-фактураны түзөт.",
+        modal_fin_adjust: "Финансылык өзгөртүүлөр",
+        modal_add_vat: "КНС кошуу (Салык)",
+        modal_apply_discount: "Арзандатууну колдонуу",
+        modal_discount_pct: "Пайыз (%)",
+        modal_discount_fixed: "Бекитилген сумма",
+        btn_confirm_gen: "Ырастоо жана эсеп-фактураны түзүү",
     }
 };
 
