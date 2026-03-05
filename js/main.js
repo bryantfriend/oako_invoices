@@ -42,12 +42,12 @@ async function initApp() {
                 const { orderService } = await import("./services/orderService.js");
                 const { invoiceService } = await import("./services/invoiceService.js");
 
-                // Fire and forget to populate IndexedDB cache
-                productService.getAllProducts();
-                productService.getAllCategories();
-                customerController.loadAllCustomers();
-                orderService.getAllOrders();
-                invoiceService.getAllInvoices();
+                // Fire and forget to populate IndexedDB cache, adding catch to prevent unhandled rejections
+                productService.getAllProducts().catch(e => console.warn('Preload ignoring error:', e));
+                productService.getAllCategories().catch(e => console.warn('Preload ignoring error:', e));
+                customerController.loadAllCustomers().catch(e => console.warn('Preload ignoring error:', e));
+                orderService.getAllOrders().catch(e => console.warn('Preload ignoring error:', e));
+                invoiceService.getAllInvoices().catch(e => console.warn('Preload ignoring error:', e));
             } catch (e) {
                 console.warn("Failed to preload offline data:", e);
             }

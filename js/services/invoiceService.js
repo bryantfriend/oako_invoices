@@ -95,11 +95,12 @@ export const invoiceService = {
 
         try {
             const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
-            clearTimeout(timeoutId);
             return snap.exists() ? { id: snap.id, ...snap.data() } : null;
         } catch (error) {
             console.error("Failed to fetch invoice due to timeout or network:", error);
             throw error;
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 
@@ -109,9 +110,12 @@ export const invoiceService = {
         const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('Invoices fetch timeout')), 15000);
         });
-        const snap = await Promise.race([getDocs(q), timeoutPromise]);
-        clearTimeout(timeoutId);
-        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        try {
+            const snap = await Promise.race([getDocs(q), timeoutPromise]);
+            return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } finally {
+            clearTimeout(timeoutId);
+        }
     },
 
     async deleteInvoice(id) {

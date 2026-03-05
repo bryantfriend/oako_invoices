@@ -26,11 +26,12 @@ export const orderService = {
                 timeoutId = setTimeout(() => reject(new Error('Orders fetch timeout')), 15000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-            clearTimeout(timeoutId);
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             console.error("Error fetching orders:", error);
             throw error;
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 
@@ -42,7 +43,6 @@ export const orderService = {
                 timeoutId = setTimeout(() => reject(new Error('Order fetch timeout')), 15000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
-            clearTimeout(timeoutId);
             if (docSnap.exists()) {
                 return { id: docSnap.id, ...docSnap.data() };
             }
@@ -50,6 +50,8 @@ export const orderService = {
         } catch (error) {
             console.error("Error fetching order:", error);
             throw error;
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 
