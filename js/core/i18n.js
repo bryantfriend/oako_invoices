@@ -94,6 +94,7 @@ const DICTIONARY = {
         login_fail: "Login failed",
 
         // Modals / Common
+        btn_view: "View",
         btn_cancel: "Cancel",
         btn_save: "Save",
         btn_delete: "Delete",
@@ -236,6 +237,7 @@ const DICTIONARY = {
         login_fail: "Ошибка входа",
 
         // Modals / Common
+        btn_view: "Просмотр",
         btn_cancel: "Отмена",
         btn_save: "Сохранить",
         btn_delete: "Удалить",
@@ -378,6 +380,7 @@ const DICTIONARY = {
         login_fail: "Кирүү катасы",
 
         // Modals / Common
+        btn_view: "Көрүү",
         btn_cancel: "Жокко чыгаруу",
         btn_save: "Сактоо",
         btn_delete: "Өчүрүү",

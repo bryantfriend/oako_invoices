@@ -291,11 +291,23 @@ export const renderInvoiceDetail = async ({ id }) => {
 
         const totalPages = pages.length;
 
-        const subtotal = invoice.subtotal || 0;
+        let calculatedSubtotal = 0;
+        items.forEach(item => {
+            const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+            calculatedSubtotal += (item.price || 0) * finalQty;
+        });
+
+        const subtotal = calculatedSubtotal;
         const taxRate = invoice.taxRate || 0;
-        const taxAmount = invoice.taxAmount || 0;
-        const discountAmount = invoice.discountAmount || 0;
-        const grandTotal = invoice.totalAmount || 0;
+        const taxAmount = (subtotal * taxRate) / 100;
+
+        let discountAmount = invoice.discountAmount || 0;
+        // recalculate discount if percent
+        if (invoice.discountType === 'percent' && invoice.discountValue) {
+            discountAmount = (subtotal * invoice.discountValue) / 100;
+        }
+
+        const grandTotal = subtotal + taxAmount - discountAmount;
 
         return pages.map((pageItems, index) => {
             const pageNum = index + 1;
@@ -375,15 +387,17 @@ export const renderInvoiceDetail = async ({ id }) => {
                     itemName = item.name_en || (liveProduct && liveProduct.name_en) || item.name;
                 }
 
+                const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+
                 return `
                                     <tr style="background: ${idx % 2 === 0 ? '#fafaf8' : '#fff'}; border-bottom: 1px solid #e2e8e0;">
                                         <td style="padding: 6px 10px;">
                                         <div style="font-weight: 600; color: #1e3318;">${itemName}</div>
                                             ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${item.weight}</div>` : ''}
                                         </td>
-                                        <td style="padding: 6px 10px; text-align: center; color: #1e3318;">${item.quantity}</td>
+                                        <td style="padding: 6px 10px; text-align: center; color: #1e3318;">${finalQty}</td>
                                         <td style="padding: 6px 10px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
-                                        <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: #1e3318;">${formatCurrency(item.price * item.quantity)}</td>
+                                        <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: #1e3318;">${formatCurrency(item.price * finalQty)}</td>
                                     </tr>
                                 `;
             }).join('')}

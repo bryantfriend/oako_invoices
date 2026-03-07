@@ -31,8 +31,12 @@ export const orderDetailController = {
 
     async updateQuantities(id, items) {
         try {
-            // Update items with adjusted quantities
-            await orderService.updateOrder(id, { items });
+            const totalAmount = items.reduce((sum, item) => {
+                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                return sum + (qty * (item.price || 0));
+            }, 0);
+            // Update items with adjusted quantities and the new totalAmount
+            await orderService.updateOrder(id, { items, totalAmount });
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
