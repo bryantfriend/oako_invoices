@@ -1,4 +1,5 @@
 import { dashboardController } from "../controllers/dashboardController.js";
+import { inventoryController } from "../controllers/inventoryController.js";
 import { layoutView } from "./layoutView.js";
 import { DataTable } from "../components/dataTable.js";
 import { createStatusBadge } from "../components/statusBadge.js";
@@ -31,14 +32,20 @@ export const renderDashboard = async () => {
     // Internal State
     let allOrders = [];
     let filteredOrders = [];
+    let inventoryCategories = [];
     let currentPeriod = '30d';
     let filters = { status: 'all', drill: null };
     let sort = { key: 'orderDate', order: 'desc' };
 
     // Initial Fetch
-    const { orders } = await dashboardController.loadDashboard();
+    const today = new Date().toISOString().split('T')[0];
+    const [{ orders }, inventoryData] = await Promise.all([
+        dashboardController.loadDashboard(),
+        inventoryController.loadInventoryData(today)
+    ]);
     allOrders = orders;
     filteredOrders = [...allOrders];
+    inventoryCategories = inventoryData;
 
     const handleSort = (key) => {
         if (sort.key === key) {
@@ -92,6 +99,9 @@ export const renderDashboard = async () => {
                         </div>
                         <button id="create-order-btn" class="btn btn-primary" style="padding: 6px 16px; border-radius: 6px; font-weight: 700; font-size: 12px;">+ ${t('dash_new_order')}</button>
                     </div>
+
+                    <!-- ROW 2: KPIs -->
+                    ${renderInventoryStrip(inventoryCategories)}
 
                     <!-- ROW 2: KPIs -->
                     <div class="grid-cols-mobile-2" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; min-height: 90px;">
@@ -190,6 +200,74 @@ export const renderDashboard = async () => {
                     <div style="font-size: 11px; font-weight: 700; color: ${color};">${isUp ? '↑' : '↓'} ${Math.abs(data.delta)}%</div>
                 </div>
                 <div style="font-size: 10px; color: var(--color-gray-400);">vs prior period</div>
+            </div>
+        `;
+    };
+
+    const renderInventoryStrip = (categories) => {
+        const products = categories
+            .flatMap(cat => cat.products || [])
+            .sort((a, b) => (a.left ?? 0) - (b.left ?? 0));
+
+        if (products.length === 0) {
+            return '';
+        }
+
+        return `
+            <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                    <div>
+                        <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Inventory Left Today</h3>
+                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Live stock remaining from the Inventory tab</div>
+                    </div>
+                    <button id="open-inventory-btn" class="btn btn-secondary btn-sm" style="font-size: 11px;">Open Inventory</button>
+                </div>
+
+                <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch;">
+                    ${products.map(product => {
+            const left = product.left ?? 0;
+            const tone = left <= 0
+                ? { bg: '#fef2f2', border: '#fecaca', count: '#dc2626', label: '#991b1b' }
+                : left <= 5
+                    ? { bg: '#fffbeb', border: '#fde68a', count: '#d97706', label: '#92400e' }
+                    : { bg: '#f0fdf4', border: '#bbf7d0', count: '#16a34a', label: '#166534' };
+
+            return `
+                            <div style="
+                                min-width: 180px;
+                                max-width: 180px;
+                                border: 1px solid ${tone.border};
+                                background: ${tone.bg};
+                                border-radius: 12px;
+                                padding: 10px;
+                                display: flex;
+                                align-items: center;
+                                gap: 10px;
+                                flex-shrink: 0;
+                            ">
+                                <div style="width: 52px; height: 52px; border-radius: 10px; overflow: hidden; background: white; border: 1px solid rgba(0,0,0,0.05); flex-shrink: 0;">
+                                    ${product.imageUrl
+                    ? `<img src="${product.imageUrl}" alt="${product.displayName || product.name}" style="width: 100%; height: 100%; object-fit: cover;">`
+                    : '<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 22px;">🥖</div>'}
+                                </div>
+                                <div style="min-width: 0; display: flex; flex-direction: column; gap: 3px;">
+                                    <div style="font-size: 12px; font-weight: 700; color: var(--color-gray-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        ${product.displayName || product.name}
+                                    </div>
+                                    <div style="font-size: 10px; color: ${tone.label}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;">
+                                        ${left <= 0 ? 'Out / Oversold' : left <= 5 ? 'Low stock' : 'In stock'}
+                                    </div>
+                                    <div style="font-size: 18px; font-weight: 800; color: ${tone.count}; line-height: 1;">
+                                        ${left}
+                                    </div>
+                                    <div style="font-size: 10px; color: var(--color-gray-500);">
+                                        left
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+        }).join('')}
+                </div>
             </div>
         `;
     };
@@ -539,6 +617,8 @@ export const renderDashboard = async () => {
             filters.status = e.target.value;
             applyFilters();
         });
+
+        document.getElementById('open-inventory-btn')?.addEventListener('click', () => router.navigate(ROUTES.INVENTORY));
 
         const alertStrip = document.getElementById('risk-alert');
         if (alertStrip) {
