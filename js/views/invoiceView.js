@@ -59,6 +59,10 @@ export const renderInvoices = async () => {
 
         // Apply Sort
         filtered.sort((a, b) => {
+            if (a.isPrinted !== b.isPrinted) {
+                return a.isPrinted ? 1 : -1;
+            }
+
             let valA = a[sort.key];
             let valB = b[sort.key];
 
