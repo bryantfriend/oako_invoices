@@ -97,7 +97,15 @@ export const invoiceService = {
 
         try {
             const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
-            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+            if (!snap.exists()) return null;
+
+            const invoice = { id: snap.id, ...snap.data() };
+            if (!invoice.orderId) return invoice;
+
+            const order = await orderService.getOrderById(invoice.orderId).catch(() => null);
+            if (!order) return invoice;
+
+            return this.buildInvoiceFromOrder(invoice, order);
         } catch (error) {
             console.error("Failed to fetch invoice due to timeout or network:", error);
             throw error;
@@ -155,31 +163,16 @@ export const invoiceService = {
             const order = await orderService.getOrderById(orderId);
             if (!order) throw new Error("Order not found");
 
-            const subtotal = (order.items || []).reduce((sum, item) => {
-                const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-                return sum + ((item.price || 0) * finalQty);
-            }, 0);
-
-            const taxRate = invoice.taxRate || 0;
-            const taxAmount = (subtotal * taxRate) / 100;
-
-            let discountAmount = invoice.discountAmount || 0;
-            if (invoice.discountType === 'percent' && invoice.discountValue) {
-                discountAmount = (subtotal * invoice.discountValue) / 100;
-            } else if (invoice.discountType === 'fixed') {
-                discountAmount = invoice.discountValue || 0;
-            }
-
-            const totalAmount = subtotal + taxAmount - discountAmount;
+            const syncedInvoice = this.buildInvoiceFromOrder(invoice, order);
 
             await updateDoc(doc(db, COLLECTION, invoice.id), {
-                customerName: order.customerName,
-                customerAddress: order.customerAddress || '',
-                items: order.items || [],
-                subtotal,
-                taxAmount,
-                discountAmount,
-                totalAmount,
+                customerName: syncedInvoice.customerName,
+                customerAddress: syncedInvoice.customerAddress,
+                items: syncedInvoice.items,
+                subtotal: syncedInvoice.subtotal,
+                taxAmount: syncedInvoice.taxAmount,
+                discountAmount: syncedInvoice.discountAmount,
+                totalAmount: syncedInvoice.totalAmount,
                 updatedAt: serverTimestamp()
             });
 
@@ -201,5 +194,34 @@ export const invoiceService = {
             console.error("Error fetching invoice by order ID:", error);
             throw error;
         }
+    },
+
+    buildInvoiceFromOrder(invoice, order) {
+        const items = order.items || [];
+        const subtotal = items.reduce((sum, item) => {
+            const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+            return sum + ((item.price || 0) * finalQty);
+        }, 0);
+
+        const taxRate = invoice.taxRate || 0;
+        const taxAmount = (subtotal * taxRate) / 100;
+
+        let discountAmount = invoice.discountAmount || 0;
+        if (invoice.discountType === 'percent' && invoice.discountValue) {
+            discountAmount = (subtotal * invoice.discountValue) / 100;
+        } else if (invoice.discountType === 'fixed') {
+            discountAmount = invoice.discountValue || 0;
+        }
+
+        return {
+            ...invoice,
+            customerName: order.customerName,
+            customerAddress: order.customerAddress || '',
+            items,
+            subtotal,
+            taxAmount,
+            discountAmount,
+            totalAmount: subtotal + taxAmount - discountAmount
+        };
     }
 };
