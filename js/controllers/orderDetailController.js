@@ -1,4 +1,5 @@
 import { orderService } from "../services/orderService.js";
+import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { t } from "../core/i18n.js";
@@ -37,6 +38,7 @@ export const orderDetailController = {
             }, 0);
             // Update items with adjusted quantities and the new totalAmount
             await orderService.updateOrder(id, { items, totalAmount });
+            await invoiceService.syncInvoiceWithOrder(id).catch(() => null);
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {

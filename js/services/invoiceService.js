@@ -25,7 +25,9 @@ export const invoiceService = {
             const q = query(collection(db, COLLECTION), where('orderId', '==', orderId));
             const existing = await getDocs(q);
             if (!existing.empty) {
-                return existing.docs[0].id;
+                const existingInvoice = { id: existing.docs[0].id, ...existing.docs[0].data() };
+                await this.syncInvoiceWithOrder(orderId, existingInvoice);
+                return existingInvoice.id;
             }
 
             const [order, settings] = await Promise.all([
@@ -141,6 +143,62 @@ export const invoiceService = {
             return true;
         } catch (error) {
             console.error("Error updating invoice date:", error);
+            throw error;
+        }
+    },
+
+    async syncInvoiceWithOrder(orderId, existingInvoice = null) {
+        try {
+            const invoice = existingInvoice || await this.getInvoiceByOrderId(orderId);
+            if (!invoice) return null;
+
+            const order = await orderService.getOrderById(orderId);
+            if (!order) throw new Error("Order not found");
+
+            const subtotal = (order.items || []).reduce((sum, item) => {
+                const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                return sum + ((item.price || 0) * finalQty);
+            }, 0);
+
+            const taxRate = invoice.taxRate || 0;
+            const taxAmount = (subtotal * taxRate) / 100;
+
+            let discountAmount = invoice.discountAmount || 0;
+            if (invoice.discountType === 'percent' && invoice.discountValue) {
+                discountAmount = (subtotal * invoice.discountValue) / 100;
+            } else if (invoice.discountType === 'fixed') {
+                discountAmount = invoice.discountValue || 0;
+            }
+
+            const totalAmount = subtotal + taxAmount - discountAmount;
+
+            await updateDoc(doc(db, COLLECTION, invoice.id), {
+                customerName: order.customerName,
+                customerAddress: order.customerAddress || '',
+                items: order.items || [],
+                subtotal,
+                taxAmount,
+                discountAmount,
+                totalAmount,
+                updatedAt: serverTimestamp()
+            });
+
+            return invoice.id;
+        } catch (error) {
+            console.error("Error syncing invoice with order:", error);
+            throw error;
+        }
+    },
+
+    async getInvoiceByOrderId(orderId) {
+        try {
+            const q = query(collection(db, COLLECTION), where('orderId', '==', orderId));
+            const snap = await getDocs(q);
+            if (snap.empty) return null;
+            const first = snap.docs[0];
+            return { id: first.id, ...first.data() };
+        } catch (error) {
+            console.error("Error fetching invoice by order ID:", error);
             throw error;
         }
     }
