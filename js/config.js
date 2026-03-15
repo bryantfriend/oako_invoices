@@ -11,5 +11,6 @@ export const firebaseConfig = {
 export const APP_CONFIG = {
     ITEM_LIMIT: 50,
     CURRENCY: 'KGS',
-    LOCALE: 'ru-KG'
+    LOCALE: 'ru-KG',
+    VERSION: '1.032'
 };

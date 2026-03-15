@@ -1,6 +1,7 @@
 import { Sidebar } from "../components/sidebar.js";
 import { authService } from "../core/authService.js";
 import { i18n } from "../core/i18n.js";
+import { APP_CONFIG } from "../config.js";
 
 class LayoutView {
     constructor() {
@@ -29,6 +30,17 @@ class LayoutView {
                 </button>
                 <div id="top-bar-title" style="font-weight: 600; font-size: var(--text-lg); color: var(--color-gray-800);">
                     ${i18n.t('sidebar_orders')}
+                </div>
+                <div style="
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: var(--color-gray-500);
+                    background: var(--color-gray-100);
+                    border: 1px solid var(--color-gray-200);
+                    border-radius: 999px;
+                    padding: 2px 8px;
+                ">
+                    v${APP_CONFIG.VERSION}
                 </div>
             </div>
             </div>

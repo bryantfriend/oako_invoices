@@ -104,7 +104,10 @@ export const renderDashboard = async () => {
                     <!-- ROW 3: MAIN CHART (REVENUE) -->
                     <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; min-height: 250px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800);">Revenue Trend</h3>
+                            <div>
+                                <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Cash Flow Trend</h3>
+                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Paid versus still open in the selected period</div>
+                            </div>
                             <div class="hide-mobile" style="display: flex; gap: 12px; font-size: 10px;">
                                 <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Collected</div>
                                 <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span> Outstanding</div>
@@ -117,25 +120,34 @@ export const renderDashboard = async () => {
 
                     <!-- ROW 4: SECONDARY CHARTS (3 COL) -->
                     <div class="hide-mobile" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; min-height: 180px;">
-                         <!-- Volume -->
+                         <!-- Units -->
                         <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column;">
-                            <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin-bottom: 6px;">ORDER VOLUME</h3>
+                            <div style="margin-bottom: 6px;">
+                                <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin: 0;">ADJUSTED UNITS BY DAY</h3>
+                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Uses final adjusted quantities, not requested quantities</div>
+                            </div>
                             <div style="flex: 1; min-height: 0;">
-                                <canvas id="chart-volume"></canvas>
+                                <canvas id="chart-units"></canvas>
                             </div>
                         </div>
-                        <!-- Aging -->
+                        <!-- Pipeline -->
                         <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column;">
-                            <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin-bottom: 6px;">OVERDUE AGING</h3>
+                            <div style="margin-bottom: 6px;">
+                                <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin: 0;">ORDER PIPELINE</h3>
+                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">How many orders are sitting in each stage right now</div>
+                            </div>
                             <div style="flex: 1; min-height: 0;">
-                                <canvas id="chart-aging"></canvas>
+                                <canvas id="chart-pipeline"></canvas>
                             </div>
                         </div>
-                        <!-- Concentration -->
+                        <!-- Products -->
                         <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column;">
-                            <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin-bottom: 6px;">TOP CUSTOMERS</h3>
+                            <div style="margin-bottom: 6px;">
+                                <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin: 0;">TOP PRODUCTS</h3>
+                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Best-selling items by adjusted units in this period</div>
+                            </div>
                             <div style="flex: 1; min-height: 0;">
-                                <canvas id="chart-concentration"></canvas>
+                                <canvas id="chart-products"></canvas>
                             </div>
                         </div>
                     </div>
@@ -196,9 +208,9 @@ export const renderDashboard = async () => {
 
     const initCharts = (chartData) => {
         const ctxRev = document.getElementById('chart-revenue').getContext('2d');
-        const ctxVol = document.getElementById('chart-volume').getContext('2d');
-        const ctxAging = document.getElementById('chart-aging').getContext('2d');
-        const ctxConc = document.getElementById('chart-concentration').getContext('2d');
+        const ctxUnits = document.getElementById('chart-units').getContext('2d');
+        const ctxPipeline = document.getElementById('chart-pipeline').getContext('2d');
+        const ctxProducts = document.getElementById('chart-products').getContext('2d');
 
         // Revenue Chart (Line) - Compact
         chartInstances.rev = new Chart(ctxRev, {
@@ -270,36 +282,51 @@ export const renderDashboard = async () => {
             plugins: { legend: { display: false } },
             layout: { padding: 0 },
             scales: {
-                y: { display: false, border: { display: false } }, // No Y axis
-                x: { display: false, border: { display: false } }  // No X axis
+                y: { display: false, border: { display: false } },
+                x: { display: false, border: { display: false } }
             }
         };
 
-        // Volume Chart
-        chartInstances.vol = new Chart(ctxVol, {
+        // Adjusted Units Chart
+        chartInstances.units = new Chart(ctxUnits, {
             type: 'bar',
             data: {
-                labels: chartData.revenueOverTime.labels,
+                labels: chartData.unitDemandOverTime.labels,
                 datasets: [{
-                    label: 'Orders',
-                    data: chartData.revenueOverTime.orders,
-                    backgroundColor: '#3b82f6',
+                    label: 'Adjusted Units',
+                    data: chartData.unitDemandOverTime.data,
+                    backgroundColor: '#0f766e',
                     borderRadius: 2,
                     barThickness: 'flex',
                     maxBarThickness: 16
                 }]
             },
-            options: commonBarOptions
+            options: {
+                ...commonBarOptions,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        border: { display: false },
+                        grid: { color: '#f1f5f9' },
+                        ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 4 }
+                    },
+                    x: {
+                        border: { display: false },
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 6 }
+                    }
+                }
+            }
         });
 
-        // Aging Chart
-        chartInstances.aging = new Chart(ctxAging, {
+        // Pipeline Chart
+        chartInstances.pipeline = new Chart(ctxPipeline, {
             type: 'bar',
             data: {
-                labels: ['Curr', '1-7', '8-30', '30+'],
+                labels: chartData.statusPipeline.labels,
                 datasets: [{
-                    data: chartData.aging.data,
-                    backgroundColor: ['#10b981', '#f59e0b', '#f97316', '#ef4444'],
+                    data: chartData.statusPipeline.data,
+                    backgroundColor: ['#94a3b8', '#f59e0b', '#3b82f6', '#8b5cf6', '#10b981'],
                     borderRadius: 3,
                     barThickness: 24
                 }]
@@ -307,20 +334,30 @@ export const renderDashboard = async () => {
             options: {
                 ...commonBarOptions,
                 scales: {
-                    y: { display: false },
-                    x: { display: true, grid: { display: false }, border: { display: false }, ticks: { font: { size: 9, weight: '700' }, color: '#64748b' } }
+                    y: {
+                        beginAtZero: true,
+                        border: { display: false },
+                        grid: { color: '#f1f5f9' },
+                        ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 4 }
+                    },
+                    x: {
+                        display: true,
+                        grid: { display: false },
+                        border: { display: false },
+                        ticks: { font: { size: 9, weight: '700' }, color: '#64748b' }
+                    }
                 }
             }
         });
 
-        // Concentration Chart
-        chartInstances.conc = new Chart(ctxConc, {
+        // Top Products Chart
+        chartInstances.products = new Chart(ctxProducts, {
             type: 'bar',
             data: {
-                labels: chartData.concentration.labels,
+                labels: chartData.topProducts.labels,
                 datasets: [{
-                    data: chartData.concentration.data,
-                    backgroundColor: '#6366f1',
+                    data: chartData.topProducts.data,
+                    backgroundColor: '#b45309',
                     borderRadius: 3,
                     barThickness: 12
                 }]
@@ -332,12 +369,17 @@ export const renderDashboard = async () => {
                 plugins: { legend: { display: false } },
                 layout: { padding: 0 },
                 scales: {
-                    x: { display: false },
+                    x: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9' },
+                        border: { display: false },
+                        ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 4 }
+                    },
                     y: {
                         display: true,
                         grid: { display: false },
                         border: { display: false },
-                        ticks: { font: { size: 9, weight: '600' }, color: '#475569', mirror: true, z: 1 } // Mirror labels onto bars? Maybe too risky. Let's just keep them small.
+                        ticks: { font: { size: 9, weight: '600' }, color: '#475569' }
                     }
                 }
             }

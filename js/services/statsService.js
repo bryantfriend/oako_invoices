@@ -75,9 +75,9 @@ export const statsService = {
             topOrders: this.getTopOrders(orders),
             charts: {
                 revenueOverTime: this._getRevenueOverTime(currentOrders, period),
-                ordersVsPayments: this._getOrdersVsPayments(currentOrders),
-                aging: this._getAgingDistribution(orders), // Always current data for aging
-                concentration: this._getCustomerConcentration(orders) // Always current data
+                unitDemandOverTime: this._getUnitDemandOverTime(currentOrders, period),
+                statusPipeline: this._getStatusPipeline(orders),
+                topProducts: this._getTopProducts(currentOrders)
             }
         };
     },
@@ -154,51 +154,101 @@ export const statsService = {
         };
     },
 
-    _getOrdersVsPayments(orders) {
-        // Simple count comparison
-        const createdCount = orders.length;
-        const paidCount = orders.filter(o => o.status === 'paid').length;
-        const confirmedCount = orders.filter(o => ['confirmed', 'fulfilled'].includes(o.status)).length;
+    _getUnitDemandOverTime(orders, period) {
+        const revenue = this._getRevenueOverTime(orders, period);
+        const now = new Date();
+        let days;
+        let startDate;
 
-        return {
-            labels: ['Orders Created', 'Orders Confirmed', 'Orders Paid'],
-            data: [createdCount, confirmedCount, paidCount]
-        };
-    },
+        if (typeof period === 'object' && period.start && period.end) {
+            startDate = new Date(period.start);
+            const diffTime = Math.abs(new Date(period.end) - startDate);
+            days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        } else {
+            days = period === '7d' ? 7 : period === '30d' ? 30 : period === 'today' ? 1 : 30;
+            startDate = new Date(now.getTime() - ((days - 1) * 24 * 60 * 60 * 1000));
+        }
 
-    _getAgingDistribution(orders) {
-        const agingData = { current: 0, week: 0, month: 0, monthPlus: 0 };
+        const groups = {};
+        const keys = [];
+        for (let i = 0; i < days; i++) {
+            const d = new Date(startDate.getTime() + (i * 24 * 60 * 60 * 1000));
+            const key = d.toISOString().split('T')[0];
+            groups[key] = { units: 0 };
+            keys.push(key);
+        }
 
-        orders.filter(o => ['confirmed', 'fulfilled'].includes(o.status)).forEach(o => {
-            const age = (o.agingDays || 0);
-            if (age >= 30) agingData.monthPlus += (o.totalAmount || 0);
-            else if (age >= 8) agingData.month += (o.totalAmount || 0);
-            else if (age >= 1) agingData.week += (o.totalAmount || 0);
-            else agingData.current += (o.totalAmount || 0);
+        orders.forEach(order => {
+            const date = order.orderDate ? new Date(order.orderDate) : (order.createdAt?.toDate ? order.createdAt.toDate() : new Date());
+            const key = date.toISOString().split('T')[0];
+            if (!groups[key]) return;
+
+            (order.items || []).forEach(item => {
+                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                groups[key].units += qty || 0;
+            });
         });
 
         return {
-            labels: ['Current', '1-7 Days', '8-30 Days', '30+ Days'],
-            data: [agingData.current, agingData.week, agingData.month, agingData.monthPlus]
+            labels: revenue.labels,
+            data: keys.map(k => groups[k].units)
         };
     },
 
-    _getCustomerConcentration(orders) {
-        const customers = {};
-        orders.forEach(o => {
-            if (['confirmed', 'fulfilled', 'paid'].includes(o.status)) {
-                const name = o.customerName || 'Unknown';
-                customers[name] = (customers[name] || 0) + (o.totalAmount || 0);
+    _getStatusPipeline(orders) {
+        const stages = [
+            { key: 'draft', label: 'Draft' },
+            { key: 'pending', label: 'Pending' },
+            { key: 'confirmed', label: 'Confirmed' },
+            { key: 'fulfilled', label: 'Fulfilled' },
+            { key: 'paid', label: 'Paid' }
+        ];
+
+        const counts = {};
+        stages.forEach(stage => {
+            counts[stage.key] = 0;
+        });
+
+        orders.forEach(order => {
+            if (counts[order.status] !== undefined) {
+                counts[order.status] += 1;
             }
         });
 
-        const sorted = Object.entries(customers)
-            .sort(([, a], [, b]) => b - a)
+        return {
+            labels: stages.map(stage => stage.label),
+            data: stages.map(stage => counts[stage.key])
+        };
+    },
+
+    _getTopProducts(orders) {
+        const products = {};
+
+        orders.forEach(order => {
+            (order.items || []).forEach(item => {
+                const name = item.name || item.name_en || item.name_ru || 'Unknown product';
+                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                if (!qty) return;
+
+                if (!products[name]) {
+                    products[name] = { units: 0, revenue: 0 };
+                }
+
+                products[name].units += qty;
+                products[name].revenue += (item.price || 0) * qty;
+            });
+        });
+
+        const sorted = Object.entries(products)
+            .sort(([, a], [, b]) => {
+                if (b.units !== a.units) return b.units - a.units;
+                return b.revenue - a.revenue;
+            })
             .slice(0, 5);
 
         return {
-            labels: sorted.map(([name]) => name.length > 10 ? name.slice(0, 8) + '...' : name),
-            data: sorted.map(([, amount]) => amount)
+            labels: sorted.map(([name]) => name.length > 18 ? name.slice(0, 16) + '...' : name),
+            data: sorted.map(([, stats]) => stats.units)
         };
     },
 
