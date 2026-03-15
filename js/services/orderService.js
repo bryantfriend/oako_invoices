@@ -19,9 +19,9 @@ const COLLECTION = 'orders';
 
 export const orderService = {
     async getAllOrders() {
+        let timeoutId;
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
                 timeoutId = setTimeout(() => reject(new Error('Orders fetch timeout')), 15000);
             });
@@ -36,9 +36,9 @@ export const orderService = {
     },
 
     async getOrderById(id) {
+        let timeoutId;
         try {
             const docRef = doc(db, COLLECTION, id);
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
                 timeoutId = setTimeout(() => reject(new Error('Order fetch timeout')), 15000);
             });
