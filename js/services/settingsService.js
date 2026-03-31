@@ -15,35 +15,37 @@ const storage = getStorage();
 const COLLECTION = 'settings';
 const DOCUMENT_ID = 'invoice_config';
 
+export const DEFAULT_INVOICE_SETTINGS = {
+    companyName: 'Kyrgyz Organics',
+    address: 'Republic of Kyrgyzstan',
+    phone: '+996 700 123 456',
+    website: 'kyrgyz-organics.com',
+    bankInfo: 'Bank of Kyrgyzstan,\nKyrgyzz Organics Ltd, KG12346712345789901\nAccount To: KG12346712345789901\nSWIFT: KGZBBBBB',
+    qrText: 'https://kyrgyz-organics.com/pay',
+    defaultTaxRate: 0,
+    logoUrl: '',
+    footerText: 'Thanks for supporting sustainable agriculture!'
+};
+
 export const settingsService = {
     async getInvoiceSettings() {
-        const defaults = {
-            companyName: 'Kyrgyz Organics',
-            address: 'Republic of Kyrgyzstan',
-            phone: '+996 700 123 456',
-            website: 'kyrgyz-organics.com',
-            bankInfo: 'Bank of Kyrgyzstan,\nKyrgyzz Organics Ltd, KG12346712345789901\nAccount To: KG12346712345789901\nSWIFT: KGZBBBBB',
-            qrText: 'https://kyrgyz-organics.com/pay',
-            defaultTaxRate: 0,
-            logoUrl: '',
-            footerText: 'Thanks for supporting sustainable agriculture!'
-        };
-
         try {
             const docRef = doc(db, COLLECTION, DOCUMENT_ID);
 
-            // Added timeout wrapper to prevent hanging offline, returning defaults instead
+            // Give Firestore more time before assuming settings are unavailable.
             let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Settings fetch timeout')), 2500);
+                timeoutId = setTimeout(() => reject(new Error('Settings fetch timeout')), 10000);
             });
             const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
             clearTimeout(timeoutId);
 
-            return snap.exists() ? { ...defaults, ...snap.data() } : defaults;
+            return snap.exists()
+                ? { ...DEFAULT_INVOICE_SETTINGS, ...snap.data(), __fromFallback: false }
+                : { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: false };
         } catch (error) {
             console.warn("Failed to fetch settings, using defaults.", error);
-            return defaults;
+            return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
         }
     },
 

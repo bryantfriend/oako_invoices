@@ -264,9 +264,11 @@ export const renderInvoiceDetail = async ({ id }) => {
     const ITEMS_PER_PAGE_OTHER = 13;
 
     const renderDocument = (lang, isCopy = false) => {
-        // Merge liveSettings OVER invoice.settings so toggles apply retroactively to old invoices
-        const s = { ...(invoice.settings || {}), ...(liveSettings || {}) };
-        if (!s.logoUrl && (liveSettings && liveSettings.logoUrl)) s.logoUrl = liveSettings.logoUrl;
+        // Never let fallback defaults overwrite the saved invoice snapshot.
+        const hasReliableLiveSettings = liveSettings && liveSettings.__fromFallback !== true;
+        const s = hasReliableLiveSettings
+            ? { ...(invoice.settings || {}), ...liveSettings }
+            : { ...(invoice.settings || {}) };
 
         const defaultBankInfo = lang === 'en'
             ? "Bank of Kyrgyzstan,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Account To: KG12346712345789901<br>SWIFT: KGZBBBBB"
