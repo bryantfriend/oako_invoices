@@ -24,7 +24,7 @@ export const settingsService = {
             website: 'kyrgyz-organics.com',
             bankInfo: 'Bank of Kyrgyzstan,\nKyrgyzz Organics Ltd, KG12346712345789901\nAccount To: KG12346712345789901\nSWIFT: KGZBBBBB',
             qrText: 'https://kyrgyz-organics.com/pay',
-            defaultTaxRate: 10,
+            defaultTaxRate: 0,
             logoUrl: '',
             footerText: 'Thanks for supporting sustainable agriculture!'
         };
