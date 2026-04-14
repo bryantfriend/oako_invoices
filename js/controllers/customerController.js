@@ -3,6 +3,7 @@ import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
+import { gamificationService } from "../services/gamificationService.js";
 
 export const customerController = {
     async loadAllCustomers() {
@@ -21,6 +22,7 @@ export const customerController = {
                 return;
             }
             await customerService.createCustomer(data);
+            await gamificationService.awardAction('customersCreated');
             notificationService.success(t('msg_save_success'));
             // Refresh or navigate logic dependent on where it's called
             return true;

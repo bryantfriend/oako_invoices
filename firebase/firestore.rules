@@ -166,6 +166,12 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
+    match /users/{userId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow create, update: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow delete: if isAdmin();
+    }
+
     // ===============================
     // DEFAULT DENY (CRITICAL)
     // ===============================

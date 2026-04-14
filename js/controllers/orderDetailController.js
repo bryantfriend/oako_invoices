@@ -3,6 +3,7 @@ import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { t } from "../core/i18n.js";
+import { gamificationService } from "../services/gamificationService.js";
 
 export const orderDetailController = {
     async loadOrder(id) {
@@ -22,6 +23,12 @@ export const orderDetailController = {
     async updateStatus(id, newStatus) {
         try {
             await orderService.updateOrderStatus(id, newStatus);
+            if (newStatus === ORDER_STATUS.FULFILLED) {
+                await gamificationService.awardAction('ordersFulfilled');
+            }
+            if (newStatus === ORDER_STATUS.PAID) {
+                await gamificationService.awardAction('ordersPaid');
+            }
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {

@@ -216,7 +216,9 @@ export const renderOrderDetail = async ({ id }) => {
             if (action === 'paid') {
                 const { orderService } = await import("../services/orderService.js");
                 const { notificationService } = await import("../core/notificationService.js");
+                const { gamificationService } = await import("../services/gamificationService.js");
                 await orderService.updateOrderStatus(id, ORDER_STATUS.PAID);
+                await gamificationService.awardAction('ordersPaid');
                 notificationService.success(t('msg_update_success'));
                 renderOrderDetail({ id });
                 return;

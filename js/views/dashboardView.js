@@ -701,7 +701,9 @@ export const renderDashboard = async () => {
             }
 
             const { orderService } = await import("../services/orderService.js");
+            const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.archiveOrders(ids);
+            await gamificationService.awardAction('ordersArchived', ids.length);
             allOrders = allOrders.filter(order => !selectedOrderIds.has(order.id));
             selectedOrderIds.clear();
             applyFilters();
@@ -721,13 +723,17 @@ export const renderDashboard = async () => {
         // Global functions for actions
         window.markAsPaid = async (id) => {
             const { orderService } = await import("../services/orderService.js");
+            const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.updateOrderStatus(id, 'paid');
+            await gamificationService.awardAction('ordersPaid');
             renderDashboard();
         };
 
         window.markAsFulfilled = async (id) => {
             const { orderService } = await import("../services/orderService.js");
+            const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.updateOrderStatus(id, 'fulfilled');
+            await gamificationService.awardAction('ordersFulfilled');
             renderDashboard();
         };
 

@@ -4,6 +4,7 @@ import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { authService } from "../core/authService.js";
 import { t } from "../core/i18n.js";
+import { gamificationService } from "../services/gamificationService.js";
 
 export const createOrderController = {
     async handleCreateOrder(formData) {
@@ -45,6 +46,7 @@ export const createOrderController = {
 
         try {
             await orderService.createOrder(orderPayload, user.uid);
+            await gamificationService.awardAction('ordersCreated');
             notificationService.success(t('msg_save_success'));
             router.navigate(ROUTES.DASHBOARD);
         } catch (error) {

@@ -17,7 +17,8 @@ export const ROUTES = {
     CUSTOMERS: '/customers',
     CUSTOMER_DETAIL: '/customers/:id',
     INVENTORY: '/inventory',
-    SETTINGS: '/settings'
+    SETTINGS: '/settings',
+    PROFILE: '/profile'
 };
 
 export const ALERTS = {

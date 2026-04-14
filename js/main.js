@@ -13,6 +13,7 @@ import { renderCustomers } from "./views/customerView.js";
 import { renderCustomerDetail } from "./views/customerDetailView.js";
 import { renderInventory } from "./views/inventoryView.js";
 import { renderSettings } from "./views/settingsView.js";
+import { renderProfile } from "./views/profileView.js";
 
 async function initApp() {
     try {
@@ -30,6 +31,7 @@ async function initApp() {
         router.addRoute(ROUTES.CUSTOMERS, renderCustomers);
         router.addRoute(ROUTES.CUSTOMER_DETAIL, renderCustomerDetail);
         router.addRoute(ROUTES.SETTINGS, renderSettings);
+        router.addRoute(ROUTES.PROFILE, renderProfile);
 
         // Init Router (load current URL)
         await router.handleLocationChange();

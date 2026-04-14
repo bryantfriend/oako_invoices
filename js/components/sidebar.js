@@ -24,6 +24,7 @@ export class Sidebar {
                 ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, '🍞')}
                 ${this.createNavItem(t('sidebar_customers'), ROUTES.CUSTOMERS, '👥')}
                 ${this.createNavItem(t('sidebar_settings'), ROUTES.SETTINGS, '⚙️')}
+                ${this.createNavItem('Profile', ROUTES.PROFILE, '🏅')}
             </nav>
 
             <div class="sidebar-footer" style="padding: 16px; margin-top: auto; border-top: 1px solid var(--color-gray-200);">

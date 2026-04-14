@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kyrgyz-organics-v1.039';
+const CACHE_NAME = 'kyrgyz-organics-v1.040';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
@@ -33,6 +33,7 @@ const ASSETS_TO_CACHE = [
     './js/views/inventoryView.js',
     './js/views/customerView.js',
     './js/views/customerDetailView.js',
+    './js/views/profileView.js',
     './js/views/settingsView.js',
     './js/controllers/authController.js',
     './js/controllers/createOrderController.js',
@@ -45,6 +46,7 @@ const ASSETS_TO_CACHE = [
     './js/services/productService.js',
     './js/services/orderService.js',
     './js/services/invoiceService.js',
+    './js/services/gamificationService.js',
     './js/services/customerService.js',
     './js/services/inventoryService.js',
     './js/services/settingsService.js',

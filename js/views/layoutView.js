@@ -2,6 +2,9 @@ import { Sidebar } from "../components/sidebar.js";
 import { authService } from "../core/authService.js";
 import { i18n } from "../core/i18n.js";
 import { APP_CONFIG } from "../config.js";
+import { ROUTES } from "../core/constants.js";
+import { router } from "../router.js";
+import { gamificationService } from "../services/gamificationService.js";
 
 class LayoutView {
     constructor() {
@@ -71,7 +74,7 @@ class LayoutView {
                         ${i18n.t('topbar_admin')}
                     </span>
                 </div>
-                <div style="
+                <button id="profile-shortcut" title="Open Profile" style="
                     width: 32px; 
                     height: 32px; 
                     background: var(--color-primary-100); 
@@ -81,11 +84,25 @@ class LayoutView {
                     align-items: center; 
                     justify-content: center;
                     font-weight: 600;
+                    border: none;
+                    cursor: pointer;
+                    overflow: hidden;
+                    padding: 0;
                 ">
                     ${(user?.email || 'A').charAt(0).toUpperCase()}
-                </div>
+                </button>
             </div>
         `;
+
+        const profileShortcut = document.getElementById('profile-shortcut');
+        profileShortcut?.addEventListener('click', () => router.navigate(ROUTES.PROFILE));
+        if (profileShortcut && user) {
+            gamificationService.getProfile().then(profile => {
+                if (profile?.photoDataUrl) {
+                    profileShortcut.innerHTML = `<img src="${profile.photoDataUrl}" style="width: 100%; height: 100%; object-fit: cover;">`;
+                }
+            }).catch(() => null);
+        }
 
         // Mobile Menu Interactivity
         const toggle = document.getElementById('mobile-menu-toggle');

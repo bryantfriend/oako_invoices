@@ -752,7 +752,12 @@ export const renderInvoiceDetail = async ({ id }) => {
                             try {
                                 try {
                                     const { orderService } = await import("../services/orderService.js");
+                                    const { gamificationService } = await import("../services/gamificationService.js");
+                                    const order = await orderService.getOrderById(invoice.orderId);
                                     await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+                                    if (!order?.isPrinted) {
+                                        await gamificationService.awardAction('invoicesPrinted');
+                                    }
                                 } catch (updateErr) {
                                     console.warn("Could not sync print status to order (order may have been deleted):", updateErr);
                                     // We continue anyway so the user isn't stuck and the animation still plays

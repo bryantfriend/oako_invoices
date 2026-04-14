@@ -14,6 +14,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { orderService } from "./orderService.js";
 import { settingsService } from "./settingsService.js";
+import { gamificationService } from "./gamificationService.js";
 
 const COLLECTION = 'invoices';
 
@@ -79,6 +80,7 @@ export const invoiceService = {
             };
 
             const docRef = await addDoc(collection(db, COLLECTION), payload);
+            await gamificationService.awardAction('invoicesCreated');
             return docRef.id;
         } catch (error) {
             console.error("Error creating invoice:", error);
