@@ -33,6 +33,7 @@ export const renderDashboard = async () => {
     let allOrders = [];
     let filteredOrders = [];
     let inventoryCategories = [];
+    let selectedOrderIds = new Set();
     let currentPeriod = '30d';
     let filters = { status: 'all', drill: null };
     let sort = { key: 'orderDate', order: 'desc' };
@@ -43,7 +44,7 @@ export const renderDashboard = async () => {
         dashboardController.loadDashboard(),
         inventoryController.loadInventoryData(today)
     ]);
-    allOrders = orders;
+    allOrders = orders.filter(order => order.archived !== true);
     filteredOrders = [...allOrders];
     inventoryCategories = inventoryData;
 
@@ -165,17 +166,21 @@ export const renderDashboard = async () => {
                     <!-- ROW 5: TABLE (FLEX GROW) -->
                     <div class="card" style="padding: 0; margin: 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
                         <div style="padding: 8px 12px; border-bottom: 1px solid var(--color-gray-100); display: flex; justify-content: space-between; align-items: center; background: #fff;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                 <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800);">${t('dash_recent_orders')}</h3>
                                 <span style="background: #fee2e2; color: #b91c1c; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${filteredOrders.length}</span>
+                                <span id="selected-orders-count" style="display: none; background: #ecfdf5; color: #047857; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px;">0 selected</span>
                             </div>
-                            <select id="filter-status" style="border: 1px solid #eee; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: 600;">
-                                <option value="all">Status: All</option>
-                                <option value="overdue">Overdue</option>
-                                <option value="confirmed">Confirmed</option>
-                                <option value="fulfilled">Fulfilled</option>
-                                <option value="paid">Paid</option>
-                            </select>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <button id="archive-selected-orders" class="btn btn-secondary btn-sm" disabled style="font-size: 11px; padding: 4px 10px;">Archive Selected</button>
+                                <select id="filter-status" style="border: 1px solid #eee; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: 600;">
+                                    <option value="all">Status: All</option>
+                                    <option value="overdue">Overdue</option>
+                                    <option value="confirmed">Confirmed</option>
+                                    <option value="fulfilled">Fulfilled</option>
+                                    <option value="paid">Paid</option>
+                                </select>
+                            </div>
                         </div>
                         <div id="orders-table-wrapper" style="overflow-x: auto;"></div>
                     </div>
@@ -508,6 +513,22 @@ export const renderDashboard = async () => {
         const table = new DataTable({
             columns: [
                 {
+                    key: 'select',
+                    label: `<input type="checkbox" id="select-all-orders" title="Select visible orders" style="cursor: pointer;">`,
+                    sortable: false,
+                    align: 'center',
+                    render: (val, row) => `
+                        <input 
+                            type="checkbox" 
+                            class="order-select-checkbox" 
+                            data-id="${row.id}" 
+                            ${selectedOrderIds.has(row.id) ? 'checked' : ''}
+                            onclick="event.stopPropagation();"
+                            style="cursor: pointer;"
+                        >
+                    `
+                },
+                {
                     key: 'status', label: 'Cat', align: 'center', render: (val, row) => {
                         const cat = (row.customerCategory || 'C');
                         const catColor = row.isPrinted ? '#10b981' : '#ef4444';
@@ -569,11 +590,62 @@ export const renderDashboard = async () => {
         const wrapper = document.getElementById('orders-table-wrapper');
         if (wrapper) wrapper.innerHTML = table.render();
 
+        const visibleIds = new Set(filteredOrders.map(order => order.id));
+        selectedOrderIds = new Set([...selectedOrderIds].filter(id => visibleIds.has(id)));
+
+        wrapper.querySelectorAll('.order-select-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('click', e => e.stopPropagation());
+            checkbox.addEventListener('change', e => {
+                const id = e.target.dataset.id;
+                if (e.target.checked) {
+                    selectedOrderIds.add(id);
+                } else {
+                    selectedOrderIds.delete(id);
+                }
+                updateBulkArchiveControls();
+            });
+        });
+
+        const selectAll = wrapper.querySelector('#select-all-orders');
+        if (selectAll) {
+            selectAll.checked = filteredOrders.length > 0 && filteredOrders.every(order => selectedOrderIds.has(order.id));
+            selectAll.indeterminate = selectedOrderIds.size > 0 && !selectAll.checked;
+            selectAll.addEventListener('click', e => e.stopPropagation());
+            selectAll.addEventListener('change', e => {
+                filteredOrders.forEach(order => {
+                    if (e.target.checked) {
+                        selectedOrderIds.add(order.id);
+                    } else {
+                        selectedOrderIds.delete(order.id);
+                    }
+                });
+                refreshTable();
+            });
+        }
+
         wrapper.querySelectorAll('.data-row').forEach(row => {
             row.addEventListener('click', () => {
                 router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.dataset.id));
             });
         });
+
+        updateBulkArchiveControls();
+    };
+
+    const updateBulkArchiveControls = () => {
+        const count = selectedOrderIds.size;
+        const countEl = document.getElementById('selected-orders-count');
+        const archiveBtn = document.getElementById('archive-selected-orders');
+
+        if (countEl) {
+            countEl.style.display = count > 0 ? 'inline-flex' : 'none';
+            countEl.textContent = `${count} selected`;
+        }
+
+        if (archiveBtn) {
+            archiveBtn.disabled = count === 0;
+            archiveBtn.textContent = count > 0 ? `Archive ${count} Selected` : 'Archive Selected';
+        }
     };
 
     const attachListeners = () => {
@@ -615,10 +687,25 @@ export const renderDashboard = async () => {
 
         document.getElementById('filter-status').addEventListener('change', (e) => {
             filters.status = e.target.value;
+            selectedOrderIds.clear();
             applyFilters();
         });
 
         document.getElementById('open-inventory-btn')?.addEventListener('click', () => router.navigate(ROUTES.INVENTORY));
+        document.getElementById('archive-selected-orders')?.addEventListener('click', async () => {
+            const ids = [...selectedOrderIds];
+            if (ids.length === 0) return;
+
+            if (!confirm(`Archive ${ids.length} selected order${ids.length === 1 ? '' : 's'}? They will be hidden from the active Orders list.`)) {
+                return;
+            }
+
+            const { orderService } = await import("../services/orderService.js");
+            await orderService.archiveOrders(ids);
+            allOrders = allOrders.filter(order => !selectedOrderIds.has(order.id));
+            selectedOrderIds.clear();
+            applyFilters();
+        });
 
         const alertStrip = document.getElementById('risk-alert');
         if (alertStrip) {

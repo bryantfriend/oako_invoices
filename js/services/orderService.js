@@ -142,6 +142,16 @@ export const orderService = {
         return this.updateOrder(id, updates);
     },
 
+    async archiveOrders(ids) {
+        try {
+            await Promise.all(ids.map(id => this.updateOrder(id, { archived: true })));
+            return true;
+        } catch (error) {
+            console.error("Error archiving orders:", error);
+            throw error;
+        }
+    },
+
     async deleteOrder(id) {
         try {
             const docRef = doc(db, COLLECTION, id);
