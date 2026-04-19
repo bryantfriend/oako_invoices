@@ -29,6 +29,7 @@ async function initApp() {
         router.addRoute(ROUTES.INVOICES, renderInvoices);
         router.addRoute(ROUTES.INVOICE_DETAIL, renderInvoiceDetail);
         router.addRoute(ROUTES.MOBILE_INVOICE, renderMobileInvoice);
+        router.addRoute(ROUTES.MOBILE_INVOICE_MODE, renderMobileInvoice);
         router.addRoute(ROUTES.INVENTORY, renderInventory);
         router.addRoute(ROUTES.CUSTOMERS, renderCustomers);
         router.addRoute(ROUTES.CUSTOMER_DETAIL, renderCustomerDetail);

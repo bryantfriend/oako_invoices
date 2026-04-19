@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kyrgyz-organics-v1.045';
+const CACHE_NAME = 'kyrgyz-organics-v1.046';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
@@ -49,6 +49,7 @@ const ASSETS_TO_CACHE = [
     './js/services/invoiceService.js',
     './js/services/pinService.js',
     './js/services/qrService.js',
+    './js/services/qrActivityService.js',
     './js/services/whatsappService.js',
     './js/services/returnsService.js',
     './js/services/googleSheetsService.js',

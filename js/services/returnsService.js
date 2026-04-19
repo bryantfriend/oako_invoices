@@ -15,7 +15,7 @@ async function getInvoice(invoiceId) {
 }
 
 export const returnsService = {
-    async requestReturn(invoiceId, returnItems = []) {
+    async requestReturn(invoiceId, returnItems = [], options = {}) {
         const items = returnItems
             .filter(item => item.productId && (Number(item.quantity) || 0) > 0)
             .map(item => ({
@@ -26,6 +26,10 @@ export const returnsService = {
         await updateDoc(doc(db, COLLECTION, invoiceId), {
             returnRequested: items.length > 0,
             returnItems: items,
+            returnPhotos: options.returnPhotos || [],
+            returnNote: options.returnNote || '',
+            returnedBy: options.returnedBy || '',
+            returnedAt: serverTimestamp(),
             status: items.length > 0 ? 'return_pending' : 'pending',
             updatedAt: serverTimestamp()
         });

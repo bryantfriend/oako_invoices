@@ -15,6 +15,7 @@ export const ROUTES = {
     INVOICES: '/invoices',
     INVOICE_DETAIL: '/invoices/:id',
     MOBILE_INVOICE: '/qr/:payload',
+    MOBILE_INVOICE_MODE: '/qr/:mode/:payload',
     CUSTOMERS: '/customers',
     CUSTOMER_DETAIL: '/customers/:id',
     INVENTORY: '/inventory',

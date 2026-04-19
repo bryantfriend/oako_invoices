@@ -459,11 +459,21 @@ export const renderInvoiceDetail = async ({ id }) => {
                             ` : ''}
                         </div>
                         ${(s.showQrCode !== false) ? `
-                        <div style="text-align: center;">
-                            <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
-                                <img src="${qrService.buildQrImageUrl(invoice, 120)}" alt="Invoice QR" style="width: 60px; height: 60px; display: block;">
+                        <div style="display: flex; gap: 12px; text-align: center;">
+                            <div>
+                                <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
+                                    <img src="${qrService.buildQrImageUrl(invoice, 120, 'customer')}" alt="Customer Invoice QR" style="width: 58px; height: 58px; display: block;">
+                                </div>
+                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Customer QR</div>
+                                <div style="font-size: 7px; color: #5a7052;">Return or re-order</div>
                             </div>
-                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Scan for invoice options</div>
+                            <div>
+                                <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #b45309; border-radius: 8px; margin-bottom: 4px;">
+                                    <img src="${qrService.buildQrImageUrl(invoice, 120, 'courier')}" alt="Courier Invoice QR" style="width: 58px; height: 58px; display: block;">
+                                </div>
+                                <div style="font-size: 8px; font-weight: 800; color: #92400e; text-transform: uppercase;">Courier QR</div>
+                                <div style="font-size: 7px; color: #5a7052;">Save returns</div>
+                            </div>
                         </div>
                         ` : ''}
                     </div>
@@ -753,7 +763,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             });
 
             document.getElementById('btn-copy-qr').addEventListener('click', async () => {
-                const qrLink = qrService.buildMobileUrl(invoice);
+                const qrLink = qrService.buildMobileUrl(invoice, 'customer');
                 if (navigator.clipboard) {
                     await navigator.clipboard.writeText(qrLink);
                 } else {

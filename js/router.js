@@ -2,7 +2,7 @@ import { ROUTES } from "./core/constants.js";
 import { guardService } from "./core/guardService.js";
 import { authService } from "./core/authService.js";
 
-const PUBLIC_ROUTES = [ROUTES.LOGIN, ROUTES.MOBILE_INVOICE];
+const PUBLIC_ROUTES = [ROUTES.LOGIN, ROUTES.MOBILE_INVOICE, ROUTES.MOBILE_INVOICE_MODE];
 
 function normalizePath(path) {
     if (path === '/index.html') return '/';

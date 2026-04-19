@@ -149,7 +149,7 @@ service cloud.firestore {
         && request.resource.data.items is list;
       allow update: if request.resource.data.secureToken == resource.data.secureToken
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['returnRequested', 'returnItems', 'status', 'updatedAt'])
+          .hasOnly(['returnRequested', 'returnItems', 'returnPhotos', 'returnNote', 'returnedBy', 'returnedAt', 'status', 'updatedAt'])
         && request.resource.data.status in ['pending', 'return_pending'];
       allow update, delete: if isAdmin();
     }
@@ -161,6 +161,13 @@ service cloud.firestore {
     match /invoice_qr_links/{token} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
+    }
+
+    match /qr_activity_logs/{logId} {
+      allow create: if request.resource.data.invoiceId is string
+        && request.resource.data.action is string
+        && request.resource.data.createdAt is timestamp;
+      allow read, update, delete: if isAdmin();
     }
 
     // ===============================
