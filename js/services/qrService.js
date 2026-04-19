@@ -66,9 +66,13 @@ export const qrService = {
             token: invoice.secureToken,
             invoiceNumber: invoice.invoiceNumber || '',
             customerName: invoice.customerName || '',
+            customerPinCode: invoice.customerPinCode || invoice.pinCode || '',
             items: invoice.items || [],
             totalAmount: invoice.totalAmount || 0,
             createdAt: invoice.createdAt || null,
+            returnRequested: invoice.returnRequested || false,
+            returnItems: invoice.returnItems || [],
+            status: invoice.status || 'pending',
             updatedAt: serverTimestamp()
         };
     },

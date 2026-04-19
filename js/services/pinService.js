@@ -43,6 +43,26 @@ export const pinService = {
         return { ok: false, reason: 'Invalid store PIN.' };
     },
 
+    authenticateInvoice(input, invoice, settings = {}) {
+        const { role, pin } = this.parsePinInput(input);
+        if (!isSixDigitPin(pin)) {
+            return { ok: false, reason: 'PIN must be 6 digits.' };
+        }
+
+        const courierPin = settings.courierPin || DEFAULT_COURIER_PIN;
+        const storePin = invoice?.customerPinCode || invoice?.pinCode || invoice?.storePin || settings.storePin || STORE_PIN;
+
+        if (role === 'courier' || (pin === courierPin && pin !== storePin)) {
+            return pin === courierPin
+                ? { ok: true, role: 'courier', label: 'Courier' }
+                : { ok: false, reason: 'Invalid courier PIN.' };
+        }
+
+        return pin === storePin
+            ? { ok: true, role: 'store', label: 'Customer' }
+            : { ok: false, reason: 'Invalid customer PIN.' };
+    },
+
     canReadInvoice(session, invoice) {
         if (!session?.ok || !invoice) return false;
         if (session.role === 'courier') return true;

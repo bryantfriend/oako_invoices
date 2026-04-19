@@ -5,6 +5,10 @@ import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { productService } from "../services/productService.js";
 import { inventoryService } from "../services/inventoryService.js";
 
+function buildGoogleSheetUrl(sheetId) {
+    return sheetId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/edit` : '';
+}
+
 export const renderSettings = async () => {
     layoutView.render();
     layoutView.updateTitle("Invoice Settings");
@@ -19,6 +23,7 @@ export const renderSettings = async () => {
     ]);
 
     const enabledCatIds = inventorySettings.enabledCategories || [];
+    const googleSheetUrl = buildGoogleSheetUrl(settings.googleSheetId);
 
     container.innerHTML = `
         <div class="animate-slide-up" style="max-width: 800px; margin: 0 auto;">
@@ -126,6 +131,13 @@ export const renderSettings = async () => {
                         <div class="input-group">
                             <label>Google Sheet ID</label>
                             <input type="text" name="googleSheetId" value="${settings.googleSheetId || ''}" placeholder="Spreadsheet ID">
+                            ${googleSheetUrl ? `
+                                <a href="${googleSheetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display: inline-flex; margin-top: 8px; text-decoration: none;">
+                                    Open Google Sheet
+                                </a>
+                            ` : `
+                                <small style="color: var(--color-gray-500);">Add the Sheet ID here and save to show a quick open link.</small>
+                            `}
                         </div>
                         <div class="input-group">
                             <label>Google Sheets Webhook URL</label>

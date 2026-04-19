@@ -147,6 +147,10 @@ service cloud.firestore {
         && request.resource.data.createdAt is timestamp
         && request.resource.data.invoiceNumber is string
         && request.resource.data.items is list;
+      allow update: if request.resource.data.secureToken == resource.data.secureToken
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['returnRequested', 'returnItems', 'status', 'updatedAt'])
+        && request.resource.data.status in ['pending', 'return_pending'];
       allow update, delete: if isAdmin();
     }
 

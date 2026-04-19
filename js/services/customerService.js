@@ -77,6 +77,18 @@ export const customerService = {
         }
     },
 
+    async getCustomerByName(name) {
+        const normalizedName = String(name || '').trim().toLowerCase();
+        if (!normalizedName) return null;
+
+        const customers = await this.getAllCustomers();
+        return customers.find(customer => {
+            const companyName = String(customer.companyName || '').trim().toLowerCase();
+            const customerName = String(customer.name || '').trim().toLowerCase();
+            return companyName === normalizedName || customerName === normalizedName;
+        }) || null;
+    },
+
     async createCustomer(data) {
         try {
             const payload = {

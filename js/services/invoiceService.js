@@ -16,6 +16,7 @@ import { orderService } from "./orderService.js";
 import { settingsService } from "./settingsService.js";
 import { gamificationService } from "./gamificationService.js";
 import { qrService } from "./qrService.js";
+import { customerService } from "./customerService.js";
 
 const COLLECTION = 'invoices';
 
@@ -38,6 +39,7 @@ export const invoiceService = {
             ]);
 
             if (!order) throw new Error("Order not found");
+            const customer = await customerService.getCustomerByName(order.customerName).catch(() => null);
 
             const invoiceNumber = `INV-${Date.now().toString().substr(-6)}`;
 
@@ -67,6 +69,7 @@ export const invoiceService = {
                 invoiceNumber,
                 customerName: order.customerName,
                 customerAddress: order.customerAddress || '',
+                customerPinCode: customer?.pinCode || '',
                 items: order.items,
                 subtotal,
                 taxRate,

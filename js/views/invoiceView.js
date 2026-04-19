@@ -11,6 +11,11 @@ import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { productService } from "../services/productService.js";
 import { qrService } from "../services/qrService.js";
+import { settingsService } from "../services/settingsService.js";
+
+function buildGoogleSheetUrl(sheetId) {
+    return sheetId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/edit` : '';
+}
 
 export const renderInvoices = async () => {
     layoutView.render();
@@ -19,10 +24,12 @@ export const renderInvoices = async () => {
     container.innerHTML = LoadingSkeleton();
 
     // Load Data
-    const [allInvoices, allOrders] = await Promise.all([
+    const [allInvoices, allOrders, invoiceSettings] = await Promise.all([
         invoiceController.loadAllInvoices(),
-        import("../services/orderService.js").then(m => m.orderService.getAllOrders())
+        import("../services/orderService.js").then(m => m.orderService.getAllOrders()),
+        settingsService.getInvoiceSettings()
     ]);
+    const googleSheetUrl = buildGoogleSheetUrl(invoiceSettings.googleSheetId);
 
     const orderMap = {};
     allOrders.forEach(o => orderMap[o.id] = o);
@@ -126,7 +133,7 @@ export const renderInvoices = async () => {
 
         container.innerHTML = `
             <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-4);">
-                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200);">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); gap: 12px;">
                     <div style="display: flex; gap: var(--space-4); align-items: center;">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <label style="font-size: 12px; font-weight: 600; color: var(--color-gray-500);">Customer:</label>
@@ -143,6 +150,11 @@ export const renderInvoices = async () => {
                             <button class="period-btn btn btn-sm ${filters.period === 'all' ? 'btn-primary' : 'btn-ghost'}" data-period="all" style="font-size: 11px; padding: 4px 10px;">${t('invoice_all_time')}</button>
                         </div>
                     </div>
+                    ${googleSheetUrl ? `
+                        <a href="${googleSheetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="white-space: nowrap; text-decoration: none;">
+                            Open Google Sheet
+                        </a>
+                    ` : ''}
                 </div>
 
                 ${createCard({
@@ -451,7 +463,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                             <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
                                 <img src="${qrService.buildQrImageUrl(invoice, 120)}" alt="Invoice QR" style="width: 60px; height: 60px; display: block;">
                             </div>
-                            <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Scan to re-order</div>
+                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Scan for invoice options</div>
                         </div>
                         ` : ''}
                     </div>
@@ -745,10 +757,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                 if (navigator.clipboard) {
                     await navigator.clipboard.writeText(qrLink);
                 } else {
-                    prompt('Copy QR reorder link:', qrLink);
+                    prompt('Copy QR invoice link:', qrLink);
                 }
                 const { notificationService } = await import("../core/notificationService.js");
-                notificationService.success('QR reorder link copied.');
+                notificationService.success('QR invoice link copied.');
             });
 
             document.getElementById('btn-return-items').addEventListener('click', async () => {
