@@ -38,6 +38,7 @@ export const renderCustomerDetail = async ({ id }) => {
                     </div>
                     <div style="margin-top: 8px;">
                         <span style="background: #f0f9ff; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 12px;">Category ${customer.category || '-'}</span>
+                        <span style="background: #f0fdf4; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 12px; font-family: monospace; letter-spacing: 0.08em; margin-left: 6px;">PIN ${customer.pinCode || '-'}</span>
                     </div>
                 </div>
                 <button class="btn btn-secondary" onclick="window.editCustomer('${customer.id}')">Edit Profile</button>

@@ -23,7 +23,7 @@ export const orderService = {
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Orders fetch timeout')), 15000);
+                timeoutId = setTimeout(() => reject(new Error('Orders fetch timeout')), 30000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -40,7 +40,7 @@ export const orderService = {
         try {
             const docRef = doc(db, COLLECTION, id);
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Order fetch timeout')), 15000);
+                timeoutId = setTimeout(() => reject(new Error('Order fetch timeout')), 30000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
             if (docSnap.exists()) {

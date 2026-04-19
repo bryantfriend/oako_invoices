@@ -151,6 +151,15 @@ service cloud.firestore {
     }
 
     // ===============================
+    // PUBLIC QR INVOICE SNAPSHOTS
+    // ===============================
+
+    match /invoice_qr_links/{token} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ===============================
     // INVOICE SETTINGS (ADMIN)
     // ===============================
     match /settings/{id} {

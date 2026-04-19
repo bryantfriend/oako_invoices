@@ -24,21 +24,25 @@ export const DEFAULT_INVOICE_SETTINGS = {
     qrText: 'https://kyrgyz-organics.com/pay',
     defaultTaxRate: 0,
     logoUrl: '',
-    footerText: 'Thanks for supporting sustainable agriculture!'
+    footerText: 'Thanks for supporting sustainable agriculture!',
+    courierPin: '123456',
+    whatsappNumber: '',
+    googleSheetId: '',
+    googleSheetsWebhookUrl: '',
+    syncEnabled: false
 };
 
 export const settingsService = {
     async getInvoiceSettings() {
+        let timeoutId;
         try {
             const docRef = doc(db, COLLECTION, DOCUMENT_ID);
 
             // Give Firestore more time before assuming settings are unavailable.
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Settings fetch timeout')), 10000);
+                timeoutId = setTimeout(() => reject(new Error('Settings fetch timeout')), 30000);
             });
             const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
-            clearTimeout(timeoutId);
 
             return snap.exists()
                 ? { ...DEFAULT_INVOICE_SETTINGS, ...snap.data(), __fromFallback: false }
@@ -46,6 +50,8 @@ export const settingsService = {
         } catch (error) {
             console.warn("Failed to fetch settings, using defaults.", error);
             return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 

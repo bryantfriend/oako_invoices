@@ -69,7 +69,7 @@ export const renderSettings = async () => {
         content: `
                         <div class="input-group">
                             <label>Default Tax Rate (%)</label>
-                            <input type="number" name="defaultTaxRate" value="${settings.defaultTaxRate || 10}" step="0.1" style="width: 120px;">
+                            <input type="number" name="defaultTaxRate" value="${settings.defaultTaxRate ?? 0}" step="0.1" style="width: 120px;">
                         </div>
                         <div class="input-group">
                             <label>Bank Account / Payment Terms</label>
@@ -106,6 +106,36 @@ export const renderSettings = async () => {
                             <label>Invoice Banner Footer Text</label>
                             <input type="text" name="footerText" value="${settings.footerText || 'Thanks for supporting sustainable agriculture!'}" placeholder="Message at the bottom...">
                         </div>
+                    `
+    })}
+
+                ${createCard({
+        title: 'Mobile Access & Sync',
+        content: `
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                            <div class="input-group">
+                                <label>Courier PIN</label>
+                                <input type="text" name="courierPin" value="${settings.courierPin || '123456'}" minlength="6" maxlength="6" pattern="\\d{6}" placeholder="123456">
+                                <small style="color: var(--color-gray-500);">Courier login uses # before this PIN, for example #123456.</small>
+                            </div>
+                            <div class="input-group">
+                                <label>WhatsApp Number</label>
+                                <input type="tel" name="whatsappNumber" value="${settings.whatsappNumber || ''}" placeholder="996700123456">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label>Google Sheet ID</label>
+                            <input type="text" name="googleSheetId" value="${settings.googleSheetId || ''}" placeholder="Spreadsheet ID">
+                        </div>
+                        <div class="input-group">
+                            <label>Google Sheets Webhook URL</label>
+                            <input type="url" name="googleSheetsWebhookUrl" value="${settings.googleSheetsWebhookUrl || ''}" placeholder="Apps Script web app URL">
+                            <small style="color: var(--color-gray-500);">Completion will not be blocked if this sync fails.</small>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                            <input type="checkbox" name="syncEnabled" value="true" ${settings.syncEnabled ? 'checked' : ''}>
+                            Enable completed-invoice Google Sheets sync
+                        </label>
                     `
     })}
 
@@ -161,6 +191,7 @@ export const renderSettings = async () => {
             data.showQrCode = formData.get('showQrCode') === 'true';
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
+            data.syncEnabled = formData.get('syncEnabled') === 'true';
 
             await settingsController.updateSettings(data);
             saveStatus.textContent = "Logo saved!";
@@ -183,6 +214,7 @@ export const renderSettings = async () => {
         data.showQrCode = formData.get('showQrCode') === 'true';
         data.showNotes = formData.get('showNotes') === 'true';
         data.showFooter = formData.get('showFooter') === 'true';
+        data.syncEnabled = formData.get('syncEnabled') === 'true';
 
         // Extract inventory categories
         const enabledCategories = formData.getAll('inventory_cat');

@@ -112,6 +112,16 @@ export const renderCustomers = async () => {
                     }
                 },
                 {
+                    key: 'pinCode',
+                    label: 'PIN Code',
+                    render: (val, row) => {
+                        const pin = val || customerController.generateCustomerPin();
+                        return isEditingLocked
+                            ? `<span style="font-family: monospace; font-weight: 800; letter-spacing: 0.08em; color: #1e3318;">${pin}</span>`
+                            : `<input type="text" class="inline-edit pin-code-input" data-id="${row.id}" data-field="pinCode" value="${pin}" minlength="6" maxlength="6" pattern="\\d{6}" style="width: 90px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-gray-300); font-family: monospace; font-weight: 800;">`;
+                    }
+                },
+                {
                     key: 'email',
                     label: t('table_email'),
                     render: (val, row) => {
@@ -159,6 +169,13 @@ export const renderCustomers = async () => {
                     const id = e.target.dataset.id;
                     const field = e.target.dataset.field;
                     const newVal = e.target.value;
+
+                    if (field === 'pinCode' && !/^\d{6}$/.test(newVal)) {
+                        e.target.setCustomValidity('PIN Code must be 6 digits.');
+                        e.target.reportValidity();
+                        return;
+                    }
+                    e.target.setCustomValidity('');
 
                     // Simple check if value actually changed
                     const cust = customers.find(c => c.id === id);
@@ -212,6 +229,7 @@ export const renderCustomers = async () => {
 };
 
 window.showAddCustomerModal = () => {
+    const generatedPin = customerController.generateCustomerPin();
     const modal = new Modal({
         title: 'Add New Customer',
         content: `
@@ -235,6 +253,11 @@ window.showAddCustomerModal = () => {
                 <div class="input-group">
                     <label>Phone Number</label>
                     <input type="tel" name="phone" placeholder="+996 555 123 456">
+                </div>
+                <div class="input-group">
+                    <label>Company PIN Code</label>
+                    <input type="text" name="pinCode" value="${generatedPin}" minlength="6" maxlength="6" pattern="\\d{6}" required>
+                    <small style="color: var(--color-gray-500);">Customers can use this later to access their company invoice QR page.</small>
                 </div>
                 <div class="input-group">
                     <label>Email</label>
@@ -266,6 +289,7 @@ window.showAddCustomerModal = () => {
 window.editCustomer = async (id) => {
     const customer = await customerController.getCustomerById(id);
     if (!customer) return;
+    const pinCode = customer.pinCode || customerController.generateCustomerPin();
 
     const modal = new Modal({
         title: 'Edit Customer',
@@ -305,6 +329,20 @@ window.editCustomer = async (id) => {
                         name="phone"
                         value="${customer.phone || ''}"
                     >
+                </div>
+
+                <div class="input-group">
+                    <label>Company PIN Code</label>
+                    <input
+                        type="text"
+                        name="pinCode"
+                        value="${pinCode}"
+                        minlength="6"
+                        maxlength="6"
+                        pattern="\\d{6}"
+                        required
+                    >
+                    <small style="color: var(--color-gray-500);">Must be 6 digits. The company can update this later.</small>
                 </div>
 
                 <div class="input-group">

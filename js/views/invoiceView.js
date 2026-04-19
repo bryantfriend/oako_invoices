@@ -10,6 +10,7 @@ import { t, i18n } from "../core/i18n.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { productService } from "../services/productService.js";
+import { qrService } from "../services/qrService.js";
 
 export const renderInvoices = async () => {
     layoutView.render();
@@ -248,6 +249,8 @@ export const renderInvoiceDetail = async ({ id }) => {
         return;
     }
 
+    invoice = await qrService.ensureInvoiceToken(invoice);
+
     const productMap = {};
     allProducts.forEach(p => {
         productMap[p.id] = p;
@@ -446,13 +449,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                         ${(s.showQrCode !== false) ? `
                         <div style="text-align: center;">
                             <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
-                                <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px;">
-                                         ${Array(16).fill('<div style="width: 6px; height: 6px; background: #2e4a23;"></div>').join('')}
-                                    </div>
-                                </div>
+                                <img src="${qrService.buildQrImageUrl(invoice, 120)}" alt="Invoice QR" style="width: 60px; height: 60px; display: block;">
                             </div>
-                            <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">${t('print_scan_pay', lang)}</div>
+                            <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Scan to re-order</div>
                         </div>
                         ` : ''}
                     </div>
@@ -519,6 +518,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                 </div>
 
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
+                    <button id="btn-copy-qr" class="btn btn-secondary btn-sm">QR Link</button>
+                    <button id="btn-return-items" class="btn btn-secondary btn-sm">Return Items</button>
+                    <button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>
                     <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
                     <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices stacked on Portrait A4">📄 2-up Portrait</button>
                 </div>
@@ -736,6 +738,63 @@ export const renderInvoiceDetail = async ({ id }) => {
                 const activePage = container.querySelector('.invoice-page.active-page');
                 if (activePage) activePage.style.transform = `scale(${invoiceScale})`;
                 e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
+            });
+
+            document.getElementById('btn-copy-qr').addEventListener('click', async () => {
+                const qrLink = qrService.buildMobileUrl(invoice);
+                if (navigator.clipboard) {
+                    await navigator.clipboard.writeText(qrLink);
+                } else {
+                    prompt('Copy QR reorder link:', qrLink);
+                }
+                const { notificationService } = await import("../core/notificationService.js");
+                notificationService.success('QR reorder link copied.');
+            });
+
+            document.getElementById('btn-return-items').addEventListener('click', async () => {
+                const { Modal } = await import("../components/modal.js");
+                const returnItemsByProduct = {};
+                (invoice.returnItems || []).forEach(item => { returnItemsByProduct[item.productId] = item.quantity; });
+                const modal = new Modal({
+                    title: 'Return Items',
+                    size: 'large',
+                    confirmText: 'Save Return',
+                    content: `
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            ${(invoice.items || []).map(item => {
+                                const productId = item.productId || item.name;
+                                const itemName = item.name || item.productName || productMap[item.productId]?.displayName || 'Product';
+                                const quantity = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                                return `
+                                    <label style="display: grid; grid-template-columns: 1fr 100px; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--color-gray-200); border-radius: 10px;">
+                                        <span style="font-weight: 700;">${itemName}<small style="display:block; color: var(--color-gray-500); font-weight: 500;">Ordered: ${quantity || 0}</small></span>
+                                        <input class="return-qty-input input" type="number" min="0" max="${quantity || 0}" value="${returnItemsByProduct[productId] || 0}" data-product-id="${productId}">
+                                    </label>
+                                `;
+                            }).join('')}
+                        </div>
+                    `,
+                    onConfirm: async () => {
+                        const returnItems = [...document.querySelectorAll('.return-qty-input')].map(input => ({
+                            productId: input.dataset.productId,
+                            quantity: Number(input.value) || 0
+                        }));
+                        const { returnsService } = await import("../services/returnsService.js");
+                        await returnsService.requestReturn(invoice.id, returnItems);
+                        const { notificationService } = await import("../core/notificationService.js");
+                        notificationService.success('Return request saved.');
+                        renderInvoiceDetail({ id });
+                    }
+                });
+                modal.open();
+            });
+
+            document.getElementById('btn-complete-invoice').addEventListener('click', async () => {
+                const { returnsService } = await import("../services/returnsService.js");
+                const { notificationService } = await import("../core/notificationService.js");
+                await returnsService.markCompleted(invoice.id);
+                notificationService.success('Invoice completed.');
+                renderInvoiceDetail({ id });
             });
 
             const handlePrintSuccess = async () => {

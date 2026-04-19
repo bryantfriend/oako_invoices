@@ -14,6 +14,7 @@ import { renderCustomerDetail } from "./views/customerDetailView.js";
 import { renderInventory } from "./views/inventoryView.js";
 import { renderSettings } from "./views/settingsView.js";
 import { renderProfile } from "./views/profileView.js";
+import { renderMobileInvoice } from "./views/mobileInvoiceView.js";
 
 async function initApp() {
     try {
@@ -27,6 +28,7 @@ async function initApp() {
         router.addRoute(ROUTES.ORDER_DETAIL, renderOrderDetail);
         router.addRoute(ROUTES.INVOICES, renderInvoices);
         router.addRoute(ROUTES.INVOICE_DETAIL, renderInvoiceDetail);
+        router.addRoute(ROUTES.MOBILE_INVOICE, renderMobileInvoice);
         router.addRoute(ROUTES.INVENTORY, renderInventory);
         router.addRoute(ROUTES.CUSTOMERS, renderCustomers);
         router.addRoute(ROUTES.CUSTOMER_DETAIL, renderCustomerDetail);
@@ -43,13 +45,20 @@ async function initApp() {
                 const { customerController } = await import("./controllers/customerController.js");
                 const { orderService } = await import("./services/orderService.js");
                 const { invoiceService } = await import("./services/invoiceService.js");
+                const ignorePreloadError = (label) => (error) => {
+                    if (error?.message?.includes('timeout')) {
+                        console.debug(`Preload skipped after timeout: ${label}`);
+                        return;
+                    }
+                    console.warn(`Preload ignoring error: ${label}`, error);
+                };
 
                 // Fire and forget to populate IndexedDB cache, adding catch to prevent unhandled rejections
-                productService.getAllProducts().catch(e => console.warn('Preload ignoring error:', e));
-                productService.getAllCategories().catch(e => console.warn('Preload ignoring error:', e));
-                customerController.loadAllCustomers().catch(e => console.warn('Preload ignoring error:', e));
-                orderService.getAllOrders().catch(e => console.warn('Preload ignoring error:', e));
-                invoiceService.getAllInvoices().catch(e => console.warn('Preload ignoring error:', e));
+                productService.getAllProducts().catch(ignorePreloadError('products'));
+                productService.getAllCategories().catch(ignorePreloadError('categories'));
+                customerController.loadAllCustomers().catch(ignorePreloadError('customers'));
+                orderService.getAllOrders().catch(ignorePreloadError('orders'));
+                invoiceService.getAllInvoices().catch(ignorePreloadError('invoices'));
             } catch (e) {
                 console.warn("Failed to preload offline data:", e);
             }
@@ -117,10 +126,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Register Service Worker
     if ('serviceWorker' in navigator) {
+        let refreshedForNewWorker = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (refreshedForNewWorker) return;
+            refreshedForNewWorker = true;
+            window.location.reload();
+        });
+
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js')
                 .then(registration => {
                     console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    registration.update();
                 })
                 .catch(err => {
                     console.log('ServiceWorker registration failed: ', err);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kyrgyz-organics-v1.040';
+const CACHE_NAME = 'kyrgyz-organics-v1.044';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
@@ -30,6 +30,7 @@ const ASSETS_TO_CACHE = [
     './js/views/createOrderView.js',
     './js/views/orderDetailView.js',
     './js/views/invoiceView.js',
+    './js/views/mobileInvoiceView.js',
     './js/views/inventoryView.js',
     './js/views/customerView.js',
     './js/views/customerDetailView.js',
@@ -46,6 +47,11 @@ const ASSETS_TO_CACHE = [
     './js/services/productService.js',
     './js/services/orderService.js',
     './js/services/invoiceService.js',
+    './js/services/pinService.js',
+    './js/services/qrService.js',
+    './js/services/whatsappService.js',
+    './js/services/returnsService.js',
+    './js/services/googleSheetsService.js',
     './js/services/gamificationService.js',
     './js/services/customerService.js',
     './js/services/inventoryService.js',
@@ -78,8 +84,26 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
     // Exclude Firestore calls from being forcibly cached by generic worker
     if (url.origin === 'https://firestore.googleapis.com' || url.origin === 'https://securetoken.googleapis.com' || url.origin === 'https://identitytoolkit.googleapis.com') {
+        return;
+    }
+
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .catch(async () => {
+                    const cachedIndex = await caches.match('./index.html');
+                    return cachedIndex || new Response('App shell is unavailable offline.', {
+                        status: 503,
+                        headers: { 'Content-Type': 'text/plain' }
+                    });
+                })
+        );
         return;
     }
 
@@ -116,10 +140,10 @@ self.addEventListener('fetch', (event) => {
                     }
                 );
             }).catch(() => {
-                // If network fails and it's navigation, return index.html fallback
-                if (event.request.mode === 'navigate') {
-                    return caches.match('./index.html');
-                }
+                return new Response('', {
+                    status: 503,
+                    statusText: 'Service Unavailable'
+                });
             })
     );
 });

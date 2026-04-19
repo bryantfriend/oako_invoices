@@ -6,6 +6,10 @@ import { ROUTES } from "../core/constants.js";
 import { gamificationService } from "../services/gamificationService.js";
 
 export const customerController = {
+    generateCustomerPin() {
+        return customerService.generateCustomerPin();
+    },
+
     async loadAllCustomers() {
         try {
             return await customerService.getAllCustomers();

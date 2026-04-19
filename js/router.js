@@ -2,6 +2,8 @@ import { ROUTES } from "./core/constants.js";
 import { guardService } from "./core/guardService.js";
 import { authService } from "./core/authService.js";
 
+const PUBLIC_ROUTES = [ROUTES.LOGIN, ROUTES.MOBILE_INVOICE];
+
 function normalizePath(path) {
     if (path === '/index.html') return '/';
     return path;
@@ -48,7 +50,15 @@ class Router {
         // =========================
         // AUTH GUARD
         // =========================
-        if (path !== ROUTES.LOGIN && !guardService.canActivate(path)) {
+        const isPublicRoute = PUBLIC_ROUTES.some(route => {
+            if (route === path) return true;
+            if (!route.includes(':')) return false;
+            const routeParts = route.split('/').filter(Boolean);
+            const pathParts = path.split('/').filter(Boolean);
+            return routeParts.length === pathParts.length && routeParts.every((part, index) => part.startsWith(':') || part === pathParts[index]);
+        });
+
+        if (!isPublicRoute && !guardService.canActivate(path)) {
             if (authService.getCurrentUser() === null) {
                 return this.navigate(ROUTES.LOGIN);
             }

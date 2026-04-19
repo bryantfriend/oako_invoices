@@ -16,18 +16,37 @@ import {
 
 const COLLECTION = 'customers';
 
+function generateCustomerPin() {
+    const pin = Math.floor(100000 + Math.random() * 900000);
+    return String(pin);
+}
+
 export const customerService = {
+    generateCustomerPin,
+
     async getAllCustomers() {
+        let timeoutId;
         try {
             // Simplified query to avoid index requirements for now
             // We can add filtering/ordering back once index is created in Firebase
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Customers fetch timeout')), 15000);
+                timeoutId = setTimeout(() => reject(new Error('Customers fetch timeout')), 30000);
             });
             const snapshot = await Promise.race([getDocs(collection(db, COLLECTION)), timeoutPromise]);
-            clearTimeout(timeoutId);
             let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const customersMissingPins = docs.filter(customer => !customer.pinCode);
+            await Promise.all(customersMissingPins.map(async (customer) => {
+                const pinCode = generateCustomerPin();
+                customer.pinCode = pinCode;
+                try {
+                    await updateDoc(doc(db, COLLECTION, customer.id), {
+                        pinCode,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (error) {
+                    console.warn("Could not save generated customer PIN.", error);
+                }
+            }));
 
             // Client-side filter and sort as a fallback
             return docs
@@ -36,22 +55,25 @@ export const customerService = {
         } catch (error) {
             console.error("Error fetching customers:", error);
             return [];
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 
     async getCustomerById(id) {
+        let timeoutId;
         try {
             const docRef = doc(db, COLLECTION, id);
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 15000);
+                timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 30000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
-            clearTimeout(timeoutId);
             return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
         } catch (error) {
             console.error("Error fetching customer:", error);
             throw error;
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 
@@ -59,6 +81,7 @@ export const customerService = {
         try {
             const payload = {
                 ...data, // name, companyName, phone, email, address, notes
+                pinCode: data.pinCode || generateCustomerPin(),
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
