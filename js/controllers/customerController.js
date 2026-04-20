@@ -89,12 +89,39 @@ export const customerController = {
 
             // Fetch orders
             const { orderService } = await import("../services/orderService.js");
-            const orders = await orderService.getOrdersByCustomerName(customer.name) || [];
+            const lookupNames = [...new Set([customer.companyName, customer.name].filter(Boolean))];
+            const orderGroups = await Promise.all(lookupNames.map(name => orderService.getOrdersByCustomerName(name).catch(() => [])));
+            const orderMap = new Map();
+            orderGroups.flat().forEach(order => orderMap.set(order.id, order));
+            const orders = [...orderMap.values()].sort((a, b) => {
+                const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || a.orderDate || 0);
+                const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || b.orderDate || 0);
+                return dateB - dateA;
+            });
 
             // Calculate Stats
             const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
             const totalOrders = orders.length;
-            const lastOrderDate = orders.length > 0 ? orders[0].orderDate : null;
+            const lastOrderDate = orders.length > 0 ? (orders[0].orderDate || orders[0].createdAt) : null;
+            const productTotals = orders.reduce((totals, order) => {
+                (order.items || []).forEach(item => {
+                    const key = item.productId || item.name;
+                    if (!totals[key]) {
+                        totals[key] = {
+                            productId: item.productId || '',
+                            name: item.name || item.productName || 'Product',
+                            quantity: 0,
+                            count: 0
+                        };
+                    }
+                    totals[key].quantity += Number(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity) || 0;
+                    totals[key].count += 1;
+                });
+                return totals;
+            }, {});
+            const mostOrderedProducts = Object.values(productTotals)
+                .sort((a, b) => b.quantity - a.quantity)
+                .slice(0, 5);
 
             return {
                 customer,
@@ -103,7 +130,8 @@ export const customerController = {
                     totalRevenue,
                     totalOrders,
                     lastOrderDate
-                }
+                },
+                mostOrderedProducts
             };
         } catch (error) {
             console.error("Error loading customer detail:", error);

@@ -9,6 +9,7 @@ export class Modal {
         cancelText = t('btn_cancel') || 'Cancel',
         type = 'primary', // primary | destructive
         size = 'medium',  // small | medium | large | xlarge
+        footer = true,
         closeOnBackdrop = true,
         closeOnEsc = true
     }) {
@@ -19,6 +20,7 @@ export class Modal {
         this.cancelText = cancelText;
         this.type = type;
         this.size = size;
+        this.footer = footer;
         this.closeOnBackdrop = closeOnBackdrop;
         this.closeOnEsc = closeOnEsc;
 
@@ -93,29 +95,29 @@ export class Modal {
                     ${this.content}
                 </div>
 
-                <div style="display: flex; justify-content: flex-end; gap: var(--space-2); flex-shrink: 0;">
+                ${this.footer ? `<div style="display: flex; justify-content: flex-end; gap: var(--space-2); flex-shrink: 0;">
                     <button class="btn btn-secondary cancel-btn">
                         ${this.cancelText}
                     </button>
                     <button class="btn ${btnClass} confirm-btn">
                         ${this.confirmText}
                     </button>
-                </div>
+                </div>` : ''}
             </div>
         `;
 
         // Events
         backdrop.querySelector('.cancel-btn')
-            .addEventListener('click', () => this.close());
+            ?.addEventListener('click', () => this.close());
 
         backdrop.querySelector('.confirm-btn')
-            .addEventListener('click', async () => {
-                if (this.onConfirm) {
-                    const result = await this.onConfirm();
-                    if (result === false) return; // keep modal open
-                }
-                this.close();
-            });
+            ?.addEventListener('click', async () => {
+                    if (this.onConfirm) {
+                        const result = await this.onConfirm();
+                        if (result === false) return; // keep modal open
+                    }
+                    this.close();
+                });
 
         if (this.closeOnBackdrop) {
             backdrop.addEventListener('click', (e) => {

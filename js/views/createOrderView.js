@@ -10,6 +10,15 @@ import { DataTable } from "../components/dataTable.js";
 import { formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
 
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 export const renderCreateOrder = async () => {
     layoutView.render();
     layoutView.updateTitle(t('order_create_title'));
@@ -31,6 +40,13 @@ export const renderCreateOrder = async () => {
     }
 
     let selectedItems = []; // { productId, name, price, quantity, imageUrl }
+    let repeatOrderDraft = null;
+    try {
+        repeatOrderDraft = JSON.parse(sessionStorage.getItem('repeatOrderDraft') || 'null');
+        sessionStorage.removeItem('repeatOrderDraft');
+    } catch (error) {
+        repeatOrderDraft = null;
+    }
 
     const customerDatalist = customers.map(c => `<option value="${c.companyName || c.name}">`).join('');
 
@@ -48,7 +64,7 @@ export const renderCreateOrder = async () => {
                                         <span style="position: absolute; left: 10px; top: 10px;">🏢</span>
                                         <input type="text" id="customerName" name="customerName" 
                                             required placeholder="Enter or select company..." 
-                                            style="padding-left: 36px; width: 100%;" autocomplete="off">
+                                            style="padding-left: 36px; width: 100%;" autocomplete="off" value="${escapeHtml(repeatOrderDraft?.customerName || '')}">
                                     </div>
                                     <button type="button" id="select-customer-btn" class="btn btn-secondary" title="Select from List" style="padding: 0 12px; font-size: 14px;">
                                         📋
@@ -68,7 +84,7 @@ export const renderCreateOrder = async () => {
                         </div>
                         <div class="input-group" style="margin-top: 10px;">
                             <label for="notes">Notes</label>
-                            <textarea id="notes" name="notes" rows="2" placeholder="Special instructions..."></textarea>
+                            <textarea id="notes" name="notes" rows="2" placeholder="Special instructions...">${escapeHtml(repeatOrderDraft?.notes || '')}</textarea>
                         </div>
                     `
     })}
@@ -348,6 +364,20 @@ export const renderCreateOrder = async () => {
 
     // Initial Render Items & Default Date
     setTimeout(() => {
+        if (repeatOrderDraft?.items?.length) {
+            selectedItems = repeatOrderDraft.items.map(item => ({
+                productId: item.productId || '',
+                name: item.name || item.productName || 'Product',
+                name_en: item.name_en || item.name || item.productName || 'Product',
+                name_ru: item.name_ru || '',
+                name_kg: item.name_kg || '',
+                price: Number(item.price) || 0,
+                quantity: Number(item.quantity) || 1,
+                imageUrl: item.imageUrl || '',
+                weight: item.weight || ''
+            }));
+            notificationService.success(`Repeated order loaded for ${repeatOrderDraft.customerName || 'customer'}.`);
+        }
         renderItems();
         // Set default date to Tomorrow
         const tomorrow = new Date();
@@ -471,6 +501,7 @@ export const renderCreateOrder = async () => {
     document.getElementById('quick-add-customer-btn').addEventListener('click', () => {
         const modal = new Modal({
             title: 'New Customer',
+            confirmText: 'Add Customer',
             content: `
                 <form id="quick-add-customer-form">
                     <div class="input-group">

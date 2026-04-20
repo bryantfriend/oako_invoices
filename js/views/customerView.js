@@ -232,6 +232,7 @@ window.showAddCustomerModal = () => {
     const generatedPin = customerController.generateCustomerPin();
     const modal = new Modal({
         title: 'Add New Customer',
+        confirmText: 'Add Customer',
         content: `
             <form id="add-customer-form">
                 <div class="input-group">

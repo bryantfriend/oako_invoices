@@ -23,7 +23,8 @@ export const renderCustomerDetail = async ({ id }) => {
         return;
     }
 
-    const { customer, orders, stats } = data;
+    const { customer, orders, stats, mostOrderedProducts = [] } = data;
+    const latestOrder = orders[0] || null;
     layoutView.updateTitle(customer.companyName || customer.name || 'Customer Detail');
 
     // 1. Header & KPIs
@@ -41,10 +42,13 @@ export const renderCustomerDetail = async ({ id }) => {
                         <span style="background: #f0fdf4; color: #166534; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 12px; font-family: monospace; letter-spacing: 0.08em; margin-left: 6px;">PIN ${customer.pinCode || '-'}</span>
                     </div>
                 </div>
-                <button class="btn btn-secondary" onclick="window.editCustomer('${customer.id}')">Edit Profile</button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    ${latestOrder ? `<button class="btn btn-primary" onclick="window.repeatCustomerOrder('${latestOrder.id}')">Repeat Last Order</button>` : ''}
+                    <button class="btn btn-secondary" onclick="window.editCustomer('${customer.id}')">Edit Profile</button>
+                </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
                 ${createCard({
         title: t('dash_stat_revenue'),
         content: `<div style="font-size: 24px; font-weight: 800; color: #10b981;">${formatCurrency(stats.totalRevenue)}</div>`
@@ -57,7 +61,25 @@ export const renderCustomerDetail = async ({ id }) => {
         title: t('stat_last_order'),
         content: `<div style="font-size: 24px; font-weight: 800; color: var(--color-gray-900);">${stats.lastOrderDate ? formatDate(stats.lastOrderDate) : 'Never'}</div>`
     })}
+                 ${createCard({
+        title: 'Top Product',
+        content: `<div style="font-size: 18px; font-weight: 800; color: var(--color-gray-900);">${mostOrderedProducts[0]?.name || 'None yet'}</div>`
+    })}
             </div>
+
+            ${mostOrderedProducts.length ? `
+            <div class="card" style="padding: 16px;">
+                <h3 style="font-size: 16px; font-weight: 800; margin-bottom: 12px;">Most Ordered Products</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                    ${mostOrderedProducts.map(product => `
+                        <div style="border: 1px solid var(--color-gray-100); border-radius: 12px; padding: 12px; background: #fff;">
+                            <div style="font-weight: 800; color: var(--color-gray-900);">${product.name}</div>
+                            <div style="font-size: 12px; color: var(--color-gray-500); margin-top: 4px;">${product.quantity} total ordered across ${product.count} order${product.count === 1 ? '' : 's'}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
             
             <!-- Orders List -->
             <div class="card" style="display: flex; flex-direction: column;">
@@ -81,6 +103,9 @@ export const renderCustomerDetail = async ({ id }) => {
         onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.id)),
         actions: (row) => `
              <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                 <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.repeatCustomerOrder('${row.id}')" title="Repeat this order">
+                    Repeat
+                </button>
                  <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.printOrder('${row.id}')" title="Print Invoice" style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; background: transparent; padding: 2px;">
                     🖨️
                 </button>
@@ -114,6 +139,32 @@ export const renderCustomerDetail = async ({ id }) => {
         } catch (e) {
             console.error("Error navigating to invoice:", e);
         }
+    };
+
+    window.repeatCustomerOrder = async (orderId) => {
+        const sourceOrder = orders.find(order => order.id === orderId);
+        if (!sourceOrder) return;
+
+        const repeatDraft = {
+            customerName: customer.companyName || customer.name || sourceOrder.customerName,
+            notes: sourceOrder.notes ? `Repeated from ${sourceOrder.id.slice(-6)}. ${sourceOrder.notes}` : `Repeated from ${sourceOrder.id.slice(-6)}.`,
+            items: (sourceOrder.items || []).map(item => ({
+                productId: item.productId || '',
+                name: item.name || item.productName || 'Product',
+                name_en: item.name_en || item.name || item.productName || 'Product',
+                name_ru: item.name_ru || '',
+                name_kg: item.name_kg || '',
+                price: Number(item.price) || 0,
+                quantity: Number(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity) || 1,
+                imageUrl: item.imageUrl || '',
+                weight: item.weight || ''
+            })),
+            sourceOrderId: sourceOrder.id,
+            createdAt: new Date().toISOString()
+        };
+
+        sessionStorage.setItem('repeatOrderDraft', JSON.stringify(repeatDraft));
+        router.navigate(ROUTES.CREATE_ORDER);
     };
 
     window.togglePrinted = async (id, isPrintedState) => {
