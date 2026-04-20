@@ -4,9 +4,22 @@ import { createCard } from "../components/card.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { productService } from "../services/productService.js";
 import { inventoryService } from "../services/inventoryService.js";
+import { buildGoogleSheetUrl, getGoogleSheetId } from "../services/settingsService.js";
 
-function buildGoogleSheetUrl(sheetId) {
-    return sheetId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/edit` : '';
+function escapeAttribute(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function displayCourierPin(pin) {
+    const digits = String(pin || '').replace(/\D/g, '');
+    if (/^\d{5}$/.test(digits)) return digits;
+    if (/^0\d{5}$/.test(digits)) return digits.slice(1);
+    if (/^\d{6}$/.test(digits)) return digits.slice(1);
+    return '23456';
 }
 
 export const renderSettings = async () => {
@@ -23,7 +36,8 @@ export const renderSettings = async () => {
     ]);
 
     const enabledCatIds = inventorySettings.enabledCategories || [];
-    const googleSheetUrl = buildGoogleSheetUrl(settings.googleSheetId);
+    const googleSheetId = getGoogleSheetId(settings.googleSheetId);
+    const googleSheetUrl = buildGoogleSheetUrl(googleSheetId);
 
     container.innerHTML = `
         <div class="animate-slide-up" style="max-width: 800px; margin: 0 auto;">
@@ -119,9 +133,12 @@ export const renderSettings = async () => {
         content: `
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
                             <div class="input-group">
-                                <label>Courier PIN</label>
-                                <input type="text" name="courierPin" value="${settings.courierPin || '123456'}" minlength="6" maxlength="6" pattern="\\d{6}" placeholder="123456">
-                                <small style="color: var(--color-gray-500);">Courier login uses # before this PIN, for example #123456.</small>
+                                <label>Courier PIN Code: 0 + five digits</label>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-weight: 900; font-size: 18px; color: var(--color-primary-700);">0</span>
+                                    <input type="text" name="courierPin" value="${displayCourierPin(settings.courierPin)}" minlength="5" maxlength="5" pattern="\\d{5}" placeholder="23456" style="max-width: 140px;">
+                                </div>
+                                <small style="color: var(--color-gray-500);">Courier enters 0 plus these 5 digits. Example: 0${displayCourierPin(settings.courierPin)}.</small>
                             </div>
                             <div class="input-group">
                                 <label>WhatsApp Number</label>
@@ -130,7 +147,7 @@ export const renderSettings = async () => {
                         </div>
                         <div class="input-group">
                             <label>Google Sheet ID</label>
-                            <input type="text" name="googleSheetId" value="${settings.googleSheetId || ''}" placeholder="Spreadsheet ID">
+                            <input type="text" name="googleSheetId" value="${escapeAttribute(googleSheetId)}" placeholder="Paste Sheet ID or full Google Sheets URL" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" style="font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace; text-transform: none;">
                             ${googleSheetUrl ? `
                                 <a href="${googleSheetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display: inline-flex; margin-top: 8px; text-decoration: none;">
                                     Open Google Sheet
@@ -138,11 +155,12 @@ export const renderSettings = async () => {
                             ` : `
                                 <small style="color: var(--color-gray-500);">Add the Sheet ID here and save to show a quick open link.</small>
                             `}
+                            <small style="color: var(--color-gray-500);">Case-sensitive. Lowercase l and uppercase I are preserved exactly; the monospace font makes them easier to tell apart.</small>
                         </div>
                         <div class="input-group">
                             <label>Google Sheets Webhook URL</label>
-                            <input type="url" name="googleSheetsWebhookUrl" value="${settings.googleSheetsWebhookUrl || ''}" placeholder="Apps Script web app URL">
-                            <small style="color: var(--color-gray-500);">Completion will not be blocked if this sync fails.</small>
+                            <input type="url" name="googleSheetsWebhookUrl" value="${escapeAttribute(settings.googleSheetsWebhookUrl || '')}" placeholder="Apps Script web app URL" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+                            <small style="color: var(--color-gray-500);">Required for saving completed invoices into the sheet. Completion will not be blocked if this sync fails.</small>
                         </div>
                         <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
                             <input type="checkbox" name="syncEnabled" value="true" ${settings.syncEnabled ? 'checked' : ''}>

@@ -1,5 +1,5 @@
 export class DataTable {
-    constructor({ columns, data, onRowClick, actions, onSort, sortKey, sortOrder }) {
+    constructor({ columns, data, onRowClick, actions, onSort, sortKey, sortOrder, sortHandlerName = 'handleTableSort' }) {
         this.columns = columns; // [{ key, label, render, sortable }]
         this.data = data || [];
         this.onRowClick = onRowClick;
@@ -7,6 +7,7 @@ export class DataTable {
         this.onSort = onSort; // function(key)
         this.sortKey = sortKey;
         this.sortOrder = sortOrder; // 'asc' | 'desc'
+        this.sortHandlerName = sortHandlerName;
     }
 
     render() {
@@ -33,7 +34,7 @@ export class DataTable {
                                             white-space: nowrap;
                                             transition: background 0.2s;
                                         "
-                                        ${isSortable ? `onclick="window.handleTableSort('${col.key}')"` : ''}
+                                        ${isSortable ? `onclick="window.${this.sortHandlerName} && window.${this.sortHandlerName}('${col.key}')"` : ''}
                                     >
                                         ${col.label}${indicator}
                                     </th>

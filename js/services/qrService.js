@@ -49,14 +49,14 @@ export const qrService = {
         return JSON.parse(fromBase64Url(encodedPayload));
     },
 
-    buildMobileUrl(invoice, mode = 'customer') {
+    buildMobileUrl(invoice) {
         const payload = this.buildPayload(invoice);
         const encodedPayload = this.encodePayload(payload);
-        return `${window.location.origin}${window.location.pathname}#/qr/${mode}/${encodedPayload}`;
+        return `${window.location.origin}${window.location.pathname}#/qr/${encodedPayload}`;
     },
 
-    buildQrImageUrl(invoice, size = 140, mode = 'customer') {
-        const qrData = this.buildMobileUrl(invoice, mode);
+    buildQrImageUrl(invoice, size = 140) {
+        const qrData = this.buildMobileUrl(invoice);
         return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(qrData)}`;
     },
 

@@ -101,18 +101,42 @@ function mobileShell(content) {
     return `
         <main class="qr-app">
             <style>
-                body { margin: 0; background: #eef6ea; }
-                .qr-app {
+                html,
+                body {
+                    margin: 0;
+                    min-height: 100%;
+                    height: auto;
+                    overflow: auto;
+                    background: #eef6ea;
+                    -webkit-overflow-scrolling: touch;
+                }
+                #app {
+                    display: block;
+                    width: 100%;
                     min-height: 100vh;
+                    height: auto;
+                    overflow: visible;
+                }
+                .qr-app {
+                    min-height: 100dvh;
                     padding: 18px;
+                    padding-bottom: calc(34px + env(safe-area-inset-bottom));
                     background:
                         radial-gradient(circle at top left, rgba(255,255,255,0.95), transparent 34%),
                         linear-gradient(155deg, #dfeeda 0%, #f8fafc 48%, #fff3dc 100%);
                     color: #193018;
                     box-sizing: border-box;
                     font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    overflow: visible;
                 }
-                .qr-shell { max-width: 540px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+                .qr-shell {
+                    max-width: 540px;
+                    margin: 0 auto;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                    padding-bottom: 28px;
+                }
                 .qr-hero {
                     position: relative;
                     overflow: hidden;
@@ -275,14 +299,14 @@ function mobileShell(content) {
     `;
 }
 
-export const renderMobileInvoice = async ({ payload, mode = 'customer' }) => {
+export const renderMobileInvoice = async ({ payload, mode = '' }) => {
     const app = document.getElementById('app');
     app.innerHTML = LoadingSkeleton();
 
     let invoice;
     let settings;
     let products;
-    const preferredMode = mode === 'courier' ? 'courier' : 'customer';
+    const preferredMode = mode === 'courier' ? 'courier' : (mode === 'customer' ? 'customer' : '');
 
     try {
         const decodedPayload = qrService.decodePayload(payload);
@@ -308,7 +332,7 @@ export const renderMobileInvoice = async ({ payload, mode = 'customer' }) => {
     await qrActivityService.log('qr_opened', {
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
-        mode: preferredMode
+            mode: preferredMode || 'single'
     });
 
     const productMap = buildProductMap(products);
@@ -320,13 +344,13 @@ export const renderMobileInvoice = async ({ payload, mode = 'customer' }) => {
         invoiceId: invoice.id,
         invoiceNumber: invoice.invoiceNumber,
         role: session?.role || 'unknown',
-        mode: preferredMode,
+        mode: preferredMode || 'single',
         ...extra
     });
 
     const renderHero = (title, subtitle) => `
         <header class="qr-hero">
-            <div class="qr-kicker">Kyrgyz Organics ${preferredMode === 'courier' ? 'Courier QR' : 'Customer QR'}</div>
+            <div class="qr-kicker">Kyrgyz Organics Invoice QR</div>
             <h1 class="qr-title">${escapeHtml(title)}</h1>
             <p class="qr-subtitle">${escapeHtml(subtitle)}</p>
             ${session ? `<span class="qr-pill">${session.role === 'courier' ? 'Courier mode' : 'Customer mode'}</span>` : ''}
@@ -338,10 +362,8 @@ export const renderMobileInvoice = async ({ payload, mode = 'customer' }) => {
             ${renderHero('Secure invoice access', `${invoice.invoiceNumber || invoice.id} for ${invoice.customerName || 'customer'}`)}
             <form id="qr-pin-form" class="qr-card">
                 <h2 class="qr-section-title">Enter passcode</h2>
-                <p class="qr-note">${preferredMode === 'courier'
-                    ? 'Enter the courier PIN. You can also type it with # in front.'
-                    : 'Enter the 6-digit customer/company PIN for this invoice.'}</p>
-                <input class="qr-field" id="qr-pin-input" name="pin" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="7" required>
+                <p class="qr-note">Enter your 6-digit PIN. Courier PINs start with 0. Customer PINs start with 1.</p>
+                <input class="qr-field" id="qr-pin-input" name="pin" inputmode="numeric" autocomplete="one-time-code" placeholder="1xxxxx" maxlength="6" required>
                 <div class="qr-error">${escapeHtml(error)}</div>
                 <button class="qr-button" type="submit">Unlock invoice</button>
             </form>

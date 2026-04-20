@@ -1,4 +1,4 @@
-import { settingsService } from "./settingsService.js";
+import { getGoogleSheetId, settingsService } from "./settingsService.js";
 
 function toIso(value) {
     if (!value) return '';
@@ -38,23 +38,29 @@ export const googleSheetsService = {
             }
 
             const rows = this.buildRows(invoice);
-            if (!settings.googleSheetsWebhookUrl) {
-                console.warn('Google Sheets sync is enabled but googleSheetsWebhookUrl is not configured.', {
-                    googleSheetId: settings.googleSheetId,
+            const googleSheetId = getGoogleSheetId(settings.googleSheetId);
+            const webhookUrl = String(settings.googleSheetsWebhookUrl || '').trim();
+            if (!webhookUrl) {
+                console.warn('Google Sheets sync is enabled but Google Sheets Webhook URL is not configured. A Sheet ID opens the sheet, but browser code still needs an Apps Script webhook to append rows.', {
+                    googleSheetId,
                     rows
                 });
                 return { skipped: true, rows };
             }
 
-            const response = await fetch(settings.googleSheetsWebhookUrl, {
+            const response = await fetch(webhookUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify({
-                    googleSheetId: settings.googleSheetId,
+                    googleSheetId,
+                    sheetId: googleSheetId,
+                    invoiceId: invoice.id,
                     rows
                 })
             });
 
+            if (response.type === 'opaque') return { success: true, opaque: true, rows };
             if (!response.ok) throw new Error(`Google Sheets sync failed with ${response.status}`);
             return { success: true, rows };
         } catch (error) {

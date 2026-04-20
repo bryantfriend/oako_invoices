@@ -17,8 +17,19 @@ import {
 const COLLECTION = 'customers';
 
 function generateCustomerPin() {
-    const pin = Math.floor(100000 + Math.random() * 900000);
-    return String(pin);
+    const suffix = Math.floor(10000 + Math.random() * 90000);
+    return `1${suffix}`;
+}
+
+function normalizeCustomerPin(pinCode) {
+    const digits = String(pinCode || '').replace(/\D/g, '');
+    if (/^1\d{5}$/.test(digits)) return digits;
+    if (/^\d{6}$/.test(digits)) return `1${digits.slice(1)}`;
+    return generateCustomerPin();
+}
+
+function isCustomerPin(pinCode) {
+    return /^1\d{5}$/.test(String(pinCode || ''));
 }
 
 export const customerService = {
@@ -34,9 +45,9 @@ export const customerService = {
             });
             const snapshot = await Promise.race([getDocs(collection(db, COLLECTION)), timeoutPromise]);
             let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const customersMissingPins = docs.filter(customer => !customer.pinCode);
-            await Promise.all(customersMissingPins.map(async (customer) => {
-                const pinCode = generateCustomerPin();
+            const customersNeedingPins = docs.filter(customer => !isCustomerPin(customer.pinCode));
+            await Promise.all(customersNeedingPins.map(async (customer) => {
+                const pinCode = normalizeCustomerPin(customer.pinCode);
                 customer.pinCode = pinCode;
                 try {
                     await updateDoc(doc(db, COLLECTION, customer.id), {
@@ -68,7 +79,18 @@ export const customerService = {
                 timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 30000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
-            return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+            if (!docSnap.exists()) return null;
+
+            const customer = { id: docSnap.id, ...docSnap.data() };
+            if (!isCustomerPin(customer.pinCode)) {
+                const pinCode = normalizeCustomerPin(customer.pinCode);
+                customer.pinCode = pinCode;
+                await updateDoc(docRef, {
+                    pinCode,
+                    updatedAt: serverTimestamp()
+                }).catch(error => console.warn("Could not normalize customer PIN.", error));
+            }
+            return customer;
         } catch (error) {
             console.error("Error fetching customer:", error);
             throw error;
@@ -93,7 +115,7 @@ export const customerService = {
         try {
             const payload = {
                 ...data, // name, companyName, phone, email, address, notes
-                pinCode: data.pinCode || generateCustomerPin(),
+                pinCode: normalizeCustomerPin(data.pinCode),
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
@@ -110,6 +132,7 @@ export const customerService = {
             const docRef = doc(db, COLLECTION, id);
             await updateDoc(docRef, {
                 ...data,
+                ...(data.pinCode !== undefined ? { pinCode: normalizeCustomerPin(data.pinCode) } : {}),
                 updatedAt: serverTimestamp()
             });
             return true;

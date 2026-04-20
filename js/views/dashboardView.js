@@ -58,7 +58,7 @@ export const renderDashboard = async () => {
         applyFilters();
     };
 
-    window.handleTableSort = handleSort;
+    window.dashboardHandleTableSort = handleSort;
 
     const renderUI = () => {
         cleanupCharts();
@@ -566,6 +566,7 @@ export const renderDashboard = async () => {
             data: filteredOrders,
             sortKey: sort.key,
             sortOrder: sort.order,
+            sortHandlerName: 'dashboardHandleTableSort',
             onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.id)),
             actions: (row) => `
                 <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
@@ -588,7 +589,8 @@ export const renderDashboard = async () => {
         });
 
         const wrapper = document.getElementById('orders-table-wrapper');
-        if (wrapper) wrapper.innerHTML = table.render();
+        if (!wrapper) return;
+        wrapper.innerHTML = table.render();
 
         const visibleIds = new Set(filteredOrders.map(order => order.id));
         selectedOrderIds = new Set([...selectedOrderIds].filter(id => visibleIds.has(id)));

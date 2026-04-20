@@ -11,11 +11,8 @@ import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { productService } from "../services/productService.js";
 import { qrService } from "../services/qrService.js";
-import { settingsService } from "../services/settingsService.js";
-
-function buildGoogleSheetUrl(sheetId) {
-    return sheetId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/edit` : '';
-}
+import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
+import { customerService } from "../services/customerService.js";
 
 export const renderInvoices = async () => {
     layoutView.render();
@@ -261,6 +258,12 @@ export const renderInvoiceDetail = async ({ id }) => {
         return;
     }
 
+    if (!/^1\d{5}$/.test(String(invoice.customerPinCode || ''))) {
+        const customer = await customerService.getCustomerByName(invoice.customerName).catch(() => null);
+        if (customer?.pinCode) {
+            invoice.customerPinCode = customer.pinCode;
+        }
+    }
     invoice = await qrService.ensureInvoiceToken(invoice);
 
     const productMap = {};
@@ -459,21 +462,12 @@ export const renderInvoiceDetail = async ({ id }) => {
                             ` : ''}
                         </div>
                         ${(s.showQrCode !== false) ? `
-                        <div style="display: flex; gap: 12px; text-align: center;">
-                            <div>
-                                <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
-                                    <img src="${qrService.buildQrImageUrl(invoice, 120, 'customer')}" alt="Customer Invoice QR" style="width: 58px; height: 58px; display: block;">
-                                </div>
-                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Customer QR</div>
-                                <div style="font-size: 7px; color: #5a7052;">Return or re-order</div>
+                        <div style="text-align: center;">
+                            <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
+                                <img src="${qrService.buildQrImageUrl(invoice, 120)}" alt="Invoice QR" style="width: 64px; height: 64px; display: block;">
                             </div>
-                            <div>
-                                <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #b45309; border-radius: 8px; margin-bottom: 4px;">
-                                    <img src="${qrService.buildQrImageUrl(invoice, 120, 'courier')}" alt="Courier Invoice QR" style="width: 58px; height: 58px; display: block;">
-                                </div>
-                                <div style="font-size: 8px; font-weight: 800; color: #92400e; text-transform: uppercase;">Courier QR</div>
-                                <div style="font-size: 7px; color: #5a7052;">Save returns</div>
-                            </div>
+                            <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
+                            <div style="font-size: 7px; color: #5a7052;">0 courier · 1 customer</div>
                         </div>
                         ` : ''}
                     </div>
@@ -763,7 +757,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             });
 
             document.getElementById('btn-copy-qr').addEventListener('click', async () => {
-                const qrLink = qrService.buildMobileUrl(invoice, 'customer');
+                const qrLink = qrService.buildMobileUrl(invoice);
                 if (navigator.clipboard) {
                     await navigator.clipboard.writeText(qrLink);
                 } else {

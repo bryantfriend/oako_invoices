@@ -25,12 +25,39 @@ export const DEFAULT_INVOICE_SETTINGS = {
     defaultTaxRate: 0,
     logoUrl: '',
     footerText: 'Thanks for supporting sustainable agriculture!',
-    courierPin: '123456',
+    courierPin: '23456',
     whatsappNumber: '',
     googleSheetId: '',
     googleSheetsWebhookUrl: '',
     syncEnabled: false
 };
+
+export function getGoogleSheetId(value = '') {
+    const rawValue = String(value || '').trim();
+    if (!rawValue) return '';
+
+    const urlMatch = rawValue.match(/\/spreadsheets\/d\/([^/?#]+)/i);
+    const sheetId = urlMatch ? urlMatch[1] : rawValue.split(/[?#]/)[0];
+
+    try {
+        return decodeURIComponent(sheetId).trim();
+    } catch (_) {
+        return sheetId.trim();
+    }
+}
+
+export function buildGoogleSheetUrl(sheetId = '') {
+    const normalizedId = getGoogleSheetId(sheetId);
+    return normalizedId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(normalizedId)}/edit` : '';
+}
+
+function normalizeInvoiceSettings(data = {}) {
+    return {
+        ...data,
+        googleSheetId: getGoogleSheetId(data.googleSheetId),
+        googleSheetsWebhookUrl: String(data.googleSheetsWebhookUrl || '').trim()
+    };
+}
 
 export const settingsService = {
     async getInvoiceSettings() {
@@ -57,7 +84,7 @@ export const settingsService = {
 
     async updateInvoiceSettings(data) {
         const docRef = doc(db, COLLECTION, DOCUMENT_ID);
-        await setDoc(docRef, { ...data, updatedAt: new Date() }, { merge: true });
+        await setDoc(docRef, { ...normalizeInvoiceSettings(data), updatedAt: new Date() }, { merge: true });
         return true;
     },
 

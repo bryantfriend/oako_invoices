@@ -118,7 +118,7 @@ export const renderCustomers = async () => {
                         const pin = val || customerController.generateCustomerPin();
                         return isEditingLocked
                             ? `<span style="font-family: monospace; font-weight: 800; letter-spacing: 0.08em; color: #1e3318;">${pin}</span>`
-                            : `<input type="text" class="inline-edit pin-code-input" data-id="${row.id}" data-field="pinCode" value="${pin}" minlength="6" maxlength="6" pattern="\\d{6}" style="width: 90px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-gray-300); font-family: monospace; font-weight: 800;">`;
+                            : `<input type="text" class="inline-edit pin-code-input" data-id="${row.id}" data-field="pinCode" value="${pin}" minlength="6" maxlength="6" pattern="1\\d{5}" style="width: 90px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-gray-300); font-family: monospace; font-weight: 800;">`;
                     }
                 },
                 {
@@ -170,8 +170,8 @@ export const renderCustomers = async () => {
                     const field = e.target.dataset.field;
                     const newVal = e.target.value;
 
-                    if (field === 'pinCode' && !/^\d{6}$/.test(newVal)) {
-                        e.target.setCustomValidity('PIN Code must be 6 digits.');
+                    if (field === 'pinCode' && !/^1\d{5}$/.test(newVal)) {
+                        e.target.setCustomValidity('Customer PIN must start with 1 and contain 6 digits.');
                         e.target.reportValidity();
                         return;
                     }
@@ -257,8 +257,8 @@ window.showAddCustomerModal = () => {
                 </div>
                 <div class="input-group">
                     <label>Company PIN Code</label>
-                    <input type="text" name="pinCode" value="${generatedPin}" minlength="6" maxlength="6" pattern="\\d{6}" required>
-                    <small style="color: var(--color-gray-500);">Customers can use this later to access their company invoice QR page.</small>
+                    <input type="text" name="pinCode" value="${generatedPin}" minlength="6" maxlength="6" pattern="1\\d{5}" required>
+                    <small style="color: var(--color-gray-500);">Customer PINs always start with 1, followed by 5 digits.</small>
                 </div>
                 <div class="input-group">
                     <label>Email</label>
@@ -340,10 +340,10 @@ window.editCustomer = async (id) => {
                         value="${pinCode}"
                         minlength="6"
                         maxlength="6"
-                        pattern="\\d{6}"
+                        pattern="1\\d{5}"
                         required
                     >
-                    <small style="color: var(--color-gray-500);">Must be 6 digits. The company can update this later.</small>
+                    <small style="color: var(--color-gray-500);">Customer PINs must start with 1.</small>
                 </div>
 
                 <div class="input-group">
