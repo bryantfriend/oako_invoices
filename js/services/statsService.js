@@ -127,7 +127,7 @@ export const statsService = {
         for (let i = 0; i < days; i++) {
             const d = new Date(startDate.getTime() + (i * 24 * 60 * 60 * 1000));
             const key = d.toISOString().split('T')[0];
-            groups[key] = { gross: 0, paid: 0, outstanding: 0, orders: 0 };
+            groups[key] = { gross: 0, confirmedRevenue: 0, paid: 0, outstanding: 0, orders: 0 };
             labels.push(key);
         }
 
@@ -140,6 +140,7 @@ export const statsService = {
                 else if (['confirmed', 'fulfilled'].includes(o.status)) groups[key].outstanding += amount;
                 if (['confirmed', 'fulfilled', 'paid'].includes(o.status)) {
                     groups[key].gross += amount;
+                    groups[key].confirmedRevenue += amount;
                     groups[key].orders += 1;
                 }
             }
@@ -148,6 +149,7 @@ export const statsService = {
         return {
             labels: labels.map(l => l.split('-').slice(1).join('/')), // MM/DD
             gross: labels.map(k => groups[k].gross),
+            confirmedRevenue: labels.map(k => groups[k].confirmedRevenue),
             paid: labels.map(k => groups[k].paid),
             outstanding: labels.map(k => groups[k].outstanding),
             orders: labels.map(k => groups[k].orders)

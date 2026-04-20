@@ -116,12 +116,11 @@ export const renderDashboard = async () => {
                     <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; min-height: 250px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <div>
-                                <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Cash Flow Trend</h3>
-                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Paid versus still open in the selected period</div>
+                                <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Confirmed Revenue Trend</h3>
+                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Revenue from orders once they reach confirmed status</div>
                             </div>
                             <div class="hide-mobile" style="display: flex; gap: 12px; font-size: 10px;">
-                                <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Collected</div>
-                                <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span> Outstanding</div>
+                                <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Confirmed Revenue</div>
                             </div>
                         </div>
                         <div style="flex: 1; min-height: 0;">
@@ -302,8 +301,8 @@ export const renderDashboard = async () => {
                 labels: chartData.revenueOverTime.labels,
                 datasets: [
                     {
-                        label: 'Collected',
-                        data: chartData.revenueOverTime.paid,
+                        label: 'Confirmed Revenue',
+                        data: chartData.revenueOverTime.confirmedRevenue || chartData.revenueOverTime.gross,
                         borderColor: '#10b981',
                         backgroundColor: (ctx) => {
                             const gradient = ctx.chart.ctx.createLinearGradient(0, 0, 0, 300);
@@ -316,15 +315,6 @@ export const renderDashboard = async () => {
                         borderWidth: 3,
                         pointRadius: 0,
                         pointHoverRadius: 5
-                    },
-                    {
-                        label: 'Outstanding',
-                        data: chartData.revenueOverTime.outstanding,
-                        borderColor: '#ef4444',
-                        borderDash: [5, 5],
-                        tension: 0.4,
-                        borderWidth: 2,
-                        pointRadius: 0
                     }
                 ]
             },
