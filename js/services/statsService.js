@@ -4,7 +4,7 @@ export const statsService = {
      * @param {Array} orders - All orders
      * @param {string} period - 'today', '7d', '30d', 'all'
      */
-    getDashboardStats(orders, period = '30d') {
+    getDashboardStats(orders, period = '30d', revenueGranularity = 'day') {
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -74,7 +74,7 @@ export const statsService = {
             overdueCustomers: this.getTopOverdueCustomers(orders),
             topOrders: this.getTopOrders(orders),
             charts: {
-                revenueOverTime: this._getRevenueOverTime(currentOrders, period),
+                revenueOverTime: this._getRevenueOverTime(currentOrders, period, revenueGranularity),
                 unitDemandOverTime: this._getUnitDemandOverTime(currentOrders, period),
                 statusPipeline: this._getStatusPipeline(orders),
                 topProducts: this._getTopProducts(currentOrders)
@@ -106,14 +106,56 @@ export const statsService = {
         return parseFloat(delta.toFixed(1));
     },
 
-    _getRevenueOverTime(orders, period) {
+    _getOrderDate(order) {
+        return order.orderDate ? new Date(order.orderDate) : (order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || Date.now()));
+    },
+
+    _startOfBucket(date, granularity = 'day') {
+        const bucket = new Date(date);
+        bucket.setHours(0, 0, 0, 0);
+
+        if (granularity === 'week') {
+            const day = bucket.getDay();
+            bucket.setDate(bucket.getDate() - (day === 0 ? 6 : day - 1));
+        } else if (granularity === 'month') {
+            bucket.setDate(1);
+        }
+
+        return bucket;
+    },
+
+    _addBucket(date, granularity = 'day') {
+        const next = new Date(date);
+        if (granularity === 'week') {
+            next.setDate(next.getDate() + 7);
+        } else if (granularity === 'month') {
+            next.setMonth(next.getMonth() + 1);
+        } else {
+            next.setDate(next.getDate() + 1);
+        }
+        return next;
+    },
+
+    _bucketLabel(date, granularity = 'day') {
+        if (granularity === 'month') {
+            return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+        }
+        if (granularity === 'week') {
+            return `Week of ${date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}`;
+        }
+        return date.toISOString().split('T')[0].split('-').slice(1).join('/');
+    },
+
+    _getRevenueOverTime(orders, period, granularity = 'day') {
         const now = new Date();
         let days;
         let startDate;
+        let endDate = now;
 
         if (typeof period === 'object' && period.start && period.end) {
             startDate = new Date(period.start);
-            const diffTime = Math.abs(new Date(period.end) - startDate);
+            endDate = new Date(period.end);
+            const diffTime = Math.abs(endDate - startDate);
             days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
         } else {
             days = period === '7d' ? 7 : period === '30d' ? 30 : period === 'today' ? 1 : 30;
@@ -123,17 +165,18 @@ export const statsService = {
         const groups = {};
         const labels = [];
 
-        // Initialize all days in range
-        for (let i = 0; i < days; i++) {
-            const d = new Date(startDate.getTime() + (i * 24 * 60 * 60 * 1000));
+        const startBucket = this._startOfBucket(startDate, granularity);
+        const endBucket = this._startOfBucket(endDate, granularity);
+
+        for (let d = startBucket; d <= endBucket; d = this._addBucket(d, granularity)) {
             const key = d.toISOString().split('T')[0];
             groups[key] = { gross: 0, confirmedRevenue: 0, paid: 0, outstanding: 0, orders: 0 };
             labels.push(key);
         }
 
         orders.forEach(o => {
-            const date = o.orderDate ? new Date(o.orderDate) : (o.createdAt?.toDate ? o.createdAt.toDate() : new Date());
-            const key = date.toISOString().split('T')[0];
+            const date = this._getOrderDate(o);
+            const key = this._startOfBucket(date, granularity).toISOString().split('T')[0];
             if (groups[key]) {
                 const amount = o.totalAmount || 0;
                 if (o.status === 'paid') groups[key].paid += amount;
@@ -147,7 +190,7 @@ export const statsService = {
         });
 
         return {
-            labels: labels.map(l => l.split('-').slice(1).join('/')), // MM/DD
+            labels: labels.map(l => this._bucketLabel(new Date(`${l}T00:00:00`), granularity)),
             gross: labels.map(k => groups[k].gross),
             confirmedRevenue: labels.map(k => groups[k].confirmedRevenue),
             paid: labels.map(k => groups[k].paid),

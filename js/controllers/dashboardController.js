@@ -93,7 +93,7 @@ export const dashboardController = {
         };
     },
 
-    loadStats(orders, period) {
-        return statsService.getDashboardStats(orders, period);
+    loadStats(orders, period, revenueGranularity = 'day') {
+        return statsService.getDashboardStats(orders, period, revenueGranularity);
     }
 };

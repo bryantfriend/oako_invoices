@@ -101,11 +101,22 @@ export const qrService = {
     async validatePayload(payload) {
         if (!payload?.invoiceId || !payload?.token) return null;
 
-        const snap = await getDoc(doc(db, PUBLIC_LINK_COLLECTION, payload.token));
-        if (!snap.exists()) return null;
+        const publicSnap = await getDoc(doc(db, PUBLIC_LINK_COLLECTION, payload.token));
+        if (publicSnap.exists()) {
+            const invoice = { id: publicSnap.data().invoiceId, ...publicSnap.data() };
+            const matchesInvoice = invoice.invoiceId === payload.invoiceId || invoice.id === payload.invoiceId;
+            if (matchesInvoice && invoice.token === payload.token) {
+                return invoice;
+            }
+        }
 
-        const invoice = { id: snap.data().invoiceId, ...snap.data() };
-        const matchesInvoice = invoice.invoiceId === payload.invoiceId || invoice.id === payload.invoiceId;
-        return matchesInvoice && invoice.token === payload.token ? invoice : null;
+        const invoiceSnap = await getDoc(doc(db, COLLECTION, payload.invoiceId));
+        if (!invoiceSnap.exists()) return null;
+
+        const invoice = { id: invoiceSnap.id, ...invoiceSnap.data() };
+        if (invoice.secureToken !== payload.token) return null;
+
+        await this.publishPublicInvoiceSnapshot(invoice);
+        return invoice;
     }
 };

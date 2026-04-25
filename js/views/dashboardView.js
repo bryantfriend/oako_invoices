@@ -35,6 +35,7 @@ export const renderDashboard = async () => {
     let inventoryCategories = [];
     let selectedOrderIds = new Set();
     let currentPeriod = '30d';
+    let revenueGranularity = 'day';
     let filters = { status: 'all', drill: null };
     let sort = { key: 'orderDate', order: 'desc' };
 
@@ -62,7 +63,7 @@ export const renderDashboard = async () => {
 
     const renderUI = () => {
         cleanupCharts();
-        const stats = dashboardController.loadStats(allOrders, currentPeriod);
+        const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity);
         const alerts = dashboardController.getRiskAlerts(allOrders);
 
         container.innerHTML = `
@@ -114,13 +115,26 @@ export const renderDashboard = async () => {
 
                     <!-- ROW 3: MAIN CHART (REVENUE) -->
                     <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column; min-height: 250px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap;">
                             <div>
                                 <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Confirmed Revenue Trend</h3>
-                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Revenue from orders once they reach confirmed status</div>
+                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Revenue from confirmed orders, grouped by ${revenueGranularity}</div>
                             </div>
-                            <div class="hide-mobile" style="display: flex; gap: 12px; font-size: 10px;">
-                                <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Confirmed Revenue</div>
+                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <div class="hide-mobile" style="display: flex; gap: 12px; font-size: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Confirmed Revenue</div>
+                                </div>
+                                <div style="background: var(--color-gray-50); padding: 2px; border-radius: 6px; display: flex; gap: 2px;">
+                                    ${['day', 'week', 'month'].map(view => `
+                                        <button class="revenue-view-btn" data-revenue-view="${view}" style="
+                                            border: none; padding: 4px 9px; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: 700;
+                                            background: ${revenueGranularity === view ? 'white' : 'transparent'};
+                                            color: ${revenueGranularity === view ? 'var(--color-primary-700)' : 'var(--color-gray-500)'};
+                                            box-shadow: ${revenueGranularity === view ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'};
+                                            text-transform: capitalize;
+                                        ">${view}</button>
+                                    `).join('')}
+                                </div>
                             </div>
                         </div>
                         <div style="flex: 1; min-height: 0;">
@@ -647,6 +661,13 @@ export const renderDashboard = async () => {
                     currentPeriod = btn.dataset.period;
                     renderUI();
                 }
+            });
+        });
+
+        document.querySelectorAll('.revenue-view-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                revenueGranularity = btn.dataset.revenueView || 'day';
+                renderUI();
             });
         });
 
