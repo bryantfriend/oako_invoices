@@ -22,6 +22,7 @@ export const DEFAULT_INVOICE_SETTINGS = {
     website: 'kyrgyz-organics.com',
     bankInfo: 'Bank of Kyrgyzstan,\nKyrgyzz Organics Ltd, KG12346712345789901\nAccount To: KG12346712345789901\nSWIFT: KGZBBBBB',
     qrText: 'https://kyrgyz-organics.com/pay',
+    paymentQrImageUrl: '',
     defaultTaxRate: 0,
     logoUrl: '',
     footerText: 'Thanks for supporting sustainable agriculture!',
@@ -89,9 +90,17 @@ export const settingsService = {
     },
 
     async uploadLogo(file) {
+        return this.uploadImageAsset(file, 'brand', 'logo');
+    },
+
+    async uploadPaymentQrImage(file) {
+        return this.uploadImageAsset(file, 'brand', 'payment_qr');
+    },
+
+    async uploadImageAsset(file, folder, prefix) {
         const fileExt = file.name.split('.').pop();
-        const fileName = `logo_${Date.now()}.${fileExt}`;
-        const storageRef = ref(storage, `brand/${fileName}`);
+        const fileName = `${prefix}_${Date.now()}.${fileExt}`;
+        const storageRef = ref(storage, `${folder}/${fileName}`);
 
         await uploadBytes(storageRef, file);
         const url = await getDownloadURL(storageRef);

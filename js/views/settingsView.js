@@ -95,14 +95,25 @@ export const renderSettings = async () => {
                             <textarea name="bankInfo" rows="4" placeholder="Bank name, Account #, SWIFT...">${settings.bankInfo || ''}</textarea>
                         </div>
                         <div class="input-group">
-                            <label>QR Code Content (URL or Payment ID)</label>
-                            <input type="text" name="qrText" value="${settings.qrText || ''}" placeholder="Scan to pay link...">
-                            <small style="color: var(--color-gray-500);">This will be encoded into the QR code on the invoice.</small>
+                            <label>Payment QR Image</label>
+                            <div style="display: flex; gap: 16px; align-items: start; flex-wrap: wrap;">
+                                <div style="display: flex; flex-direction: column; gap: 8px; min-width: 220px;">
+                                    <input type="file" id="payment-qr-upload" accept="image/*" style="display: none;">
+                                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('payment-qr-upload').click()">
+                                        Upload Payment QR
+                                    </button>
+                                    <input type="hidden" name="paymentQrImageUrl" id="payment-qr-url-input" value="${settings.paymentQrImageUrl || ''}">
+                                    <small style="color: var(--color-gray-500);">Upload the QR picture customers should scan for payment. PNG works best.</small>
+                                </div>
+                                <div id="payment-qr-preview-container" style="width: 132px; height: 132px; border: 2px dashed var(--color-gray-200); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fff;">
+                                    ${settings.paymentQrImageUrl ? `<img src="${settings.paymentQrImageUrl}" style="width: 100%; height: 100%; object-fit: contain; padding: 8px;">` : '<span style="color: var(--color-gray-400); font-size: 12px; text-align: center; padding: 12px;">No payment QR uploaded</span>'}
+                                </div>
+                            </div>
                         </div>
                         <div style="display: flex; gap: 16px; margin-bottom: 12px;">
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
                                 <input type="checkbox" name="showQrCode" value="true" ${settings.showQrCode !== false ? 'checked' : ''}>
-                                Show QR Code
+                                Show Payment QR
                             </label>
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
                                 <input type="checkbox" name="showNotes" value="true" ${settings.showNotes !== false ? 'checked' : ''}>
@@ -198,6 +209,9 @@ export const renderSettings = async () => {
     const logoInput = document.getElementById('logo-upload');
     const logoUrlInput = document.getElementById('logo-url-input');
     const previewContainer = document.getElementById('logo-preview-container');
+    const paymentQrInput = document.getElementById('payment-qr-upload');
+    const paymentQrUrlInput = document.getElementById('payment-qr-url-input');
+    const paymentQrPreview = document.getElementById('payment-qr-preview-container');
 
     logoInput?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
@@ -229,6 +243,37 @@ export const renderSettings = async () => {
 
         } catch (error) {
             previewContainer.innerHTML = '<span style="color: var(--color-danger-500); font-size: 12px;">Failed</span>';
+            saveStatus.textContent = "Upload failed";
+        }
+    });
+
+    paymentQrInput?.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const saveStatus = document.getElementById('save-status');
+
+        try {
+            paymentQrPreview.innerHTML = '<div class="loader-sm"></div>';
+            saveStatus.textContent = "Uploading payment QR...";
+
+            const url = await settingsController.handleUploadPaymentQr(file);
+            paymentQrUrlInput.value = url;
+            paymentQrPreview.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: contain; padding: 8px; animation: fade-in 0.3s ease;">`;
+
+            const formData = new FormData(document.getElementById('settings-form'));
+            const data = Object.fromEntries(formData.entries());
+            data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+            data.showQrCode = formData.get('showQrCode') === 'true';
+            data.showNotes = formData.get('showNotes') === 'true';
+            data.showFooter = formData.get('showFooter') === 'true';
+            data.syncEnabled = formData.get('syncEnabled') === 'true';
+
+            await settingsController.updateSettings(data);
+            saveStatus.textContent = "Payment QR saved!";
+            setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
+        } catch (error) {
+            paymentQrPreview.innerHTML = '<span style="color: var(--color-danger-500); font-size: 12px;">Failed</span>';
             saveStatus.textContent = "Upload failed";
         }
     });

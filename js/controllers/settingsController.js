@@ -30,5 +30,14 @@ export const settingsController = {
             notificationService.error(t('msg_save_fail'));
             throw error;
         }
+    },
+
+    async handleUploadPaymentQr(file) {
+        try {
+            return await settingsService.uploadPaymentQrImage(file);
+        } catch (error) {
+            notificationService.error(t('msg_save_fail'));
+            throw error;
+        }
     }
 };

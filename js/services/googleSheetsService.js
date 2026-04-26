@@ -30,10 +30,10 @@ export const googleSheetsService = {
         ]);
     },
 
-    async syncCompletedInvoice(invoice) {
+    async postInvoiceRows(invoice) {
         try {
             const settings = await settingsService.getInvoiceSettings();
-            if (!settings.syncEnabled || invoice.status !== 'completed') {
+            if (!settings.syncEnabled) {
                 return { skipped: true };
             }
 
@@ -67,5 +67,19 @@ export const googleSheetsService = {
             console.warn('Google Sheets sync failed without blocking invoice completion.', error);
             return { success: false, error };
         }
+    },
+
+    async syncCompletedInvoice(invoice) {
+        if (invoice.status !== 'completed') {
+            return { skipped: true };
+        }
+        return this.postInvoiceRows(invoice);
+    },
+
+    async syncPrintedInvoice(invoice) {
+        return this.postInvoiceRows({
+            ...invoice,
+            status: invoice.status || 'confirmed'
+        });
     }
 };
