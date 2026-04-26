@@ -461,22 +461,30 @@ export const renderInvoiceDetail = async ({ id }) => {
                             </div>
                             ` : ''}
                         </div>
-                        <div style="display: flex; gap: 12px; align-items: flex-start;">
+                        <div style="display: flex; gap: 12px; align-items: center;">
                             ${(s.showQrCode !== false && s.paymentQrImageUrl) ? `
                             <div style="text-align: center;">
                                 <div style="display: inline-flex; align-items: center; justify-content: center; width: 150px; height: 150px; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
                                     <img src="${s.paymentQrImageUrl}" alt="Payment QR" style="width: 128px; height: 128px; object-fit: contain; display: block;">
                                 </div>
-                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">${t('print_scan_pay', lang)}</div>
-                                <div style="font-size: 7px; color: #5a7052;">Uploaded from settings</div>
                             </div>
                             ` : ''}
+                            <div style="display: flex; flex-direction: column; gap: 14px; min-width: 78px; text-align: left;">
+                                ${(s.showQrCode !== false && s.paymentQrImageUrl) ? `
+                                <div>
+                                    <div style="font-size: 10px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Payment</div>
+                                    <div style="font-size: 8px; color: #5a7052;">Scan to pay</div>
+                                </div>
+                                ` : ''}
+                                <div>
+                                    <div style="font-size: 10px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
+                                    <div style="font-size: 8px; color: #5a7052;">0 courier · 1 customer</div>
+                                </div>
+                            </div>
                             <div style="text-align: center;">
                                 <div style="display: inline-block; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
                                     <img src="${qrService.buildQrImageUrl(invoice, 240)}" alt="Invoice QR" style="width: 128px; height: 128px; display: block;">
                                 </div>
-                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
-                                <div style="font-size: 7px; color: #5a7052;">0 courier · 1 customer</div>
                             </div>
                         </div>
                     </div>
@@ -837,15 +845,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                                 try {
                                     const { orderService } = await import("../services/orderService.js");
                                     const { gamificationService } = await import("../services/gamificationService.js");
-                                    const { googleSheetsService } = await import("../services/googleSheetsService.js");
                                     const order = await orderService.getOrderById(invoice.orderId);
                                     await orderService.updateOrder(invoice.orderId, { isPrinted: true });
                                     if (!order?.isPrinted) {
                                         await gamificationService.awardAction('invoicesPrinted');
-                                        await googleSheetsService.syncPrintedInvoice({
-                                            ...invoice,
-                                            updatedAt: new Date()
-                                        });
                                     }
                                 } catch (updateErr) {
                                     console.warn("Could not sync print status to order (order may have been deleted):", updateErr);

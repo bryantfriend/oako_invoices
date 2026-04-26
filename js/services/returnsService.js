@@ -6,6 +6,7 @@ import {
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { googleSheetsService } from "./googleSheetsService.js";
+import { orderService } from "./orderService.js";
 
 const COLLECTION = 'invoices';
 
@@ -16,6 +17,11 @@ async function getInvoice(invoiceId) {
 
 export const returnsService = {
     async requestReturn(invoiceId, returnItems = [], options = {}) {
+        const invoice = await getInvoice(invoiceId);
+        if (!invoice) {
+            throw new Error('Invoice not found');
+        }
+
         const items = returnItems
             .filter(item => item.productId && (Number(item.quantity) || 0) > 0)
             .map(item => ({
@@ -33,6 +39,29 @@ export const returnsService = {
             status: items.length > 0 ? 'return_pending' : 'pending',
             updatedAt: serverTimestamp()
         });
+
+        if (invoice.orderId) {
+            const order = await orderService.getOrderById(invoice.orderId).catch(() => null);
+            if (order) {
+                const orderItems = (order.items || []).map((item, index) => {
+                    const productId = item.productId || item.id || `${index}`;
+                    const returnItem = items.find(entry => entry.productId === productId);
+                    return {
+                        ...item,
+                        returnQuantity: Number(returnItem?.quantity) || 0
+                    };
+                });
+
+                await orderService.updateOrder(invoice.orderId, {
+                    returnRequested: items.length > 0,
+                    returnItems: items,
+                    returnNote: options.returnNote || '',
+                    returnedBy: options.returnedBy || '',
+                    orderItemsReturnedAt: new Date(),
+                    items: orderItems
+                });
+            }
+        }
 
         return true;
     },

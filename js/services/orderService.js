@@ -14,6 +14,7 @@ import {
     deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ORDER_STATUS } from "../core/constants.js";
+import { googleSheetsService } from "./googleSheetsService.js";
 
 const COLLECTION = 'orders';
 
@@ -113,6 +114,8 @@ export const orderService = {
                 invoiceGenerated: false
             };
             const docRef = await addDoc(collection(db, COLLECTION), payload);
+            const createdOrder = await this.getOrderById(docRef.id).catch(() => ({ id: docRef.id, ...orderData, ...payload, createdAt: new Date(), updatedAt: new Date() }));
+            await googleSheetsService.syncOrderLifecycle(createdOrder);
             return docRef.id;
         } catch (error) {
             console.error("Error creating order:", error);
@@ -127,6 +130,8 @@ export const orderService = {
                 ...updates,
                 updatedAt: serverTimestamp()
             });
+            const updatedOrder = await this.getOrderById(id).catch(() => ({ id, ...updates, updatedAt: new Date() }));
+            await googleSheetsService.syncOrderLifecycle(updatedOrder);
             return true;
         } catch (error) {
             console.error("Error updating order:", error);
