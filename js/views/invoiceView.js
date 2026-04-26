@@ -464,16 +464,16 @@ export const renderInvoiceDetail = async ({ id }) => {
                         <div style="display: flex; gap: 12px; align-items: flex-start;">
                             ${(s.showQrCode !== false && s.paymentQrImageUrl) ? `
                             <div style="text-align: center;">
-                                <div style="display: inline-flex; align-items: center; justify-content: center; width: 78px; height: 78px; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
-                                    <img src="${s.paymentQrImageUrl}" alt="Payment QR" style="width: 64px; height: 64px; object-fit: contain; display: block;">
+                                <div style="display: inline-flex; align-items: center; justify-content: center; width: 150px; height: 150px; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
+                                    <img src="${s.paymentQrImageUrl}" alt="Payment QR" style="width: 128px; height: 128px; object-fit: contain; display: block;">
                                 </div>
                                 <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">${t('print_scan_pay', lang)}</div>
                                 <div style="font-size: 7px; color: #5a7052;">Uploaded from settings</div>
                             </div>
                             ` : ''}
                             <div style="text-align: center;">
-                                <div style="display: inline-block; padding: 6px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
-                                    <img src="${qrService.buildQrImageUrl(invoice, 120)}" alt="Invoice QR" style="width: 64px; height: 64px; display: block;">
+                                <div style="display: inline-block; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
+                                    <img src="${qrService.buildQrImageUrl(invoice, 240)}" alt="Invoice QR" style="width: 128px; height: 128px; display: block;">
                                 </div>
                                 <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
                                 <div style="font-size: 7px; color: #5a7052;">0 courier · 1 customer</div>
