@@ -264,6 +264,11 @@ export const renderInvoiceDetail = async ({ id }) => {
             invoice.customerPinCode = customer.pinCode;
         }
     }
+    if (invoice.returnRequested && invoice.orderId) {
+        await import("../services/returnsService.js")
+            .then(m => m.returnsService.syncInvoiceReturnToOrder(invoice))
+            .catch(error => console.warn('Return mirror sync skipped while loading invoice.', error));
+    }
     invoice = await qrService.ensureInvoiceToken(invoice);
 
     const productMap = {};
@@ -359,11 +364,22 @@ export const renderInvoiceDetail = async ({ id }) => {
                     ${pageNum === currentPage ? '' : 'position: absolute; top: -10000px;'}
                 ">
                     <!-- Header (Only on Page 1 or reduced on others) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 40px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 24px;">
                         <div style="flex: 1;">
                              <div style="width: 180px; min-height: 40px;">
                                  ${s.logoUrl ? `<img src="${s.logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
                              </div>
+                        </div>
+                        <div style="flex: 1; text-align: center; min-height: 102px; display: flex; align-items: center; justify-content: center;">
+                            ${(isFirst && s.showQrCode !== false && s.paymentQrImageUrl) ? `
+                            <div style="text-align: center;">
+                                <div style="display: inline-flex; align-items: center; justify-content: center; width: 92px; height: 92px; padding: 7px; background: #fff; border: 2px solid #2e4a23; border-radius: 8px; margin-bottom: 4px;">
+                                    <img src="${s.paymentQrImageUrl}" alt="Payment QR" style="width: 76px; height: 76px; object-fit: contain; display: block;">
+                                </div>
+                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase; letter-spacing: 0.04em;">Payment</div>
+                                <div style="font-size: 7px; color: #5a7052;">Scan to pay</div>
+                            </div>
+                            ` : ''}
                         </div>
                         <div style="text-align: right; flex: 1;">
                              <div style="display: inline-block; text-align: left;">
@@ -462,20 +478,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                             ` : ''}
                         </div>
                         <div style="display: flex; gap: 12px; align-items: center;">
-                            ${(s.showQrCode !== false && s.paymentQrImageUrl) ? `
-                            <div style="text-align: center;">
-                                <div style="display: inline-flex; align-items: center; justify-content: center; width: 150px; height: 150px; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
-                                    <img src="${s.paymentQrImageUrl}" alt="Payment QR" style="width: 128px; height: 128px; object-fit: contain; display: block;">
-                                </div>
-                            </div>
-                            ` : ''}
                             <div style="display: flex; flex-direction: column; gap: 14px; min-width: 78px; text-align: left;">
-                                ${(s.showQrCode !== false && s.paymentQrImageUrl) ? `
-                                <div>
-                                    <div style="font-size: 10px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Payment</div>
-                                    <div style="font-size: 8px; color: #5a7052;">Scan to pay</div>
-                                </div>
-                                ` : ''}
                                 <div>
                                     <div style="font-size: 10px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
                                     <div style="font-size: 8px; color: #5a7052;">0 courier · 1 customer</div>
@@ -844,9 +847,18 @@ export const renderInvoiceDetail = async ({ id }) => {
                             try {
                                 try {
                                     const { orderService } = await import("../services/orderService.js");
+                                    const { invoiceService } = await import("../services/invoiceService.js");
                                     const { gamificationService } = await import("../services/gamificationService.js");
                                     const order = await orderService.getOrderById(invoice.orderId);
-                                    await orderService.updateOrder(invoice.orderId, { isPrinted: true });
+                                    const orderUpdates = { isPrinted: true };
+                                    if (order?.status === 'draft') {
+                                        orderUpdates.status = 'confirmed';
+                                    }
+                                    await orderService.updateOrder(invoice.orderId, orderUpdates);
+                                    if (invoice.status === 'pending' || invoice.status === 'draft') {
+                                        await invoiceService.updateInvoice(invoice.id, { status: 'confirmed' });
+                                        invoice.status = 'confirmed';
+                                    }
                                     if (!order?.isPrinted) {
                                         await gamificationService.awardAction('invoicesPrinted');
                                     }

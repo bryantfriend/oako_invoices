@@ -77,7 +77,9 @@ export const statsService = {
                 revenueOverTime: this._getRevenueOverTime(currentOrders, period, revenueGranularity),
                 unitDemandOverTime: this._getUnitDemandOverTime(currentOrders, period),
                 statusPipeline: this._getStatusPipeline(orders),
-                topProducts: this._getTopProducts(currentOrders)
+                topProducts: this._getTopProducts(currentOrders),
+                topCategories: this._getTopCategories(currentOrders),
+                topProductsByCategory: this._getTopProductsByCategory(currentOrders)
             }
         };
     },
@@ -266,17 +268,19 @@ export const statsService = {
         };
     },
 
-    _getTopProducts(orders) {
+    _getTopProducts(orders, categoryId = null) {
         const products = {};
 
         orders.forEach(order => {
             (order.items || []).forEach(item => {
+                if (categoryId && (item.categoryId || 'uncategorized') !== categoryId) return;
+
                 const name = item.name || item.name_en || item.name_ru || 'Unknown product';
                 const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
                 if (!qty) return;
 
                 if (!products[name]) {
-                    products[name] = { units: 0, revenue: 0 };
+                    products[name] = { units: 0, revenue: 0, id: item.productId || name };
                 }
 
                 products[name].units += qty;
@@ -293,8 +297,63 @@ export const statsService = {
 
         return {
             labels: sorted.map(([name]) => name.length > 18 ? name.slice(0, 16) + '...' : name),
-            data: sorted.map(([, stats]) => stats.units)
+            data: sorted.map(([, stats]) => stats.units),
+            ids: sorted.map(([, stats]) => stats.id),
+            fullLabels: sorted.map(([name]) => name)
         };
+    },
+
+    _getTopCategories(orders) {
+        const categories = {};
+
+        orders.forEach(order => {
+            (order.items || []).forEach(item => {
+                const categoryId = item.categoryId || 'uncategorized';
+                const categoryName = item.categoryName || 'Uncategorized';
+                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                if (!qty) return;
+
+                if (!categories[categoryId]) {
+                    categories[categoryId] = { name: categoryName, units: 0, revenue: 0 };
+                }
+
+                categories[categoryId].units += qty;
+                categories[categoryId].revenue += (item.price || 0) * qty;
+            });
+        });
+
+        const sorted = Object.entries(categories)
+            .sort(([, a], [, b]) => {
+                if (b.units !== a.units) return b.units - a.units;
+                return b.revenue - a.revenue;
+            })
+            .slice(0, 5);
+
+        return {
+            labels: sorted.map(([, stats]) => stats.name.length > 18 ? stats.name.slice(0, 16) + '...' : stats.name),
+            data: sorted.map(([, stats]) => stats.units),
+            ids: sorted.map(([id]) => id),
+            fullLabels: sorted.map(([, stats]) => stats.name)
+        };
+    },
+
+    getTopProductsForCategory(orders, categoryId) {
+        return this._getTopProducts(orders, categoryId);
+    },
+
+    _getTopProductsByCategory(orders) {
+        const categoryIds = new Set();
+
+        orders.forEach(order => {
+            (order.items || []).forEach(item => {
+                categoryIds.add(item.categoryId || 'uncategorized');
+            });
+        });
+
+        return [...categoryIds].reduce((result, categoryId) => {
+            result[categoryId] = this._getTopProducts(orders, categoryId);
+            return result;
+        }, {});
     },
 
 

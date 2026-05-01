@@ -36,6 +36,8 @@ export const renderDashboard = async () => {
     let selectedOrderIds = new Set();
     let currentPeriod = '30d';
     let revenueGranularity = 'day';
+    let productChartMode = 'products';
+    let selectedProductCategory = null;
     let filters = { status: 'all', drill: null };
     let sort = { key: 'orderDate', order: 'desc' };
 
@@ -65,6 +67,7 @@ export const renderDashboard = async () => {
         cleanupCharts();
         const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity);
         const alerts = dashboardController.getRiskAlerts(allOrders);
+        const productChart = getProductChartData(stats.charts);
 
         container.innerHTML = `
             <div class="dashboard-v2 animate-fade-in" style="display: flex; flex-direction: column; gap: 16px; padding-bottom: 40px; width: 100%;">
@@ -166,9 +169,12 @@ export const renderDashboard = async () => {
                         </div>
                         <!-- Products -->
                         <div class="card" style="padding: 12px; margin: 0; display: flex; flex-direction: column;">
-                            <div style="margin-bottom: 6px;">
-                                <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin: 0;">TOP PRODUCTS</h3>
-                                <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Best-selling items by adjusted units in this period</div>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                                <div>
+                                    <h3 style="font-size: 11px; font-weight: 700; color: var(--color-gray-500); margin: 0;">${productChart.title}</h3>
+                                    <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">${productChart.subtitle}</div>
+                                </div>
+                                <button id="toggle-product-chart-mode" class="btn btn-secondary btn-sm" style="font-size: 10px; padding: 4px 8px; white-space: nowrap;">${productChart.buttonLabel}</button>
                             </div>
                             <div style="flex: 1; min-height: 0;">
                                 <canvas id="chart-products"></canvas>
@@ -202,9 +208,43 @@ export const renderDashboard = async () => {
             </div>
         `;
 
-        initCharts(stats.charts);
+        initCharts(stats.charts, productChart);
         attachListeners();
         applyFilters();
+    };
+
+    const getProductChartData = (charts) => {
+        if (selectedProductCategory) {
+            const products = charts.topProductsByCategory?.[selectedProductCategory.id] || { labels: [], data: [], ids: [], fullLabels: [] };
+            return {
+                ...products,
+                mode: 'category-products',
+                title: selectedProductCategory.name.toUpperCase(),
+                subtitle: 'Top products within this category. Click the button to go back.',
+                buttonLabel: 'Back to Categories',
+                backgroundColor: '#b45309'
+            };
+        }
+
+        if (productChartMode === 'categories') {
+            return {
+                ...charts.topCategories,
+                mode: 'categories',
+                title: 'TOP CATEGORIES',
+                subtitle: 'Click a category to see its best-selling products',
+                buttonLabel: 'Top Products',
+                backgroundColor: '#0f766e'
+            };
+        }
+
+        return {
+            ...charts.topProducts,
+            mode: 'products',
+            title: 'TOP PRODUCTS',
+            subtitle: 'Best-selling items by adjusted units in this period',
+            buttonLabel: 'Top Categories',
+            backgroundColor: '#b45309'
+        };
     };
 
     const renderKPICard = (label, data, isCurrency, inverted = false) => {
@@ -302,7 +342,7 @@ export const renderDashboard = async () => {
         </div>
     `;
 
-    const initCharts = (chartData) => {
+    const initCharts = (chartData, productChart) => {
         const ctxRev = document.getElementById('chart-revenue').getContext('2d');
         const ctxUnits = document.getElementById('chart-units').getContext('2d');
         const ctxPipeline = document.getElementById('chart-pipeline').getContext('2d');
@@ -441,10 +481,10 @@ export const renderDashboard = async () => {
         chartInstances.products = new Chart(ctxProducts, {
             type: 'bar',
             data: {
-                labels: chartData.topProducts.labels,
+                labels: productChart.labels,
                 datasets: [{
-                    data: chartData.topProducts.data,
-                    backgroundColor: '#b45309',
+                    data: productChart.data,
+                    backgroundColor: productChart.backgroundColor,
                     borderRadius: 3,
                     barThickness: 12
                 }]
@@ -455,6 +495,20 @@ export const renderDashboard = async () => {
                 indexAxis: 'y',
                 plugins: { legend: { display: false } },
                 layout: { padding: 0 },
+                onHover: (event, elements) => {
+                    if (event.native?.target) {
+                        event.native.target.style.cursor = productChart.mode === 'categories' && elements.length ? 'pointer' : 'default';
+                    }
+                },
+                onClick: (event, elements) => {
+                    if (productChart.mode !== 'categories' || !elements.length) return;
+                    const index = elements[0].index;
+                    selectedProductCategory = {
+                        id: productChart.ids[index],
+                        name: productChart.fullLabels[index] || productChart.labels[index]
+                    };
+                    renderUI();
+                },
                 scales: {
                     x: {
                         beginAtZero: true,
@@ -669,6 +723,16 @@ export const renderDashboard = async () => {
                 revenueGranularity = btn.dataset.revenueView || 'day';
                 renderUI();
             });
+        });
+
+        document.getElementById('toggle-product-chart-mode')?.addEventListener('click', () => {
+            if (selectedProductCategory) {
+                selectedProductCategory = null;
+                productChartMode = 'categories';
+            } else {
+                productChartMode = productChartMode === 'categories' ? 'products' : 'categories';
+            }
+            renderUI();
         });
 
         // CUSTOM DATE LOGIC

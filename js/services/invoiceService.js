@@ -165,6 +165,20 @@ export const invoiceService = {
         }
     },
 
+    async updateInvoice(id, updates) {
+        try {
+            const docRef = doc(db, COLLECTION, id);
+            await updateDoc(docRef, {
+                ...updates,
+                updatedAt: serverTimestamp()
+            });
+            return true;
+        } catch (error) {
+            console.error("Error updating invoice:", error);
+            throw error;
+        }
+    },
+
     async syncInvoiceWithOrder(orderId, existingInvoice = null) {
         try {
             const invoice = existingInvoice || await this.getInvoiceByOrderId(orderId);

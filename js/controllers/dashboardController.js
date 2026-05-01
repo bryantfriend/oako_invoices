@@ -1,5 +1,6 @@
 import { orderService } from "../services/orderService.js";
 import { customerService } from "../services/customerService.js";
+import { productService } from "../services/productService.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
@@ -7,9 +8,11 @@ import { t } from "../core/i18n.js";
 export const dashboardController = {
     async loadDashboard() {
         try {
-            const [orders, customers] = await Promise.all([
+            const [orders, customers, products, productCategories] = await Promise.all([
                 orderService.getAllOrders(),
-                customerService.getAllCustomers()
+                customerService.getAllCustomers(),
+                productService.getAllProducts(),
+                productService.getAllCategories()
             ]);
 
             // Create a lookup map for customer categories
@@ -17,6 +20,16 @@ export const dashboardController = {
             customers.forEach(c => {
                 const name = (c.companyName || c.name || "").toLowerCase().trim();
                 if (name) categoryMap[name] = c.category || 'C';
+            });
+
+            const productMap = {};
+            products.forEach(product => {
+                productMap[product.id] = product;
+            });
+
+            const productCategoryMap = {};
+            productCategories.forEach(category => {
+                productCategoryMap[category.id] = category.name || category.name_en || 'Uncategorized';
             });
 
             // Map category back to orders and calculate aging
@@ -40,6 +53,17 @@ export const dashboardController = {
 
                 return {
                     ...order,
+                    items: (order.items || []).map(item => {
+                        const product = productMap[item.productId] || {};
+                        const categoryId = item.categoryId || product.categoryId || 'uncategorized';
+                        const categoryName = item.categoryName || productCategoryMap[categoryId] || 'Uncategorized';
+
+                        return {
+                            ...item,
+                            categoryId,
+                            categoryName
+                        };
+                    }),
                     customerCategory: categoryMap[(order.customerName || "").toLowerCase().trim()] || 'C',
                     agingDays: Math.max(0, diffDays),
                     isOutstanding: order.status === 'confirmed' || order.status === 'fulfilled'
@@ -95,5 +119,9 @@ export const dashboardController = {
 
     loadStats(orders, period, revenueGranularity = 'day') {
         return statsService.getDashboardStats(orders, period, revenueGranularity);
+    },
+
+    getTopProductsForCategory(orders, categoryId) {
+        return statsService.getTopProductsForCategory(orders, categoryId);
     }
 };
