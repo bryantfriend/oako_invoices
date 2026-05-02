@@ -1,11 +1,11 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================
     // HELPERS
     // ===============================
-
     function isSignedIn() {
       return request.auth != null;
     }
@@ -15,64 +15,149 @@ service cloud.firestore {
       // Future: request.auth.token.admin == true
     }
 
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function isNonIncreasingNumber(nextValue, currentValue) {
+      return nextValue is number
+        && currentValue is number
+        && nextValue >= 0
+        && nextValue <= currentValue;
+    }
+
+    function isPublicProductQuantityUpdate() {
+      return changedKeys().hasOnly([
+          'quantity',
+          'stock',
+          'stockQuantity',
+          'availableQuantity',
+          'availableStock',
+          'inventory',
+          'updatedAt'
+        ])
+        && changedKeys().hasAny([
+          'quantity',
+          'stock',
+          'stockQuantity',
+          'availableQuantity',
+          'availableStock',
+          'inventory'
+        ])
+        && (!changedKeys().hasAny(['quantity']) || isNonIncreasingNumber(request.resource.data.quantity, resource.data.quantity))
+        && (!changedKeys().hasAny(['stock']) || isNonIncreasingNumber(request.resource.data.stock, resource.data.stock))
+        && (!changedKeys().hasAny(['stockQuantity']) || isNonIncreasingNumber(request.resource.data.stockQuantity, resource.data.stockQuantity))
+        && (!changedKeys().hasAny(['availableQuantity']) || isNonIncreasingNumber(request.resource.data.availableQuantity, resource.data.availableQuantity))
+        && (!changedKeys().hasAny(['availableStock']) || isNonIncreasingNumber(request.resource.data.availableStock, resource.data.availableStock))
+        && (!changedKeys().hasAny(['inventory']) || isNonIncreasingNumber(request.resource.data.inventory, resource.data.inventory))
+        && (!changedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp);
+    }
+
+    function isInventoryRecord() {
+      return request.resource.data.date is string
+        && request.resource.data.productId is string
+        && request.resource.data.totalBaked is number
+        && request.resource.data.totalBaked >= 0
+        && request.resource.data.locked is bool
+        && request.resource.data.updatedAt is timestamp;
+    }
+
     // ===============================
     // PUBLIC / CMS CONTENT
     // ===============================
-
     match /pages/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     match /products/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isPublicProductQuantityUpdate();
     }
 
     match /categories/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     match /banners/{id} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /campaigns/{campaignId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /campaigns/{campaignId}/{document=**} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /campaign_events/{eventId} {
+      allow create: if
+        request.resource.data.campaignId is string &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.timestamp != null &&
+        request.resource.data.actionType is string;
+
+      allow read: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================
+    // PUBLIC STOREFRONT CONFIG
+    // ===============================
+    match /storefront_configs/{companyId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /product_collections/{collectionId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /storefront_events/{eventId} {
+      allow create: if
+        request.resource.data.companyId is string &&
+        request.resource.data.actionType is string &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.timestamp != null;
+
+      allow read, update, delete: if isAdmin();
     }
 
     // ===============================
     // DAILY INVENTORY
     // ===============================
-
     match /inventory/{dateId} {
-      // Public reads to show availability
       allow read: if true;
-      // Admin controls stock
-      allow write: if isAdmin();
+      allow create, update: if isAdmin() && isInventoryRecord();
+      allow delete: if isAdmin();
     }
 
     // ===============================
-    // INVENTORY TEMPLATES (ADMIN)
+    // INVENTORY TEMPLATES
     // ===============================
-
     match /inventory_templates/{templateId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     // ===============================
-    // PAYMENT METHODS (QR / BANK INFO)
+    // PAYMENT METHODS
     // ===============================
-
     match /payment_methods/{methodId} {
-      // Public checkout must see QR codes
       allow read: if true;
-      // Only admin configures payment methods
-      allow write: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     // ===============================
-    // AUDIT LOGS (IMMUTABLE)
+    // AUDIT LOGS
     // ===============================
-
     match /audit_logs/{logId} {
       allow read: if isAdmin();
       allow create: if isAdmin();
@@ -80,47 +165,41 @@ service cloud.firestore {
     }
 
     // ===============================
-    // ORDERS (BUYING FLOW)
+    // ORDERS
     // ===============================
-
     match /orders/{orderId} {
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
 
-      // ===============================
-      // ADMIN PORTAL
-      // ===============================
-      allow read, create, update: if isAdmin();
+      allow create, update: if isAdmin();
 
-      // 1️⃣ Public order reservation
       allow create: if true
         && request.resource.data.customerName is string
         && request.resource.data.productId is string
         && request.resource.data.status == "reserved"
         && request.resource.data.createdAt is timestamp;
 
-      // 2️⃣ Customer uploads receipt (QR payment proof)
       allow update: if
+        isAdmin()
+        ||
         (
-          // Admin can always update
-          isAdmin()
-          ||
-          // Customer can ONLY add receipt + move to pending verification
-          (
-            request.resource.data.diff(resource.data)
-              .affectedKeys()
-              .hasOnly(['receiptUrl', 'status'])
-            && request.resource.data.status == "pending_verification"
-          )
+          request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly(['receiptUrl', 'status'])
+          && request.resource.data.status == "pending_verification"
         );
-
-      // Admin can delete orders
-      allow delete: if isAdmin();
     }
 
     // ===============================
-    // PAYMENT REQUESTS (OPTIONAL / LEGACY)
+    // ORDER ARCHIVE
     // ===============================
-    // Keep ONLY if still used. Safe to remove later.
+    match /orders_archive/{orderId} {
+      allow read, create, update, delete: if isAdmin();
+    }
 
+    // ===============================
+    // PAYMENT REQUESTS
+    // ===============================
     match /paymentRequests/{paymentId} {
       allow read: if isAdmin();
 
@@ -136,56 +215,100 @@ service cloud.firestore {
     }
 
     // ===============================
-    // INVOICES (OPTIONAL)
+    // INVOICES
     // ===============================
-
     match /invoices/{invoiceId} {
       allow read: if isAdmin();
+
       allow create: if isAdmin()
         && request.resource.data.orderId is string
         && request.resource.data.totalAmount is number
         && request.resource.data.createdAt is timestamp
         && request.resource.data.invoiceNumber is string
         && request.resource.data.items is list;
-      allow update: if request.resource.data.secureToken == resource.data.secureToken
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['returnRequested', 'returnItems', 'returnPhotos', 'returnNote', 'returnedBy', 'returnedAt', 'status', 'updatedAt'])
-        && request.resource.data.status in ['pending', 'return_pending'];
-      allow update, delete: if isAdmin();
+
+      allow update: if
+        isAdmin()
+        ||
+        (
+          request.resource.data.secureToken is string
+          && resource.data.secureToken is string
+          && request.resource.data.secureToken == resource.data.secureToken
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'returnRequested',
+              'returnItems',
+              'returnPhotos',
+              'returnNote',
+              'returnedBy',
+              'returnedAt',
+              'status',
+              'updatedAt'
+            ])
+          && request.resource.data.status in ['pending', 'return_pending']
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ===============================
+    // QR ACTIVITY LOGS
+    // ===============================
+    match /qr_activity_logs/{logId} {
+      allow create: if
+        request.resource.data.invoiceId is string &&
+        request.resource.data.action is string &&
+        request.resource.data.createdAt is timestamp;
+
+      allow read, update, delete: if isAdmin();
     }
 
     // ===============================
     // PUBLIC QR INVOICE SNAPSHOTS
     // ===============================
-
     match /invoice_qr_links/{token} {
+      allow read: if true;
+
+      allow create, update: if isAdmin()
+        && request.resource.data.invoiceId is string
+        && request.resource.data.token is string
+        && request.resource.data.invoiceNumber is string
+        && request.resource.data.items is list;
+
+      allow delete: if isAdmin();
+    }
+
+    // ===============================
+    // INVOICE SETTINGS
+    // ===============================
+    match /settings/{id} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 
-    match /qr_activity_logs/{logId} {
-      allow create: if request.resource.data.invoiceId is string
-        && request.resource.data.action is string
-        && request.resource.data.createdAt is timestamp;
-      allow read, update, delete: if isAdmin();
+    match /shop_settings/{id} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // ===============================
-    // INVOICE SETTINGS (ADMIN)
+    // CUSTOMERS / CRM
     // ===============================
-    match /settings/{id} {
-      allow read: if true; 
-      allow write: if isAdmin();
-    }
-    
-    // ===============================
-    // CUSTOMERS (INVOICING / CRM)
-    // ===============================
-
     match /customers/{customerId} {
       allow read, create, update, delete: if isAdmin();
     }
 
+    // ===============================
+    // PRIVATE STORE RECORDS
+    // ===============================
+    match /companies/{companyId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ===============================
+    // USER PROFILES / XP / BADGES
+    // ===============================
     match /users/{userId} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow create, update: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
@@ -193,9 +316,26 @@ service cloud.firestore {
     }
 
     // ===============================
-    // DEFAULT DENY (CRITICAL)
+    // STORE MEDIA LIBRARY
     // ===============================
+    match /store_media/{mediaId} {
+      allow read: if isAdmin();
 
+      allow create, update: if isAdmin()
+        && request.resource.data.companyId is string
+        && request.resource.data.type is string
+        && request.resource.data.name is string
+        && request.resource.data.path is string
+        && request.resource.data.url is string
+        && request.resource.data.contentType is string
+        && request.resource.data.size is number;
+
+      allow delete: if isAdmin();
+    }
+
+    // ===============================
+    // DEFAULT DENY
+    // ===============================
     match /{document=**} {
       allow read, write: if false;
     }
