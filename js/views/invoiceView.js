@@ -335,10 +335,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     let invoiceScale = 1.0;
     let is2UpMode = false;
 
-    const ITEMS_PER_PAGE_FIRST = 7;
-    const ITEMS_PER_PAGE_FIRST_WITH_TOTALS = 3;
-    const ITEMS_PER_PAGE_OTHER = 14;
-    const ITEMS_PER_PAGE_LAST = 5;
+    const ITEMS_PER_PAGE = 5;
 
     const renderDocument = (lang, isCopy = false) => {
         // Never let fallback defaults overwrite the saved invoice snapshot.
@@ -371,21 +368,13 @@ export const renderInvoiceDetail = async ({ id }) => {
         const items = invoice.items || [];
         const pages = [];
 
-        // Chunk items while reserving space for the totals/notes/QR footer on the last page.
+        // Keep invoice pagination predictable: first five items on page 1,
+        // then five items on each following page.
         let currentItemIndex = 0;
         while (currentItemIndex < items.length) {
-            const isFirstPage = pages.length === 0;
-            const remainingItems = items.length - currentItemIndex;
-            const currentPageAsLastLimit = isFirstPage ? ITEMS_PER_PAGE_FIRST_WITH_TOTALS : ITEMS_PER_PAGE_LAST;
-            const normalPageLimit = isFirstPage ? ITEMS_PER_PAGE_FIRST : ITEMS_PER_PAGE_OTHER;
-            const limit = remainingItems <= currentPageAsLastLimit
-                ? remainingItems
-                : (remainingItems <= normalPageLimit + ITEMS_PER_PAGE_LAST
-                    ? Math.max(1, remainingItems - ITEMS_PER_PAGE_LAST)
-                    : normalPageLimit);
-            const pageItems = items.slice(currentItemIndex, currentItemIndex + limit);
+            const pageItems = items.slice(currentItemIndex, currentItemIndex + ITEMS_PER_PAGE);
             pages.push(pageItems);
-            currentItemIndex += limit;
+            currentItemIndex += ITEMS_PER_PAGE;
         }
         if (pages.length === 0) pages.push([]);
 
