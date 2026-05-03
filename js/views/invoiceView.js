@@ -14,6 +14,39 @@ import { qrService } from "../services/qrService.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
 
+function escapeAttribute(value = '') {
+    return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function safeImageUrl(value = '') {
+    const url = String(value || '').trim();
+    if (!url) return '';
+    if (/^(https?:|data:image\/|blob:)/i.test(url)) return escapeAttribute(url);
+    return '';
+}
+
+function renderBankInfo(value = '') {
+    return String(value || '')
+        .split(/\n|<br\s*\/?>/i)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => `<div style="margin-bottom: 2px;">&bull; ${escapeHtml(line)}</div>`)
+        .join('');
+}
+
+function toDateInputValue(value) {
+    const date = value?.toDate ? value.toDate() : new Date(value);
+    const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+    return safeDate.toISOString().split('T')[0];
+}
+
 export const renderInvoices = async () => {
     layoutView.render();
     layoutView.updateTitle(t('invoice_title'));
@@ -23,8 +56,16 @@ export const renderInvoices = async () => {
     // Load Data
     const [allInvoices, allOrders, invoiceSettings] = await Promise.all([
         invoiceController.loadAllInvoices(),
-        import("../services/orderService.js").then(m => m.orderService.getAllOrders()),
-        settingsService.getInvoiceSettings()
+        import("../services/orderService.js")
+            .then(m => m.orderService.getAllOrders())
+            .catch(error => {
+                console.warn("Could not load orders for invoice print status.", error);
+                return [];
+            }),
+        settingsService.getInvoiceSettings().catch(error => {
+            console.warn("Could not load invoice settings for invoice list.", error);
+            return {};
+        })
     ]);
     const googleSheetUrl = buildGoogleSheetUrl(invoiceSettings.googleSheetId);
 
@@ -34,11 +75,11 @@ export const renderInvoices = async () => {
         inv.isPrinted = (orderMap[inv.orderId] && orderMap[inv.orderId].isPrinted) || false;
     });
 
-    const customers = [...new Set(allInvoices.map(i => i.customerName))].sort();
+    const customers = [...new Set(allInvoices.map(i => i.customerName).filter(Boolean))].sort();
 
     let filtered = [...allInvoices];
     let sort = { key: 'createdAt', order: 'desc' };
-    let filters = { customer: 'all', period: 'month' }; // default to this month
+    let filters = { customer: 'all', period: 'all' };
 
     const applyInvoicesFilters = () => {
         filtered = allInvoices.filter(inv => {
@@ -136,7 +177,7 @@ export const renderInvoices = async () => {
                             <label style="font-size: 12px; font-weight: 600; color: var(--color-gray-500);">Customer:</label>
                             <select id="filter-customer" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-gray-200); font-size: 13px;">
                                 <option value="all">${t('invoice_all_customers')}</option>
-                                ${customers.map(c => `<option value="${c}" ${filters.customer === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                ${customers.map(c => `<option value="${escapeAttribute(c)}" ${filters.customer === c ? 'selected' : ''}>${escapeAttribute(c)}</option>`).join('')}
                             </select>
                         </div>
                         <div style="height: 20px; width: 1px; background: var(--color-gray-200);"></div>
@@ -244,8 +285,16 @@ export const renderInvoiceDetail = async ({ id }) => {
     try {
         [invoice, allProducts, liveSettings] = await Promise.all([
             invoiceController.loadInvoice(id),
-            productService.getAllProducts(),
-            import("../services/settingsService.js").then(m => m.settingsService.getInvoiceSettings())
+            productService.getAllProducts().catch(error => {
+                console.warn("Could not load live products for invoice print names.", error);
+                return [];
+            }),
+            import("../services/settingsService.js")
+                .then(m => m.settingsService.getInvoiceSettings())
+                .catch(error => {
+                    console.warn("Could not load live invoice settings for print.", error);
+                    return { __fromFallback: true };
+                })
         ]);
     } catch (e) {
         console.error("error fetching invoice deps", e);
@@ -269,7 +318,10 @@ export const renderInvoiceDetail = async ({ id }) => {
             .then(m => m.returnsService.syncInvoiceReturnToOrder(invoice))
             .catch(error => console.warn('Return mirror sync skipped while loading invoice.', error));
     }
-    invoice = await qrService.ensureInvoiceToken(invoice);
+    invoice = await qrService.ensureInvoiceToken(invoice).catch(error => {
+        console.warn("Could not publish invoice QR snapshot while rendering print view.", error);
+        return invoice;
+    });
 
     const productMap = {};
     allProducts.forEach(p => {
@@ -305,6 +357,16 @@ export const renderInvoiceDetail = async ({ id }) => {
 
         const notesText = lang === 'en' ? (s.notesEn || paymentTerms) : (lang === 'kg' ? (s.notesKg || paymentTerms) : (s.notesRu || paymentTerms));
         const bannerFootText = s.footerText || t('print_thanks', lang);
+        const logoUrl = safeImageUrl(s.logoUrl);
+        const paymentQrImageUrl = safeImageUrl(s.paymentQrImageUrl);
+        const invoiceNumber = escapeHtml(invoice.invoiceNumber || '');
+        const companyPhone = escapeHtml(s.phone || '');
+        const customerName = escapeHtml(invoice.customerName || '');
+        const customerAddress = escapeHtml(invoice.customerAddress || 'Republic of Kyrgyzstan');
+        const renderedNotesText = escapeHtml(notesText);
+        const renderedBankInfo = renderBankInfo(s.bankInfo || defaultBankInfo);
+        const renderedBannerFootText = escapeHtml(bannerFootText);
+        const invoiceQrImageUrl = invoice.secureToken ? safeImageUrl(qrService.buildQrImageUrl(invoice, 240)) : '';
 
         const items = invoice.items || [];
         const pages = [];
@@ -314,12 +376,12 @@ export const renderInvoiceDetail = async ({ id }) => {
         while (currentItemIndex < items.length) {
             const isFirstPage = pages.length === 0;
             const remainingItems = items.length - currentItemIndex;
-            const lastPageLimit = isFirstPage ? ITEMS_PER_PAGE_FIRST_WITH_TOTALS : ITEMS_PER_PAGE_LAST;
+            const currentPageAsLastLimit = isFirstPage ? ITEMS_PER_PAGE_FIRST_WITH_TOTALS : ITEMS_PER_PAGE_LAST;
             const normalPageLimit = isFirstPage ? ITEMS_PER_PAGE_FIRST : ITEMS_PER_PAGE_OTHER;
-            const limit = remainingItems <= lastPageLimit
+            const limit = remainingItems <= currentPageAsLastLimit
                 ? remainingItems
                 : (remainingItems <= normalPageLimit + ITEMS_PER_PAGE_LAST
-                    ? remainingItems - ITEMS_PER_PAGE_LAST
+                    ? Math.max(1, remainingItems - ITEMS_PER_PAGE_LAST)
                     : normalPageLimit);
             const pageItems = items.slice(currentItemIndex, currentItemIndex + limit);
             pages.push(pageItems);
@@ -376,14 +438,14 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 24px;">
                         <div style="flex: 1;">
                              <div style="width: 180px; min-height: 40px;">
-                                 ${s.logoUrl ? `<img src="${s.logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
+                                 ${logoUrl ? `<img src="${logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
                              </div>
                         </div>
                         <div style="flex: 1; text-align: center; min-height: 190px; display: flex; align-items: center; justify-content: center;">
-                            ${(isFirst && s.showQrCode !== false && s.paymentQrImageUrl) ? `
+                            ${(isFirst && s.showQrCode !== false && paymentQrImageUrl) ? `
                             <div style="text-align: center;">
                                 <div style="display: inline-flex; align-items: center; justify-content: center; width: 150px; height: 150px; margin-bottom: 4px;">
-                                    <img src="${s.paymentQrImageUrl}" alt="Payment QR" style="width: 150px; height: 150px; object-fit: contain; display: block;">
+                                    <img src="${paymentQrImageUrl}" alt="Payment QR" style="width: 150px; height: 150px; object-fit: contain; display: block;">
                                 </div>
                                 <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase; letter-spacing: 0.04em;">Payment</div>
                                 <div style="font-size: 7px; color: #5a7052;">Scan to pay</div>
@@ -392,9 +454,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                         </div>
                         <div style="text-align: right; flex: 1;">
                              <div style="display: inline-block; text-align: left;">
-                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t('print_invoice', lang)} #${invoice.invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
+                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t('print_invoice', lang)} #${invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
                                  <div style="font-size: 11px; color: #5a7052;">${t('print_date', lang)}: ${formatDate(invoice.createdAt)}</div>
-                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t('table_phone', lang)}: ${s.phone || ''}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
+                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t('table_phone', lang)}: ${companyPhone}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
                              </div>
                         </div>
                     </div>
@@ -405,9 +467,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 20px;">
                         <div style="flex: 1.2;">
                             <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; margin-bottom: 6px;">${t('print_bill_to', lang)}</div>
-                            <div style="font-size: 15px; font-weight: 700; color: #1e3318; margin-bottom: 4px;">${invoice.customerName}</div>
+                            <div style="font-size: 15px; font-weight: 700; color: #1e3318; margin-bottom: 4px;">${customerName}</div>
                             <div style="color: #435a3c; line-height: 1.5; font-size: 12px; max-width: 300px;">
-                                 ${invoice.customerAddress || 'Republic of Kyrgyzstan'}
+                                 ${customerAddress}
                             </div>
                         </div>
                         <div style="text-align: right; flex: 0.8;">
@@ -441,8 +503,8 @@ export const renderInvoiceDetail = async ({ id }) => {
                 return `
                                     <tr style="background: ${idx % 2 === 0 ? '#fafaf8' : '#fff'}; border-bottom: 1px solid #e2e8e0;">
                                         <td style="padding: 6px 10px;">
-                                        <div style="font-weight: 600; color: #1e3318;">${itemName}</div>
-                                            ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${item.weight}</div>` : ''}
+                                        <div style="font-weight: 600; color: #1e3318; overflow-wrap: anywhere;">${escapeHtml(itemName || 'Product')}</div>
+                                            ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${escapeHtml(item.weight)}</div>` : ''}
                                         </td>
                                         <td style="padding: 6px 10px; text-align: center; color: #1e3318;">${finalQty}</td>
                                         <td style="padding: 6px 10px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
@@ -479,9 +541,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                             ${(s.showNotes !== false) ? `
                             <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; margin-bottom: 8px;">${t('print_notes', lang)}</div>
                             <div style="font-size: 11px; color: #5a7052; line-height: 1.5;">
-                                <div style="margin-bottom: 2px;">${notesText}</div>
+                                <div style="margin-bottom: 2px;">${renderedNotesText}</div>
                                 <div style="font-weight: 500; font-family: monospace; background: #fafbf9; padding: 12px; border: 1px solid #ebf0e9; border-radius: 6px; font-size: 10px; line-height: 1.6;">
-                                    ${(s.bankInfo || defaultBankInfo).split('\n').map(line => `<div style="margin-bottom: 2px;">• ${line.trim()}</div>`).join('')}
+                                    ${renderedBankInfo}
                                 </div>
                             </div>
                             ` : ''}
@@ -490,14 +552,16 @@ export const renderInvoiceDetail = async ({ id }) => {
                             <div style="display: flex; flex-direction: column; gap: 14px; min-width: 78px; text-align: left;">
                                 <div>
                                     <div style="font-size: 10px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
-                                    <div style="font-size: 8px; color: #5a7052;">0 courier · 1 customer</div>
+                                    <div style="font-size: 8px; color: #5a7052;">${invoiceQrImageUrl ? '0 courier &middot; 1 customer' : 'Unavailable'}</div>
                                 </div>
                             </div>
+                            ${invoiceQrImageUrl ? `
                             <div style="text-align: center;">
                                 <div style="display: inline-block; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
-                                    <img src="${qrService.buildQrImageUrl(invoice, 240)}" alt="Invoice QR" style="width: 128px; height: 128px; display: block;">
+                                    <img src="${invoiceQrImageUrl}" alt="Invoice QR" style="width: 128px; height: 128px; display: block;">
                                 </div>
                             </div>
+                            ` : ''}
                         </div>
                     </div>
                     ` : ''}
@@ -505,7 +569,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <!-- Banner Foot -->
                     ${(s.showFooter !== false) ? `
                     <div style="position: absolute; bottom: 20px; left: 0; right: 0; padding: 12px; text-align: center; color: #5a7052; font-size: 10px;">
-                        — ${bannerFootText} —
+                        &mdash; ${renderedBannerFootText} &mdash;
                     </div>
                     ` : ''}
                 </div>
@@ -553,8 +617,8 @@ export const renderInvoiceDetail = async ({ id }) => {
                 
                 <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     <span style="font-size: 12px; font-weight: 600;">Date:</span>
-                    <input type="date" id="invoice-date-picker" class="input" style="padding: 2px 8px; height: 32px; font-size: 13px; width: 140px;" 
-                           value="${((invoice.createdAt && invoice.createdAt.toDate) ? invoice.createdAt.toDate() : new Date(invoice.createdAt)).toISOString().split('T')[0]}">
+                    <input type="date" id="invoice-date-picker" class="input" style="padding: 2px 8px; height: 32px; font-size: 13px; width: 140px;"
+                           value="${toDateInputValue(invoice.createdAt)}">
                 </div>
 
                 <div style="flex: 1; display: flex; justify-content: center; align-items: center; gap: 15px;">
@@ -900,10 +964,21 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }, 500);
             };
 
+            const printWithAfterprint = (afterPrint) => {
+                let handled = false;
+                const finish = () => {
+                    if (handled) return;
+                    handled = true;
+                    window.removeEventListener('afterprint', finish);
+                    afterPrint();
+                };
+                window.addEventListener('afterprint', finish, { once: true });
+                window.print();
+            };
+
             document.getElementById('btn-print-portrait').addEventListener('click', () => {
                 document.body.classList.remove('printing-2up-portrait');
-                window.print();
-                handlePrintSuccess();
+                printWithAfterprint(handlePrintSuccess);
             });
 
             document.getElementById('btn-print-landscape').addEventListener('click', () => {
@@ -911,15 +986,12 @@ export const renderInvoiceDetail = async ({ id }) => {
                 refreshBody(); // Render duplicate pages in DOM
 
                 document.body.classList.add('printing-2up-portrait');
-                window.print();
-
-                // Revert to normal view
-                setTimeout(() => {
+                printWithAfterprint(() => {
                     document.body.classList.remove('printing-2up-portrait');
                     is2UpMode = false;
                     refreshBody();
                     handlePrintSuccess();
-                }, 1000);
+                });
             });
         } catch (e) {
             console.error("error attaching listener in refreshBody", e);
