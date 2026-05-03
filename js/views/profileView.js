@@ -1,6 +1,19 @@
 import { layoutView } from "./layoutView.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { gamificationService } from "../services/gamificationService.js";
+import { orderService } from "../services/orderService.js";
+import { invoiceService } from "../services/invoiceService.js";
+import { customerService } from "../services/customerService.js";
+import { productService } from "../services/productService.js";
+
+const PERIODS = [
+    { key: 'day', label: 'Day' },
+    { key: 'week', label: 'Week' },
+    { key: 'month', label: 'Month' },
+    { key: 'year', label: 'Year' }
+];
+
+let activePeriod = localStorage.getItem('profileStatsPeriod') || 'day';
 
 export const renderProfile = async () => {
     layoutView.render();
@@ -9,9 +22,25 @@ export const renderProfile = async () => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const [profile, badges] = await Promise.all([
+    const [profile, badges, orders, invoices, customers, products] = await Promise.all([
         gamificationService.getProfile(),
-        Promise.resolve(gamificationService.getBadgeDefinitions())
+        Promise.resolve(gamificationService.getBadgeDefinitions()),
+        orderService.getAllOrders().catch(error => {
+            console.warn("Could not load profile order stats.", error);
+            return [];
+        }),
+        invoiceService.getAllInvoices().catch(error => {
+            console.warn("Could not load profile invoice stats.", error);
+            return [];
+        }),
+        customerService.getAllCustomers().catch(error => {
+            console.warn("Could not load profile customer stats.", error);
+            return [];
+        }),
+        productService.getAllProducts().catch(error => {
+            console.warn("Could not load profile product stats.", error);
+            return [];
+        })
     ]);
 
     if (!profile) {
@@ -19,9 +48,15 @@ export const renderProfile = async () => {
         return;
     }
 
+    if (!PERIODS.some(period => period.key === activePeriod)) {
+        activePeriod = 'day';
+    }
+
     const unlocked = new Set(profile.badges || []);
     const level = Math.floor((profile.xp || 0) / 100) + 1;
     const levelProgress = (profile.xp || 0) % 100;
+    const statsData = { orders, invoices, customers, products };
+    let periodStats = buildPeriodStats(profile, statsData, activePeriod);
 
     container.innerHTML = `
         <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: 18px; max-width: 1180px; margin: 0 auto; width: 100%;">
@@ -37,13 +72,13 @@ export const renderProfile = async () => {
                 box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
             ">
                 <div style="width: 104px; height: 104px; border-radius: 28px; overflow: hidden; background: rgba(255,255,255,0.16); border: 3px solid rgba(255,255,255,0.28); display: flex; align-items: center; justify-content: center; font-size: 42px;">
-                    ${profile.photoDataUrl ? `<img src="${profile.photoDataUrl}" style="width: 100%; height: 100%; object-fit: cover;">` : (profile.email || 'A').charAt(0).toUpperCase()}
+                    ${profile.photoDataUrl ? `<img src="${escapeAttribute(profile.photoDataUrl)}" style="width: 100%; height: 100%; object-fit: cover;">` : escapeHtml((profile.email || 'A').charAt(0).toUpperCase())}
                 </div>
 
                 <div>
                     <div style="font-size: 13px; opacity: 0.75; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;">Team Profile</div>
-                    <h2 style="font-size: 30px; margin: 3px 0 4px 0; font-weight: 900;">${profile.displayName || profile.email}</h2>
-                    <div style="font-size: 13px; opacity: 0.8;">${profile.email}</div>
+                    <h2 style="font-size: 30px; margin: 3px 0 4px 0; font-weight: 900;">${escapeHtml(profile.displayName || profile.email)}</h2>
+                    <div style="font-size: 13px; opacity: 0.8;">${escapeHtml(profile.email)}</div>
                     <div style="margin-top: 14px; max-width: 420px;">
                         <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; margin-bottom: 6px;">
                             <span>Level ${level}</span>
@@ -72,7 +107,7 @@ export const renderProfile = async () => {
                     <h3 style="font-size: 15px; font-weight: 800; margin: 0;">Profile Settings</h3>
                     <div class="input-group">
                         <label>Display Name</label>
-                        <input type="text" id="profile-display-name" value="${profile.displayName || ''}" placeholder="Your name">
+                        <input type="text" id="profile-display-name" value="${escapeAttribute(profile.displayName || '')}" placeholder="Your name">
                     </div>
                     <div class="input-group">
                         <label>Profile Picture</label>
@@ -85,15 +120,17 @@ export const renderProfile = async () => {
 
                 <div style="display: flex; flex-direction: column; gap: 18px;">
                     <div class="card" style="padding: 18px;">
-                        <h3 style="font-size: 15px; font-weight: 800; margin: 0 0 14px 0;">Activity</h3>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
-                            ${renderStat("Orders Created", profile.actions?.ordersCreated || 0)}
-                            ${renderStat("Invoices Created", profile.actions?.invoicesCreated || 0)}
-                            ${renderStat("Invoices Printed", profile.actions?.invoicesPrinted || 0)}
-                            ${renderStat("Orders Fulfilled", profile.actions?.ordersFulfilled || 0)}
-                            ${renderStat("Orders Paid", profile.actions?.ordersPaid || 0)}
-                            ${renderStat("Customers Added", profile.actions?.customersCreated || 0)}
-                            ${renderStat("Orders Archived", profile.actions?.ordersArchived || 0)}
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 14px; flex-wrap: wrap;">
+                            <div>
+                                <h3 style="font-size: 15px; font-weight: 800; margin: 0;">Activity</h3>
+                                <div id="profile-activity-caption" style="font-size: 12px; color: var(--color-gray-500); margin-top: 3px;">${escapeHtml(periodStats.caption)}</div>
+                            </div>
+                            <div id="profile-period-tabs" role="tablist" aria-label="Activity period" style="display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--color-gray-200); border-radius: 10px; background: var(--color-gray-50);">
+                                ${PERIODS.map(period => renderPeriodButton(period, activePeriod)).join('')}
+                            </div>
+                        </div>
+                        <div id="profile-activity-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                            ${periodStats.metrics.map(metric => renderStat(metric.label, metric.value, metric.hint)).join('')}
                         </div>
                     </div>
 
@@ -107,6 +144,21 @@ export const renderProfile = async () => {
             </div>
         </div>
     `;
+
+    const attachPeriodHandlers = () => {
+        document.querySelectorAll('[data-profile-period]').forEach(button => {
+            button.addEventListener('click', () => {
+                activePeriod = button.dataset.profilePeriod;
+                localStorage.setItem('profileStatsPeriod', activePeriod);
+                periodStats = buildPeriodStats(profile, statsData, activePeriod);
+                document.getElementById('profile-activity-caption').textContent = periodStats.caption;
+                document.getElementById('profile-activity-grid').innerHTML = periodStats.metrics.map(metric => renderStat(metric.label, metric.value, metric.hint)).join('');
+                document.getElementById('profile-period-tabs').innerHTML = PERIODS.map(period => renderPeriodButton(period, activePeriod)).join('');
+                attachPeriodHandlers();
+            });
+        });
+    };
+    attachPeriodHandlers();
 
     document.getElementById('profile-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -129,10 +181,130 @@ export const renderProfile = async () => {
     });
 };
 
-const renderStat = (label, value) => `
+function buildPeriodStats(profile, data, period) {
+    const { start, end, caption, key } = getCurrentPeriod(period);
+    const trackedActions = profile.periodActions?.[period]?.[key] || {};
+    const ordersInPeriod = data.orders.filter(order => isWithinPeriod(order.createdAt, start, end));
+    const invoicesInPeriod = data.invoices.filter(invoice => isWithinPeriod(invoice.createdAt, start, end));
+    const customersInPeriod = data.customers.filter(customer => isWithinPeriod(customer.createdAt, start, end));
+    const productsInPeriod = data.products.filter(product => isWithinPeriod(product.createdAt, start, end));
+    const printedOrdersInPeriod = data.orders.filter(order => order.isPrinted && isWithinPeriod(order.printedAt, start, end));
+    const fulfilledOrdersInPeriod = data.orders.filter(order => order.status === 'fulfilled' && isWithinPeriod(order.fulfilledAt || order.updatedAt, start, end));
+    const paidOrdersInPeriod = data.orders.filter(order => order.status === 'paid' && isWithinPeriod(order.paidAt || order.fulfilledAt || order.updatedAt, start, end));
+    const itemCount = ordersInPeriod.reduce((sum, order) => {
+        return sum + (order.items || []).reduce((itemSum, item) => itemSum + (Number(item.adjustedQuantity ?? item.quantity) || 0), 0);
+    }, 0);
+
+    const valueFor = (action, fallback = 0) => Math.max(Number(trackedActions[action]) || 0, fallback);
+
+    return {
+        caption,
+        metrics: [
+            { label: 'Orders Created', value: valueFor('ordersCreated', ordersInPeriod.length) },
+            { label: 'Items Ordered', value: itemCount },
+            { label: 'Invoices Created', value: valueFor('invoicesCreated', invoicesInPeriod.length) },
+            { label: 'Invoices Printed', value: valueFor('invoicesPrinted', printedOrdersInPeriod.length), hint: printedOrdersInPeriod.length ? '' : 'Tracked from new print confirmations' },
+            { label: 'Orders Fulfilled', value: valueFor('ordersFulfilled', fulfilledOrdersInPeriod.length) },
+            { label: 'Orders Paid', value: valueFor('ordersPaid', paidOrdersInPeriod.length) },
+            { label: 'Customers Added', value: valueFor('customersCreated', customersInPeriod.length) },
+            { label: 'Products Created', value: productsInPeriod.length },
+            { label: 'Orders Archived', value: valueFor('ordersArchived') },
+            { label: 'Profile Updates', value: valueFor('profileUpdated') }
+        ]
+    };
+}
+
+function getCurrentPeriod(period) {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+
+    if (period === 'week') {
+        const mondayOffset = (start.getDay() + 6) % 7;
+        start.setDate(start.getDate() - mondayOffset);
+    } else if (period === 'month') {
+        start.setDate(1);
+    } else if (period === 'year') {
+        start.setMonth(0, 1);
+    }
+
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+
+    return {
+        start,
+        end,
+        key: getPeriodKey(period, now),
+        caption: getPeriodCaption(period, start, end)
+    };
+}
+
+function getPeriodKey(period, date) {
+    const day = formatLocalDateKey(date);
+    if (period === 'day') return day;
+    if (period === 'month') return day.slice(0, 7);
+    if (period === 'year') return String(date.getFullYear());
+
+    const firstThursday = new Date(date);
+    firstThursday.setHours(0, 0, 0, 0);
+    firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7));
+    const weekYear = firstThursday.getFullYear();
+    const firstWeekThursday = new Date(weekYear, 0, 4);
+    firstWeekThursday.setDate(firstWeekThursday.getDate() + 3 - ((firstWeekThursday.getDay() + 6) % 7));
+    const week = 1 + Math.round((firstThursday - firstWeekThursday) / 604800000);
+    return `${weekYear}-W${String(week).padStart(2, '0')}`;
+}
+
+function formatLocalDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getPeriodCaption(period, start, end) {
+    if (period === 'day') return `Today, ${start.toLocaleDateString()}`;
+    if (period === 'week') return `This week, ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+    if (period === 'month') return `This month, ${start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`;
+    return `This year, ${start.getFullYear()}`;
+}
+
+function isWithinPeriod(value, start, end) {
+    const date = toDate(value);
+    return Boolean(date && date >= start && date <= end);
+}
+
+function toDate(value) {
+    if (!value) return null;
+    if (value.toDate) return value.toDate();
+    if (value.seconds) return new Date(value.seconds * 1000);
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const renderPeriodButton = (period, selectedPeriod) => `
+    <button
+        type="button"
+        data-profile-period="${period.key}"
+        aria-selected="${period.key === selectedPeriod}"
+        style="
+            border: 0;
+            border-radius: 8px;
+            padding: 7px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            color: ${period.key === selectedPeriod ? 'white' : 'var(--color-gray-600)'};
+            background: ${period.key === selectedPeriod ? 'var(--color-primary)' : 'transparent'};
+        "
+    >${period.label}</button>
+`;
+
+const renderStat = (label, value, hint = '') => `
     <div style="background: var(--color-gray-50); border: 1px solid var(--color-gray-100); border-radius: 14px; padding: 12px;">
-        <div style="font-size: 11px; color: var(--color-gray-500); font-weight: 800; text-transform: uppercase;">${label}</div>
-        <div style="font-size: 24px; color: var(--color-gray-900); font-weight: 900; margin-top: 4px;">${value}</div>
+        <div style="font-size: 11px; color: var(--color-gray-500); font-weight: 800; text-transform: uppercase;">${escapeHtml(label)}</div>
+        <div style="font-size: 24px; color: var(--color-gray-900); font-weight: 900; margin-top: 4px;">${Number(value || 0).toLocaleString()}</div>
+        ${hint ? `<div style="font-size: 10px; color: var(--color-gray-400); margin-top: 4px; line-height: 1.35;">${escapeHtml(hint)}</div>` : ''}
     </div>
 `;
 
@@ -151,14 +323,25 @@ const renderBadge = (badge, isUnlocked) => `
             ${badge.icon}
         </div>
         <div>
-            <div style="font-size: 13px; font-weight: 900; color: var(--color-gray-900);">${badge.name}</div>
-            <div style="font-size: 11px; color: var(--color-gray-500); line-height: 1.4; margin-top: 3px;">${badge.description}</div>
+            <div style="font-size: 13px; font-weight: 900; color: var(--color-gray-900);">${escapeHtml(badge.name)}</div>
+            <div style="font-size: 11px; color: var(--color-gray-500); line-height: 1.4; margin-top: 3px;">${escapeHtml(badge.description)}</div>
             <div style="font-size: 10px; font-weight: 900; color: ${isUnlocked ? '#16a34a' : 'var(--color-gray-400)'}; margin-top: 7px; text-transform: uppercase;">
                 ${isUnlocked ? 'Unlocked' : 'Locked'}
             </div>
         </div>
     </div>
 `;
+
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function escapeAttribute(value = '') {
+    return escapeHtml(value).replace(/"/g, '&quot;');
+}
 
 const resizeImageToDataUrl = file => new Promise((resolve, reject) => {
     const reader = new FileReader();

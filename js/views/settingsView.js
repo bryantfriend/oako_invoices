@@ -140,6 +140,17 @@ export const renderSettings = async () => {
     })}
 
                 ${createCard({
+        title: 'Invoice Layout',
+        content: `
+                        <div class="input-group">
+                            <label>Items Per Invoice Page</label>
+                            <input type="number" name="invoiceItemsPerPage" value="${settings.invoiceItemsPerPage ?? 7}" min="1" max="30" step="1" style="width: 120px;">
+                            <small style="color: var(--color-gray-500);">Default is 7. Lower this if long product names or payment details need more room.</small>
+                        </div>
+                    `
+    })}
+
+                ${createCard({
         title: 'Mobile Access & Sync',
         content: `
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
@@ -232,6 +243,7 @@ export const renderSettings = async () => {
             const formData = new FormData(document.getElementById('settings-form'));
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+            data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
             data.showQrCode = formData.get('showQrCode') === 'true';
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
@@ -264,6 +276,7 @@ export const renderSettings = async () => {
             const formData = new FormData(document.getElementById('settings-form'));
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+            data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
             data.showQrCode = formData.get('showQrCode') === 'true';
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
@@ -286,6 +299,7 @@ export const renderSettings = async () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+        data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
         data.showQrCode = formData.get('showQrCode') === 'true';
         data.showNotes = formData.get('showNotes') === 'true';
         data.showFooter = formData.get('showFooter') === 'true';

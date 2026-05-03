@@ -24,6 +24,7 @@ export const DEFAULT_INVOICE_SETTINGS = {
     qrText: 'https://kyrgyz-organics.com/pay',
     paymentQrImageUrl: '',
     defaultTaxRate: 0,
+    invoiceItemsPerPage: 7,
     logoUrl: '',
     footerText: 'Thanks for supporting sustainable agriculture!',
     courierPin: '23456',
@@ -53,8 +54,11 @@ export function buildGoogleSheetUrl(sheetId = '') {
 }
 
 function normalizeInvoiceSettings(data = {}) {
+    const invoiceItemsPerPage = Math.min(30, Math.max(1, parseInt(data.invoiceItemsPerPage, 10) || DEFAULT_INVOICE_SETTINGS.invoiceItemsPerPage));
+
     return {
         ...data,
+        invoiceItemsPerPage,
         googleSheetId: getGoogleSheetId(data.googleSheetId),
         googleSheetsWebhookUrl: String(data.googleSheetsWebhookUrl || '').trim()
     };

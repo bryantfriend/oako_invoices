@@ -141,8 +141,11 @@ export const orderService = {
 
     async updateOrderStatus(id, status) {
         const updates = { status };
-        if (status === ORDER_STATUS.FULFILLED || status === ORDER_STATUS.PAID) {
+        if (status === ORDER_STATUS.FULFILLED) {
             updates.fulfilledAt = serverTimestamp();
+        }
+        if (status === ORDER_STATUS.PAID) {
+            updates.paidAt = serverTimestamp();
         }
         return this.updateOrder(id, updates);
     },

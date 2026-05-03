@@ -335,7 +335,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     let invoiceScale = 1.0;
     let is2UpMode = false;
 
-    const ITEMS_PER_PAGE = 5;
+    const DEFAULT_ITEMS_PER_PAGE = 7;
 
     const renderDocument = (lang, isCopy = false) => {
         // Never let fallback defaults overwrite the saved invoice snapshot.
@@ -343,6 +343,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         const s = hasReliableLiveSettings
             ? { ...(invoice.settings || {}), ...liveSettings }
             : { ...(invoice.settings || {}) };
+        const itemsPerPage = Math.min(30, Math.max(1, parseInt(s.invoiceItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE));
 
         const defaultBankInfo = lang === 'en'
             ? "Bank of Kyrgyzstan,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Account To: KG12346712345789901<br>SWIFT: KGZBBBBB"
@@ -368,13 +369,12 @@ export const renderInvoiceDetail = async ({ id }) => {
         const items = invoice.items || [];
         const pages = [];
 
-        // Keep invoice pagination predictable: first five items on page 1,
-        // then five items on each following page.
+        // Keep invoice pagination predictable: each page gets the configured item count.
         let currentItemIndex = 0;
         while (currentItemIndex < items.length) {
-            const pageItems = items.slice(currentItemIndex, currentItemIndex + ITEMS_PER_PAGE);
+            const pageItems = items.slice(currentItemIndex, currentItemIndex + itemsPerPage);
             pages.push(pageItems);
-            currentItemIndex += ITEMS_PER_PAGE;
+            currentItemIndex += itemsPerPage;
         }
         if (pages.length === 0) pages.push([]);
 
@@ -919,7 +919,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                                     const { invoiceService } = await import("../services/invoiceService.js");
                                     const { gamificationService } = await import("../services/gamificationService.js");
                                     const order = await orderService.getOrderById(invoice.orderId);
-                                    const orderUpdates = { isPrinted: true };
+                                    const orderUpdates = { isPrinted: true, printedAt: new Date() };
                                     if (order?.status === 'draft') {
                                         orderUpdates.status = 'confirmed';
                                     }

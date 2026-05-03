@@ -42,6 +42,48 @@ const XP_BY_ACTION = {
     profileUpdated: 5
 };
 
+function getPeriodKeys(date = new Date()) {
+    const localDate = new Date(date);
+    const yearValue = localDate.getFullYear();
+    const monthValue = String(localDate.getMonth() + 1).padStart(2, '0');
+    const dayValue = String(localDate.getDate()).padStart(2, '0');
+    const day = `${yearValue}-${monthValue}-${dayValue}`;
+    const month = day.slice(0, 7);
+    const year = String(yearValue);
+    const firstThursday = new Date(localDate);
+    firstThursday.setHours(0, 0, 0, 0);
+    firstThursday.setDate(firstThursday.getDate() + 3 - ((firstThursday.getDay() + 6) % 7));
+    const weekYear = firstThursday.getFullYear();
+    const firstWeekThursday = new Date(weekYear, 0, 4);
+    firstWeekThursday.setDate(firstWeekThursday.getDate() + 3 - ((firstWeekThursday.getDay() + 6) % 7));
+    const week = 1 + Math.round((firstThursday - firstWeekThursday) / 604800000);
+
+    return {
+        day,
+        week: `${weekYear}-W${String(week).padStart(2, '0')}`,
+        month,
+        year
+    };
+}
+
+function incrementPeriodActions(current = {}, action, quantity) {
+    const keys = getPeriodKeys();
+    const next = {
+        day: { ...(current.day || {}) },
+        week: { ...(current.week || {}) },
+        month: { ...(current.month || {}) },
+        year: { ...(current.year || {}) }
+    };
+
+    Object.entries(keys).forEach(([period, key]) => {
+        const bucket = { ...(next[period][key] || {}) };
+        bucket[action] = (bucket[action] || 0) + quantity;
+        next[period][key] = bucket;
+    });
+
+    return next;
+}
+
 const emptyProfile = user => ({
     uid: user.uid,
     email: user.email || '',
@@ -49,6 +91,7 @@ const emptyProfile = user => ({
     photoDataUrl: '',
     xp: 0,
     actions: {},
+    periodActions: {},
     badges: [],
     createdAt: new Date(),
     updatedAt: new Date()
@@ -97,6 +140,7 @@ export const gamificationService = {
             const current = await this.getProfile();
             const actions = { ...(current.actions || {}) };
             actions[action] = (actions[action] || 0) + quantity;
+            const periodActions = incrementPeriodActions(current.periodActions, action, quantity);
 
             const xp = (current.xp || 0) + (XP_BY_ACTION[action] * quantity);
             const currentBadges = current.badges || [];
@@ -107,6 +151,7 @@ export const gamificationService = {
             const next = {
                 ...current,
                 actions,
+                periodActions,
                 xp,
                 badges,
                 updatedAt: serverTimestamp()
