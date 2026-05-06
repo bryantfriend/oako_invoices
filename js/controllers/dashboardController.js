@@ -5,6 +5,77 @@ import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
 
+function categoryKey(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function categoryIdFromName(value = '') {
+    const normalized = categoryKey(value)
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, '');
+    return normalized || 'uncategorized';
+}
+
+function firstValue(...values) {
+    return values.find(value => String(value || '').trim());
+}
+
+function buildProductCategoryLookup(categories = []) {
+    const lookup = {};
+    const register = (key, category) => {
+        const normalized = categoryKey(key);
+        if (normalized) lookup[normalized] = category;
+    };
+
+    categories.forEach(category => {
+        const name = category.name || category.name_en || category.title || 'Uncategorized';
+        const entry = { id: category.id || categoryIdFromName(name), name };
+        [
+            category.id,
+            category.name,
+            category.name_en,
+            category.name_ru,
+            category.name_kg,
+            category.slug,
+            category.handle,
+            category.value
+        ].forEach(key => register(key, entry));
+    });
+
+    return lookup;
+}
+
+function resolveProductCategory(item = {}, product = {}, categoryLookup = {}) {
+    const candidates = [
+        item.categoryId,
+        item.category_id,
+        item.categoryID,
+        item.categorySlug,
+        item.category,
+        item.categoryName,
+        item.category_name,
+        product.categoryId,
+        product.category_id,
+        product.categoryID,
+        product.categorySlug,
+        product.category,
+        product.categoryName,
+        product.category_name
+    ];
+
+    for (const candidate of candidates) {
+        const matched = categoryLookup[categoryKey(candidate)];
+        if (matched) return matched;
+    }
+
+    const fallbackName = firstValue(item.categoryName, item.category_name, item.category, product.categoryName, product.category_name, product.category);
+    if (fallbackName) {
+        return { id: categoryIdFromName(fallbackName), name: fallbackName };
+    }
+
+    return { id: 'uncategorized', name: 'Uncategorized' };
+}
+
 export const dashboardController = {
     async loadDashboard() {
         try {
@@ -27,10 +98,7 @@ export const dashboardController = {
                 productMap[product.id] = product;
             });
 
-            const productCategoryMap = {};
-            productCategories.forEach(category => {
-                productCategoryMap[category.id] = category.name || category.name_en || 'Uncategorized';
-            });
+            const productCategoryLookup = buildProductCategoryLookup(productCategories);
 
             // Map category back to orders and calculate aging
             const now = new Date();
@@ -55,13 +123,12 @@ export const dashboardController = {
                     ...order,
                     items: (order.items || []).map(item => {
                         const product = productMap[item.productId] || {};
-                        const categoryId = item.categoryId || product.categoryId || 'uncategorized';
-                        const categoryName = item.categoryName || productCategoryMap[categoryId] || 'Uncategorized';
+                        const category = resolveProductCategory(item, product, productCategoryLookup);
 
                         return {
                             ...item,
-                            categoryId,
-                            categoryName
+                            categoryId: category.id,
+                            categoryName: category.name
                         };
                     }),
                     customerCategory: categoryMap[(order.customerName || "").toLowerCase().trim()] || 'C',

@@ -48,6 +48,11 @@ export const renderCreateOrder = async () => {
         repeatOrderDraft = null;
     }
 
+    const categoryNameById = categories.reduce((map, category) => {
+        map[category.id] = category.name || category.name_en || 'Uncategorized';
+        return map;
+    }, {});
+
     const customerDatalist = customers.map(c => `<option value="${c.companyName || c.name}">`).join('');
 
     container.innerHTML = `
@@ -286,6 +291,8 @@ export const renderCreateOrder = async () => {
                             name_en: p.name_en || p.displayName,
                             name_ru: p.name_ru || '',
                             name_kg: p.name_kg || '',
+                            categoryId: p.categoryId || p.category_id || p.category || '',
+                            categoryName: p.categoryName || p.category_name || categoryNameById[p.categoryId] || p.category || '',
                             price: p.price,
                             quantity: 1,
                             imageUrl: p.imageUrl,
@@ -349,6 +356,8 @@ export const renderCreateOrder = async () => {
                     name_en: data.name_en,
                     name_ru: data.name_ru || data.name_en,
                     name_kg: '',
+                    categoryId: 'custom',
+                    categoryName: 'Custom',
                     price: price,
                     quantity: 1,
                     imageUrl: '',
@@ -371,6 +380,8 @@ export const renderCreateOrder = async () => {
                 name_en: item.name_en || item.name || item.productName || 'Product',
                 name_ru: item.name_ru || '',
                 name_kg: item.name_kg || '',
+                categoryId: item.categoryId || item.category_id || item.category || '',
+                categoryName: item.categoryName || item.category_name || item.category || '',
                 price: Number(item.price) || 0,
                 quantity: Number(item.quantity) || 1,
                 imageUrl: item.imageUrl || '',
@@ -406,6 +417,8 @@ export const renderCreateOrder = async () => {
                     name_en: item.name_en || item.name,
                     name_ru: item.name_ru || '',
                     name_kg: item.name_kg || '',
+                    categoryId: item.categoryId || item.category_id || item.category || '',
+                    categoryName: item.categoryName || item.category_name || item.category || '',
                     price: item.price,
                     quantity: item.quantity,
                     imageUrl: item.imageUrl || '',
