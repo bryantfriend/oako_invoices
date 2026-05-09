@@ -537,12 +537,19 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                     }
                 }
 
-                await returnsService.requestReturn(invoice.id, selectedItems, {
-                    returnPhotos,
-                    returnNote: document.getElementById('qr-return-note')?.value || '',
-                    returnedBy: 'courier'
-                });
-                await logAction('courier_return_saved');
+                try {
+                    await returnsService.requestReturn(invoice, selectedItems, {
+                        returnPhotos,
+                        returnNote: document.getElementById('qr-return-note')?.value || '',
+                        returnedBy: 'courier'
+                    });
+                    await logAction('courier_return_saved');
+                } catch (error) {
+                    console.error('Courier return save failed', error);
+                    document.getElementById('qr-return-form-error').textContent = 'Could not save return. Please check the invoice link or try again.';
+                    return;
+                }
+
                 invoice.returnRequested = true;
                 invoice.returnItems = selectedItems.map(item => ({ productId: item.productId, quantity: item.quantity }));
                 invoice.returnPhotos = returnPhotos;

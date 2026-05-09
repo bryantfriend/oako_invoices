@@ -61,8 +61,10 @@ export const returnsService = {
         return { synced: true };
     },
 
-    async requestReturn(invoiceId, returnItems = [], options = {}) {
-        const invoice = await getInvoice(invoiceId);
+    async requestReturn(invoiceOrId, returnItems = [], options = {}) {
+        const invoice = typeof invoiceOrId === 'string'
+            ? await getInvoice(invoiceOrId)
+            : invoiceOrId;
         if (!invoice) {
             throw new Error('Invoice not found');
         }
@@ -74,7 +76,7 @@ export const returnsService = {
                 quantity: Number(item.quantity) || 0
             }));
 
-        await updateDoc(doc(db, COLLECTION, invoiceId), {
+        await updateDoc(doc(db, COLLECTION, invoice.id || invoice.invoiceId), {
             returnRequested: items.length > 0,
             returnItems: items,
             returnPhotos: options.returnPhotos || [],
