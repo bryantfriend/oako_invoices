@@ -49,10 +49,11 @@ export const qrService = {
         return JSON.parse(fromBase64Url(encodedPayload));
     },
 
-    buildMobileUrl(invoice) {
+    buildMobileUrl(invoice, mode = '') {
         const payload = this.buildPayload(invoice);
         const encodedPayload = this.encodePayload(payload);
-        return `${window.location.origin}${window.location.pathname}#/qr/${encodedPayload}`;
+        const modeSegment = mode === 'courier' || mode === 'customer' ? `/${mode}` : '';
+        return `${window.location.origin}${window.location.pathname}#/qr${modeSegment}/${encodedPayload}`;
     },
 
     buildQrImageUrl(invoice, size = 140) {

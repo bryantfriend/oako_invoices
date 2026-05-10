@@ -62,6 +62,19 @@ function getSelectedItems(form) {
         .filter(item => item.quantity > 0);
 }
 
+function buildReturnSummaryMessage({ invoice, items, note = '', photoCount = 0 }) {
+    return [
+        'Courier return saved',
+        `Invoice: ${invoice.invoiceNumber || invoice.id}`,
+        `Customer: ${invoice.customerName || ''}`,
+        'Items:',
+        ...items.map(item => `- ${item.name}: x${item.quantity}`),
+        note ? `Note: ${note}` : '',
+        `Photo proof: ${photoCount ? `${photoCount} attached` : 'not attached'}`,
+        `Saved: ${new Date().toLocaleString()}`
+    ].filter(Boolean).join('\n');
+}
+
 function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -384,17 +397,24 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                 return;
             }
             session = result;
+            await logAction('qr_access_granted', { details: { role: session.role } });
             renderMenu();
         });
     };
 
     const renderMenu = () => {
+        const isCourier = session?.role === 'courier';
+        const isCustomer = session?.role === 'customer';
+        const title = isCourier ? 'Courier actions' : (isCustomer ? 'Customer actions' : 'Choose an action');
+        const subtitle = isCourier
+            ? 'Confirm returns or view invoice details.'
+            : (isCustomer ? 'View invoice, request returns, or prepare a re-order.' : `${invoice.customerName || 'Customer'} · ${formatDate(invoice.createdAt)}`);
         app.innerHTML = mobileShell(`
-            ${renderHero('Choose an action', `${invoice.customerName || 'Customer'} · ${formatDate(invoice.createdAt)}`)}
+            ${renderHero(title, subtitle)}
             <section class="qr-card qr-actions">
                 <button class="qr-button secondary" id="qr-view-invoice">View invoice</button>
                 <button class="qr-button warning" id="qr-request-return">Request Return</button>
-                <button class="qr-button" id="qr-new-order">New Order</button>
+                ${!isCourier ? `<button class="qr-button" id="qr-new-order">New Order</button>` : ''}
             </section>
         `);
 
@@ -403,7 +423,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
             renderInvoiceDetails();
         });
         document.getElementById('qr-request-return').addEventListener('click', renderReturnForm);
-        document.getElementById('qr-new-order').addEventListener('click', renderReorderForm);
+        document.getElementById('qr-new-order')?.addEventListener('click', renderReorderForm);
     };
 
     const renderInvoiceDetails = () => {
@@ -529,6 +549,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
 
             if (isCourier) {
                 const photoInput = document.getElementById('qr-return-photo');
+                const returnNote = document.getElementById('qr-return-note')?.value || '';
                 const returnPhotos = [];
                 if (photoInput?.files?.[0]) {
                     const compressed = await compressPhoto(photoInput.files[0]).catch(() => null);
@@ -540,10 +561,16 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                 try {
                     await returnsService.requestReturn(invoice, selectedItems, {
                         returnPhotos,
-                        returnNote: document.getElementById('qr-return-note')?.value || '',
+                        returnNote,
                         returnedBy: 'courier'
                     });
-                    await logAction('courier_return_saved');
+                    await logAction('courier_return_saved', {
+                        details: {
+                            itemCount: selectedItems.length,
+                            totalReturned: selectedItems.reduce((sum, item) => sum + item.quantity, 0),
+                            hasPhoto: returnPhotos.length > 0
+                        }
+                    });
                 } catch (error) {
                     console.error('Courier return save failed', error);
                     document.getElementById('qr-return-form-error').textContent = 'Could not save return. Please check the invoice link or try again.';
@@ -554,15 +581,25 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                 invoice.returnItems = selectedItems.map(item => ({ productId: item.productId, quantity: item.quantity }));
                 invoice.returnPhotos = returnPhotos;
                 invoice.status = 'return_pending';
+                const summaryMessage = buildReturnSummaryMessage({ invoice, items: selectedItems, note: returnNote, photoCount: returnPhotos.length });
+                const summaryPhone = whatsappService.normalizeNumber(settings.whatsappNumber || settings.phone);
+                const summaryLink = `https://wa.me/${summaryPhone}?text=${encodeURIComponent(summaryMessage)}`;
                 app.innerHTML = mobileShell(`
-                    ${renderHero('Return saved', 'The invoice return request was updated in Firestore.')}
+                    ${renderHero('Return saved', `${invoice.invoiceNumber || invoice.id} · ${new Date().toLocaleString()}`)}
                     <section class="qr-card">
-                        <h2 class="qr-section-title">Saved return</h2>
+                        <h2 class="qr-section-title">Courier return summary</h2>
+                        <p class="qr-note">${escapeHtml(invoice.customerName || 'Customer')}</p>
                         ${selectedItems.map(item => `<div class="qr-list-row"><strong>${escapeHtml(item.name)}</strong><span>x${item.quantity}</span></div>`).join('')}
-                        <p class="qr-note" style="margin-top: 12px;">Photo proof: ${returnPhotos.length ? 'attached' : 'not attached'}</p>
-                        <button class="qr-button" id="qr-done">Back to actions</button>
+                        ${returnNote ? `<p class="qr-note" style="margin-top: 12px;"><strong>Note:</strong> ${escapeHtml(returnNote)}</p>` : ''}
+                        <p class="qr-note" style="margin-top: 12px;">Photo proof: ${returnPhotos.length ? `${returnPhotos.length} attached` : 'not attached'}</p>
+                        <button class="qr-button" id="qr-send-return-summary">Send WhatsApp summary</button>
+                        <button class="qr-button ghost" id="qr-done" style="margin-top: 10px;">Back to actions</button>
                     </section>
                 `);
+                document.getElementById('qr-send-return-summary').addEventListener('click', () => {
+                    logAction('courier_return_summary_whatsapp_opened');
+                    window.location.href = summaryLink;
+                });
                 document.getElementById('qr-done').addEventListener('click', renderMenu);
                 return;
             }

@@ -10,6 +10,7 @@ import { t, i18n } from "../core/i18n.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { productService } from "../services/productService.js";
+import { qrActivityService } from "../services/qrActivityService.js";
 import { qrService } from "../services/qrService.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
@@ -45,6 +46,48 @@ function toDateInputValue(value) {
     const date = value?.toDate ? value.toDate() : new Date(value);
     const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
     return safeDate.toISOString().split('T')[0];
+}
+
+function toDisplayDate(value) {
+    if (!value) return 'Pending timestamp';
+    const date = value?.toDate ? value.toDate() : (value?.seconds ? new Date(value.seconds * 1000) : new Date(value));
+    return Number.isNaN(date.getTime()) ? 'Pending timestamp' : date.toLocaleString();
+}
+
+function formatQrAction(action = '') {
+    return String(action || 'qr_event')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function renderQrActivityTimeline(activities = []) {
+    const rows = activities.slice(0, 12).map(activity => {
+        const successColor = activity.success === false ? '#b91c1c' : '#166534';
+        const role = activity.role && activity.role !== 'unknown' ? activity.role : (activity.mode || 'QR');
+        return `
+            <div style="display: grid; grid-template-columns: 128px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--color-gray-100);">
+                <div style="font-size: 11px; color: var(--color-gray-500); font-weight: 700;">${escapeHtml(toDisplayDate(activity.createdAt))}</div>
+                <div>
+                    <div style="font-size: 13px; font-weight: 900; color: var(--color-gray-900);">${escapeHtml(formatQrAction(activity.action))}</div>
+                    <div style="font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">${escapeHtml(role)}${activity.mode ? ` · ${escapeHtml(activity.mode)}` : ''}</div>
+                </div>
+                <span style="font-size: 11px; font-weight: 900; color: ${successColor};">${activity.success === false ? 'Failed' : 'OK'}</span>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="card qr-activity-timeline" style="padding: 18px; margin: 0 auto 28px; width: min(920px, calc(100% - 32px));">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
+                <div>
+                    <h3 style="font-size: 15px; font-weight: 900; margin: 0;">QR Activity Timeline</h3>
+                    <div style="font-size: 12px; color: var(--color-gray-500); margin-top: 3px;">Latest QR opens, PIN attempts, returns, and WhatsApp handoffs.</div>
+                </div>
+                <span style="font-size: 12px; color: var(--color-gray-500); font-weight: 800;">${activities.length} event${activities.length === 1 ? '' : 's'}</span>
+            </div>
+            ${activities.length ? rows : `<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 10px;">No QR activity has been logged for this invoice yet.</div>`}
+        </div>
+    `;
 }
 
 export const renderInvoices = async () => {
@@ -306,6 +349,11 @@ export const renderInvoiceDetail = async ({ id }) => {
         container.innerHTML = `<div class="p-8 text-center">Invoice not found</div>`;
         return;
     }
+
+    const qrActivities = await qrActivityService.getByInvoiceId(invoice.id).catch(error => {
+        console.warn("Could not load QR activity for invoice.", error);
+        return [];
+    });
 
     if (!/^1\d{5}$/.test(String(invoice.customerPinCode || ''))) {
         const customer = await customerService.getCustomerByName(invoice.customerName).catch(() => null);
@@ -636,6 +684,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     ${finalHtml}
                 </div>
             </div>
+            ${renderQrActivityTimeline(qrActivities)}
 
             <style>
                 #invoice-doc-container::-webkit-scrollbar { display: none; }
@@ -728,8 +777,8 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                     /* Hide all UI elements */
                     header, nav, #sidebar, #top-bar, .btn, .loading-screen, #toast-container, #modal-container,
-                    div[style*="position: sticky"], div[style*="z-index: 100"], .period-btn, #zoom-slider, input[type="range"] { 
-                        display: none !important; 
+                    div[style*="position: sticky"], div[style*="z-index: 100"], .period-btn, #zoom-slider, input[type="range"], .qr-activity-timeline {
+                        display: none !important;
                     }
                     
                     ::-webkit-scrollbar { display: none !important; }
@@ -846,14 +895,42 @@ export const renderInvoiceDetail = async ({ id }) => {
             });
 
             document.getElementById('btn-copy-qr').addEventListener('click', async () => {
-                const qrLink = qrService.buildMobileUrl(invoice);
-                if (navigator.clipboard) {
-                    await navigator.clipboard.writeText(qrLink);
-                } else {
-                    prompt('Copy QR invoice link:', qrLink);
-                }
-                const { notificationService } = await import("../core/notificationService.js");
-                notificationService.success('QR invoice link copied.');
+                const { Modal } = await import("../components/modal.js");
+                const links = [
+                    { id: 'customer', label: 'Customer link', url: qrService.buildMobileUrl(invoice, 'customer') },
+                    { id: 'courier', label: 'Courier link', url: qrService.buildMobileUrl(invoice, 'courier') },
+                    { id: 'general', label: 'General link', url: qrService.buildMobileUrl(invoice) }
+                ];
+                const modal = new Modal({
+                    title: 'QR Links',
+                    footer: false,
+                    content: `
+                        <div style="display: grid; gap: 12px;">
+                            ${links.map(link => `
+                                <label style="display: grid; gap: 6px;">
+                                    <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">${link.label}</span>
+                                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px;">
+                                        <input class="input" readonly value="${escapeAttribute(link.url)}" style="font-size: 12px;">
+                                        <button type="button" class="btn btn-secondary btn-sm qr-copy-link" data-link-id="${link.id}">Copy</button>
+                                    </div>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `
+                });
+                modal.open();
+                document.querySelectorAll('.qr-copy-link').forEach(button => {
+                    button.addEventListener('click', async () => {
+                        const link = links.find(entry => entry.id === button.dataset.linkId);
+                        if (navigator.clipboard) {
+                            await navigator.clipboard.writeText(link.url);
+                        } else {
+                            prompt('Copy QR invoice link:', link.url);
+                        }
+                        const { notificationService } = await import("../core/notificationService.js");
+                        notificationService.success(`${link.label} copied.`);
+                    });
+                });
             });
 
             document.getElementById('btn-return-items').addEventListener('click', async () => {
