@@ -1,11 +1,11 @@
-const CACHE_NAME = 'kyrgyz-organics-v1.071';
+const CACHE_NAME = 'kyrgyz-organics-v1.081';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js',
+    './js/main.js?v=1.081',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',
@@ -24,6 +24,7 @@ const ASSETS_TO_CACHE = [
     './js/components/loadingSkeleton.js',
     './js/components/sidebar.js',
     './js/components/statusBadge.js',
+    './js/components/syncStatusBadge.js',
     './js/views/layoutView.js',
     './js/views/loginView.js',
     './js/views/dashboardView.js',
@@ -57,7 +58,13 @@ const ASSETS_TO_CACHE = [
     './js/services/customerService.js',
     './js/services/inventoryService.js',
     './js/services/settingsService.js',
-    './js/services/statsService.js'
+    './js/services/statsService.js',
+    './js/services/offlineDbService.js',
+    './js/services/deviceIdService.js',
+    './js/services/offlineQueueService.js',
+    './js/services/offlineStatusService.js',
+    './js/services/conflictService.js',
+    './js/services/syncService.js'
 ];
 
 self.addEventListener('install', (event) => {

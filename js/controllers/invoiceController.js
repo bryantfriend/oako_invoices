@@ -14,7 +14,16 @@ export const invoiceController = {
 
     async loadAllInvoices() {
         try {
-            return await invoiceService.getAllInvoices();
+            return await invoiceService.getWorkingInvoices();
+        } catch (error) {
+            notificationService.error(t('msg_load_fail'));
+            return [];
+        }
+    },
+
+    async loadInvoiceHistoryPage(limitCount) {
+        try {
+            return await invoiceService.getInvoiceHistoryPage(limitCount);
         } catch (error) {
             notificationService.error(t('msg_load_fail'));
             return [];

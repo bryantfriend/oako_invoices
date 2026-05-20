@@ -6,6 +6,10 @@ const STATUS_CONFIG = {
     [ORDER_STATUS.CONFIRMED]: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
     [ORDER_STATUS.FULFILLED]: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     [ORDER_STATUS.CANCELLED]: { color: 'var(--color-error)', bg: 'var(--color-error-bg)' },
+    completed: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
+    return_pending: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
+    completed_pending_sync: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
+    sync_conflict: { color: 'var(--color-error)', bg: 'var(--color-error-bg)' },
 };
 
 export const createStatusBadge = (status) => {

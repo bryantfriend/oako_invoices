@@ -2,11 +2,12 @@ import { db } from "../core/firebase.js";
 import {
     doc,
     getDoc,
-    updateDoc,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { googleSheetsService } from "./googleSheetsService.js";
 import { orderService } from "./orderService.js";
+import { invoiceService } from "./invoiceService.js";
+import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'invoices';
 
@@ -76,40 +77,49 @@ export const returnsService = {
                 quantity: Number(item.quantity) || 0
             }));
 
-        await updateDoc(doc(db, COLLECTION, invoice.id || invoice.invoiceId), {
+        const returnedAtValue = offlineStatusService.isOnline() ? serverTimestamp() : new Date();
+
+        await invoiceService.updateInvoice(invoice.id || invoice.invoiceId, {
             returnRequested: items.length > 0,
             returnItems: items,
             returnPhotos: options.returnPhotos || [],
             returnNote: options.returnNote || '',
             returnedBy: options.returnedBy || '',
-            returnedAt: serverTimestamp(),
+            returnedAt: returnedAtValue,
             status: items.length > 0 ? 'return_pending' : 'pending',
-            updatedAt: serverTimestamp()
-        });
+            updatedAt: new Date()
+        }, 'addReturn');
 
-        try {
-            await this.syncInvoiceReturnToOrder({
-                ...invoice,
-                returnItems: items,
-                returnRequested: items.length > 0,
-                returnNote: options.returnNote || '',
-                returnedBy: options.returnedBy || ''
-            }, options);
-        } catch (error) {
-            console.warn('Return saved to invoice, but order mirror sync was skipped.', error);
+        if (offlineStatusService.isOnline()) {
+            try {
+                await this.syncInvoiceReturnToOrder({
+                    ...invoice,
+                    returnItems: items,
+                    returnRequested: items.length > 0,
+                    returnNote: options.returnNote || '',
+                    returnedBy: options.returnedBy || ''
+                }, options);
+            } catch (error) {
+                console.warn('Return saved to invoice, but order mirror sync was skipped.', error);
+            }
         }
 
         return true;
     },
 
     async markCompleted(invoiceId) {
-        const docRef = doc(db, COLLECTION, invoiceId);
-        await updateDoc(docRef, {
-            status: 'completed',
-            updatedAt: serverTimestamp()
-        });
+        if (!offlineStatusService.isOnline()) {
+            await invoiceService.updateInvoice(invoiceId, {
+                status: 'completed'
+            }, 'completeInvoice');
+            return true;
+        }
 
-        const invoice = await getInvoice(invoiceId);
+        await invoiceService.updateInvoice(invoiceId, {
+            status: 'completed'
+        }, 'completeInvoice');
+
+        const invoice = await invoiceService.getInvoice(invoiceId);
         if (invoice) {
             await googleSheetsService.syncCompletedInvoice(invoice);
         }

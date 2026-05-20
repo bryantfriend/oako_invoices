@@ -5,11 +5,16 @@ import { APP_CONFIG } from "../config.js";
 import { ROUTES } from "../core/constants.js";
 import { router } from "../router.js";
 import { gamificationService } from "../services/gamificationService.js";
+import { notificationService } from "../core/notificationService.js";
+import { renderSyncStatusBadge } from "../components/syncStatusBadge.js";
+import { offlineStatusService } from "../services/offlineStatusService.js";
+import { syncService } from "../services/syncService.js";
 
 class LayoutView {
     constructor() {
         this.sidebar = new Sidebar();
         this.unsubscribeI18n = null;
+        this.unsubscribeSync = null;
     }
 
     render() {
@@ -48,6 +53,7 @@ class LayoutView {
             </div>
             </div>
             <div style="display: flex; align-items: center; gap: var(--space-4);">
+                <div id="sync-status-mount"></div>
                 <!-- Language Selector -->
                 <div class="language-selector">
                     <button class="language-btn" title="Change Language">
@@ -93,6 +99,15 @@ class LayoutView {
                 </button>
             </div>
         `;
+
+        this.updateSyncBadge();
+        if (this.unsubscribeSync) {
+            this.unsubscribeSync();
+        }
+        const layout = this;
+        this.unsubscribeSync = offlineStatusService.subscribe(function() {
+            layout.updateSyncBadge();
+        });
 
         const profileShortcut = document.getElementById('profile-shortcut');
         profileShortcut?.addEventListener('click', () => router.navigate(ROUTES.PROFILE));
@@ -160,6 +175,34 @@ class LayoutView {
     updateTitle(title) {
         const titleEl = document.getElementById('top-bar-title');
         if (titleEl) titleEl.textContent = title;
+    }
+
+    updateSyncBadge() {
+        const mount = document.getElementById('sync-status-mount');
+        if (!mount) {
+            return;
+        }
+
+        mount.innerHTML = renderSyncStatusBadge(offlineStatusService.getSnapshot());
+
+        const button = document.getElementById('sync-now-btn');
+        if (!button) {
+            return;
+        }
+
+        button.addEventListener('click', async function() {
+            try {
+                const result = await syncService.processQueue();
+                if (result.message === 'Offline') {
+                    notificationService.error('Offline mode. Sync will run when internet returns.');
+                    return;
+                }
+                notificationService.info('Sync complete: ' + result.synced + ' synced, ' + result.failed + ' failed.');
+            } catch (error) {
+                console.error('Manual sync failed.', error);
+                notificationService.error('Sync failed. Pending changes were kept.');
+            }
+        });
     }
 }
 

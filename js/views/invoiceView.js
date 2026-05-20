@@ -5,6 +5,7 @@ import { formatDate, formatCurrency } from "../core/formatters.js";
 import { createCard } from "../components/card.js";
 import { createStatusBadge } from "../components/statusBadge.js";
 import { DataTable } from "../components/dataTable.js";
+import { renderInvoiceSyncPill } from "../components/syncStatusBadge.js";
 import { t, i18n } from "../core/i18n.js";
 
 import { router } from "../router.js";
@@ -90,6 +91,50 @@ function renderQrActivityTimeline(activities = []) {
     `;
 }
 
+function summarizeConflictVersion(version = {}) {
+    return JSON.stringify({
+        invoiceNumber: version.invoiceNumber || '',
+        status: version.status || '',
+        customerName: version.customerName || '',
+        totalAmount: version.totalAmount || 0,
+        returnRequested: version.returnRequested || false,
+        returnItems: version.returnItems || [],
+        updatedAt: toDisplayDate(version.updatedAt || version.localUpdatedAt)
+    }, null, 2);
+}
+
+function renderConflictReview(conflict) {
+    if (!conflict) {
+        return '';
+    }
+
+    return `
+        <section id="invoice-conflict-review" class="card" style="margin: 16px auto; width: min(1100px, calc(100% - 32px)); border-color: #fecaca; background: #fff7f7;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px;">
+                <div>
+                    <h2 style="font-size: 16px; font-weight: 900; color: #991b1b; margin: 0;">Sync Conflict</h2>
+                    <p style="font-size: 13px; color: #7f1d1d; margin: 4px 0 0;">This invoice changed on another device before the offline edit synced. Choose which version should win.</p>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                    <button class="btn btn-secondary btn-sm conflict-action" data-resolution="server">Choose Server</button>
+                    <button class="btn btn-primary btn-sm conflict-action" data-resolution="local">Choose Local</button>
+                    <button class="btn btn-secondary btn-sm conflict-action" data-resolution="manual">Manual Merge</button>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+                <label style="display: grid; gap: 6px;">
+                    <span style="font-size: 12px; font-weight: 900; color: #991b1b;">Server Version</span>
+                    <pre style="white-space: pre-wrap; background: white; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; font-size: 11px; max-height: 220px; overflow: auto;">${escapeHtml(summarizeConflictVersion(conflict.serverVersion))}</pre>
+                </label>
+                <label style="display: grid; gap: 6px;">
+                    <span style="font-size: 12px; font-weight: 900; color: #991b1b;">Local Offline Version</span>
+                    <pre style="white-space: pre-wrap; background: white; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; font-size: 11px; max-height: 220px; overflow: auto;">${escapeHtml(summarizeConflictVersion(conflict.localVersion))}</pre>
+                </label>
+            </div>
+        </section>
+    `;
+}
+
 export const renderInvoices = async () => {
     layoutView.render();
     layoutView.updateTitle(t('invoice_title'));
@@ -97,7 +142,7 @@ export const renderInvoices = async () => {
     container.innerHTML = LoadingSkeleton();
 
     // Load Data
-    const [allInvoices, allOrders, invoiceSettings] = await Promise.all([
+    let [allInvoices, allOrders, invoiceSettings] = await Promise.all([
         invoiceController.loadAllInvoices(),
         import("../services/orderService.js")
             .then(m => m.orderService.getAllOrders())
@@ -118,11 +163,12 @@ export const renderInvoices = async () => {
         inv.isPrinted = (orderMap[inv.orderId] && orderMap[inv.orderId].isPrinted) || false;
     });
 
-    const customers = [...new Set(allInvoices.map(i => i.customerName).filter(Boolean))].sort();
+    let customers = [...new Set(allInvoices.map(i => i.customerName).filter(Boolean))].sort();
 
     let filtered = [...allInvoices];
     let sort = { key: 'createdAt', order: 'desc' };
     let filters = { customer: 'all', period: 'all' };
+    let historyLimit = 50;
 
     const applyInvoicesFilters = () => {
         filtered = allInvoices.filter(inv => {
@@ -195,6 +241,7 @@ export const renderInvoices = async () => {
                 ` },
                 { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate((val && val.toDate) ? val.toDate() : val)}</span>` },
                 { key: 'totalAmount', label: 'Amount', render: (val) => `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>` },
+                { key: 'syncState', label: 'Sync', align: 'center', render: (val, row) => renderInvoiceSyncPill(row) },
             ],
             data: filtered,
             sortKey: sort.key,
@@ -231,15 +278,20 @@ export const renderInvoices = async () => {
                             <button class="period-btn btn btn-sm ${filters.period === 'all' ? 'btn-primary' : 'btn-ghost'}" data-period="all" style="font-size: 11px; padding: 4px 10px;">${t('invoice_all_time')}</button>
                         </div>
                     </div>
-                    ${googleSheetUrl ? `
-                        <a href="${googleSheetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="white-space: nowrap; text-decoration: none;">
-                            Open Google Sheet
-                        </a>
-                    ` : ''}
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                        <button id="load-more-invoice-history" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+                            Load More History
+                        </button>
+                        ${googleSheetUrl ? `
+                            <a href="${googleSheetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="white-space: nowrap; text-decoration: none;">
+                                Open Google Sheet
+                            </a>
+                        ` : ''}
+                    </div>
                 </div>
 
                 ${createCard({
-            title: t('invoice_title'),
+            title: t('invoice_title') + ' · working set',
             content: table.render()
         })}
             </div>
@@ -285,6 +337,20 @@ export const renderInvoices = async () => {
                 applyInvoicesFilters();
             });
         });
+
+        const loadMoreHistoryButton = document.getElementById('load-more-invoice-history');
+        if (loadMoreHistoryButton) {
+            loadMoreHistoryButton.addEventListener('click', async function() {
+                loadMoreHistoryButton.disabled = true;
+                loadMoreHistoryButton.textContent = 'Loading...';
+                historyLimit += 50;
+                allInvoices = await invoiceController.loadInvoiceHistoryPage(historyLimit);
+                customers = [...new Set(allInvoices.map(function(invoiceRow) {
+                    return invoiceRow.customerName;
+                }).filter(Boolean))].sort();
+                applyInvoicesFilters();
+            });
+        }
     };
 
     // Initial Render
@@ -349,6 +415,15 @@ export const renderInvoiceDetail = async ({ id }) => {
         container.innerHTML = `<div class="p-8 text-center">Invoice not found</div>`;
         return;
     }
+
+    const openConflict = await import("../services/conflictService.js")
+        .then(function(module) {
+            return module.conflictService.getOpenConflictByEntityId(invoice.id);
+        })
+        .catch(function(error) {
+            console.warn("Could not load invoice conflict state.", error);
+            return null;
+        });
 
     const qrActivities = await qrActivityService.getByInvoiceId(invoice.id).catch(error => {
         console.warn("Could not load QR activity for invoice.", error);
@@ -678,7 +753,8 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices stacked on Portrait A4">📄 2-up Portrait</button>
                 </div>
             </div>
-            
+            ${renderConflictReview(openConflict)}
+
             <div id="invoice-doc-container" class="animate-fade-in ${is2UpMode ? 'printing-2up-portrait' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
                 <div class="print-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
                     ${finalHtml}
@@ -868,6 +944,30 @@ export const renderInvoiceDetail = async ({ id }) => {
         `;
 
         try {
+            document.querySelectorAll('.conflict-action').forEach(function(button) {
+                button.addEventListener('click', async function() {
+                    const resolution = button.dataset.resolution;
+                    let manualVersion = null;
+
+                    if (resolution === 'manual') {
+                        const edited = prompt('Edit the local invoice JSON before syncing:', JSON.stringify(openConflict.localVersion || {}, null, 2));
+                        if (!edited) {
+                            return;
+                        }
+                        try {
+                            manualVersion = JSON.parse(edited);
+                        } catch (error) {
+                            alert('Manual merge JSON is invalid.');
+                            return;
+                        }
+                    }
+
+                    const module = await import("../services/syncService.js");
+                    await module.syncService.resolveConflict(openConflict.id, resolution, manualVersion);
+                    renderInvoiceDetail({ id });
+                });
+            });
+
             // Event Listeners
             document.getElementById('lang-en').addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
             document.getElementById('lang-ru').addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });

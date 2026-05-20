@@ -2,6 +2,9 @@ import { authService } from "./core/authService.js";
 import { router } from "./router.js";
 import { ROUTES } from "./core/constants.js";
 import { notificationService } from "./core/notificationService.js";
+import { offlinePersistenceState } from "./core/firebase.js";
+import { offlineStatusService } from "./services/offlineStatusService.js";
+import { syncService } from "./services/syncService.js";
 
 // View Imports (Dynamic or Static)
 import { renderLogin } from "./views/loginView.js";
@@ -20,6 +23,23 @@ async function initApp() {
     try {
         // Initialize Auth
         await authService.init();
+        offlineStatusService.init();
+
+        if (offlinePersistenceState.warning) {
+            notificationService.info(offlinePersistenceState.warning);
+        }
+
+        window.addEventListener('kyrgyz-organics-online', function() {
+            syncService.processQueue().catch(function(error) {
+                console.warn('Automatic sync failed.', error);
+            });
+        });
+
+        if (offlineStatusService.isOnline()) {
+            syncService.processQueue().catch(function(error) {
+                console.warn('Initial sync failed.', error);
+            });
+        }
 
         // Register Routes
         router.addRoute(ROUTES.LOGIN, renderLogin);
@@ -59,7 +79,7 @@ async function initApp() {
                 productService.getAllCategories().catch(ignorePreloadError('categories'));
                 customerController.loadAllCustomers().catch(ignorePreloadError('customers'));
                 orderService.getAllOrders().catch(ignorePreloadError('orders'));
-                invoiceService.getAllInvoices().catch(ignorePreloadError('invoices'));
+                invoiceService.getWorkingInvoices().catch(ignorePreloadError('invoices'));
             } catch (e) {
                 console.warn("Failed to preload offline data:", e);
             }
@@ -136,11 +156,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js')
-                .then(registration => {
+                .then(function(registration) {
                     console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    registration.update();
+                    registration.update().catch(function(err) {
+                        console.warn('ServiceWorker update skipped:', err);
+                    });
                 })
-                .catch(err => {
+                .catch(function(err) {
                     console.log('ServiceWorker registration failed: ', err);
                 });
         });

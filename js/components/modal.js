@@ -1,4 +1,5 @@
 import { t } from "../core/i18n.js";
+import { notificationService } from "../core/notificationService.js";
 
 export class Modal {
     constructor({
@@ -112,11 +113,16 @@ export class Modal {
 
         backdrop.querySelector('.confirm-btn')
             ?.addEventListener('click', async () => {
+                try {
                     if (this.onConfirm) {
                         const result = await this.onConfirm();
                         if (result === false) return; // keep modal open
                     }
                     this.close();
+                } catch (error) {
+                    console.error("Modal confirm action failed:", error);
+                    notificationService.error(t('msg_update_fail') || 'Action failed.');
+                }
                 });
 
         if (this.closeOnBackdrop) {

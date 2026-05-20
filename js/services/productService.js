@@ -37,7 +37,7 @@ export const productService = {
                     displayName: name,
                     price: data.price || 0 // Assuming there is a price field, otherwise default to 0
                 };
-            });
+            }).filter(product => product.archived !== true && product.active !== false);
         } catch (error) {
             console.error("Error fetching products:", error);
             // Fallback for UI if permission denied or other error
@@ -61,7 +61,7 @@ export const productService = {
                     ...data,
                     name: data.name || data.name_en || 'Unknown Category'
                 };
-            });
+            }).filter(category => category.archived !== true && category.active !== false);
         } catch (error) {
             console.error("Error fetching categories:", error);
             return [];
