@@ -2,9 +2,11 @@ import { authService } from "./core/authService.js";
 import { router } from "./router.js";
 import { ROUTES } from "./core/constants.js";
 import { notificationService } from "./core/notificationService.js";
-import { offlinePersistenceState } from "./core/firebase.js";
+import * as firebaseCore from "./core/firebase.js";
 import { offlineStatusService } from "./services/offlineStatusService.js";
 import { syncService } from "./services/syncService.js";
+
+const offlinePersistenceState = firebaseCore.offlinePersistenceState || { warning: '' };
 
 // View Imports (Dynamic or Static)
 import { renderLogin } from "./views/loginView.js";

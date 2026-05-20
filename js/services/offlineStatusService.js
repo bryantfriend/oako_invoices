@@ -1,7 +1,8 @@
-import { offlinePersistenceState } from "../core/firebase.js";
+import * as firebaseCore from "../core/firebase.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 
 const subscribers = [];
+const offlinePersistenceState = firebaseCore.offlinePersistenceState || { warning: '' };
 
 const state = {
     online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
