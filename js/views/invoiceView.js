@@ -15,6 +15,7 @@ import { qrActivityService } from "../services/qrActivityService.js";
 import { qrService } from "../services/qrService.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
+import { offlineStatusService } from "../services/offlineStatusService.js";
 
 function escapeAttribute(value = '') {
     return escapeHtml(value).replace(/"/g, '&quot;');
@@ -441,10 +442,12 @@ export const renderInvoiceDetail = async ({ id }) => {
             .then(m => m.returnsService.syncInvoiceReturnToOrder(invoice))
             .catch(error => console.warn('Return mirror sync skipped while loading invoice.', error));
     }
-    invoice = await qrService.ensureInvoiceToken(invoice).catch(error => {
-        console.warn("Could not publish invoice QR snapshot while rendering print view.", error);
-        return invoice;
-    });
+    if (offlineStatusService.isOnline()) {
+        invoice = await qrService.ensureInvoiceToken(invoice).catch(error => {
+            console.warn("Could not publish invoice QR snapshot while rendering print view.", error);
+            return invoice;
+        });
+    }
 
     const productMap = {};
     allProducts.forEach(p => {

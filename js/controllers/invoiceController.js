@@ -30,9 +30,9 @@ export const invoiceController = {
         }
     },
 
-    async generateForOrder(orderId) {
+    async generateForOrder(orderId, orderSnapshot) {
         try {
-            const invoiceId = await invoiceService.createInvoice(orderId);
+            const invoiceId = await invoiceService.createInvoice(orderId, {}, orderSnapshot);
             return invoiceId;
         } catch (error) {
             notificationService.error(t('msg_save_fail'));

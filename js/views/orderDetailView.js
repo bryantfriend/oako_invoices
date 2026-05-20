@@ -208,7 +208,7 @@ export const renderOrderDetail = async ({ id }) => {
 
             if (action === 'invoice') {
                 const { invoiceService } = await import("../services/invoiceService.js");
-                const invoiceId = await invoiceService.createInvoice(id);
+                const invoiceId = await invoiceService.createInvoice(id, {}, order);
                 router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
                 return;
             }
@@ -292,7 +292,7 @@ export const renderOrderDetail = async ({ id }) => {
 
                     if (newStatus === ORDER_STATUS.CONFIRMED) {
                         const { invoiceService } = await import("../services/invoiceService.js");
-                        const invoiceId = await invoiceService.createInvoice(id, adjustments);
+                        const invoiceId = await invoiceService.createInvoice(id, adjustments, order);
                         router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
                     } else {
                         renderOrderDetail({ id });

@@ -132,7 +132,8 @@ export const renderCustomerDetail = async ({ id }) => {
     window.printOrder = async (id) => {
         try {
             const { invoiceController } = await import("../controllers/invoiceController.js");
-            const invoiceId = await invoiceController.generateForOrder(id);
+            const orderSnapshot = orders.find(order => order.id === id) || null;
+            const invoiceId = await invoiceController.generateForOrder(id, orderSnapshot);
             if (invoiceId) {
                 router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
             }
