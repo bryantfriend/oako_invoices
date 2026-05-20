@@ -1,11 +1,11 @@
-const CACHE_NAME = 'kyrgyz-organics-v1.082';
+const CACHE_NAME = 'kyrgyz-organics-v1.083';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js?v=1.082',
+    './js/main.js?v=1.083',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',
