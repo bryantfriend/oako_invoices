@@ -363,8 +363,8 @@ export const renderInvoices = async () => {
                     <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.viewInvoice('${row.id}')">
                         ${t('btn_view') || 'View'}
                     </button>
-                    <button class="btn btn-destructive btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteInvoice('${row.id}')">
-                        🗑️
+                    <button class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 10px;" onclick="event.stopPropagation(); window.archiveInvoice('${row.id}')">
+                        Archive
                     </button>
                 </div>
             `
@@ -502,15 +502,16 @@ export const renderInvoices = async () => {
         }
     };
 
-    window.deleteInvoice = (id) => {
-        import("../components/modal.js").then(({ Modal }) => {
-            Modal.confirm(
+    window.archiveInvoice = function(id) {
+        import("../components/modal.js").then(function(module) {
+            module.Modal.confirm(
                 'Archive Invoice?',
-                'This will hide the invoice from active lists. Admins can restore it from Archived Invoices.',
-                async () => {
-                    const { invoiceService } = await import("../services/invoiceService.js");
-                    await invoiceService.deleteInvoice(id);
-                    renderInvoices(); // Refresh
+                'Archive this invoice? It will move to Archived Invoices and can be restored later.',
+                async function() {
+                    const archived = await invoiceController.archiveInvoice(id);
+                    if (archived) {
+                        renderInvoices();
+                    }
                 }
             );
         });

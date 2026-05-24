@@ -2,6 +2,26 @@ import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
 
+function getIntentErrorMessage(result, fallbackMessage) {
+    if (!result) {
+        return fallbackMessage;
+    }
+
+    if (result.reason) {
+        return result.reason;
+    }
+
+    if (result.message) {
+        return result.message;
+    }
+
+    if (result.errors && result.errors.length > 0) {
+        return result.errors[0];
+    }
+
+    return fallbackMessage;
+}
+
 export const invoiceController = {
     async loadInvoice(id) {
         try {
@@ -36,6 +56,20 @@ export const invoiceController = {
         } catch (error) {
             notificationService.error('Failed to load archived invoices.');
             return [];
+        }
+    },
+
+    async archiveInvoice(invoiceId) {
+        try {
+            const result = await invoiceService.archiveInvoice(invoiceId);
+            if (!result || !result.ok) {
+                throw new Error(getIntentErrorMessage(result, 'Failed to archive invoice.'));
+            }
+            notificationService.success('Invoice archived.');
+            return true;
+        } catch (error) {
+            notificationService.error(error.message || 'Failed to archive invoice.');
+            return false;
         }
     },
 

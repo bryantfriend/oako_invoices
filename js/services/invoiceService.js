@@ -21,6 +21,8 @@ import { offlineStatusService } from "./offlineStatusService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { deviceIdService } from "./deviceIdService.js";
 import { conflictService } from "./conflictService.js";
+import icfPipeline from "../ICF/engine/pipeline.js";
+import archiveInvoiceIntentModule from "../ICF/Intents/ArchiveInvoiceIntent.js";
 
 const COLLECTION = 'invoices';
 const WORKING_INVOICE_LIMIT = 120;
@@ -32,6 +34,21 @@ function getActorId(user) {
         return '';
     }
     return user.email || user.uid || '';
+}
+
+function getCurrentAdminActor() {
+    const user = auth.currentUser;
+    if (!user) {
+        return {
+            id: 'anonymous',
+            role: 'anonymous'
+        };
+    }
+
+    return {
+        id: getActorId(user) || 'anonymous',
+        role: 'admin'
+    };
 }
 
 function isActiveInvoice(invoice) {
@@ -194,6 +211,43 @@ async function emitRestoreArchivedInvoiceIntent(context) {
     };
 }
 
+async function runInvoiceIntentPipeline(intentDefinition, intent) {
+    const stageOrder = ['Validate', 'Normalize', 'AddContext', 'Authorize', 'Process', 'Emit'];
+    let currentIntent = Object.assign({
+        type: intentDefinition.type,
+        payload: {},
+        context: {},
+        meta: {
+            createdAt: Date.now(),
+            source: 'ui'
+        }
+    }, intent || {});
+
+    for (let index = 0; index < stageOrder.length; index += 1) {
+        const stageName = stageOrder[index];
+        const stageFunction = intentDefinition.stages[stageName];
+        if (typeof stageFunction !== 'function') {
+            return {
+                ok: false,
+                stage: stageName,
+                reason: 'Intent stage is not registered.'
+            };
+        }
+
+        try {
+            currentIntent = await stageFunction(currentIntent);
+        } catch (error) {
+            return {
+                ok: false,
+                stage: stageName,
+                reason: error.message || 'Intent stage failed.'
+            };
+        }
+    }
+
+    return currentIntent;
+}
+
 export const RestoreArchivedInvoiceIntent = {
     type: 'RestoreArchivedInvoiceIntent',
     stages: {
@@ -206,40 +260,7 @@ export const RestoreArchivedInvoiceIntent = {
     },
 
     async run(intent) {
-        const stageOrder = ['Validate', 'Normalize', 'AddContext', 'Authorize', 'Process', 'Emit'];
-        let currentIntent = Object.assign({
-            type: this.type,
-            payload: {},
-            context: {},
-            meta: {
-                createdAt: Date.now(),
-                source: 'ui'
-            }
-        }, intent || {});
-
-        for (let index = 0; index < stageOrder.length; index += 1) {
-            const stageName = stageOrder[index];
-            const stageFunction = this.stages[stageName];
-            if (typeof stageFunction !== 'function') {
-                return {
-                    ok: false,
-                    stage: stageName,
-                    reason: 'Intent stage is not registered.'
-                };
-            }
-
-            try {
-                currentIntent = await stageFunction(currentIntent);
-            } catch (error) {
-                return {
-                    ok: false,
-                    stage: stageName,
-                    reason: error.message || 'Intent stage failed.'
-                };
-            }
-        }
-
-        return currentIntent;
+        return runInvoiceIntentPipeline(this, intent);
     }
 };
 
@@ -503,33 +524,22 @@ export const invoiceService = {
         return this.getWorkingInvoices();
     },
 
-    async deleteInvoice(id) {
-        try {
-            const docRef = doc(db, COLLECTION, id);
-            const snap = await getDoc(docRef);
-            if (!snap.exists()) {
-                throw new Error("Invoice not found");
+    async archiveInvoice(invoiceId) {
+        const intent = archiveInvoiceIntentModule.createArchiveInvoiceIntent(
+            getCurrentAdminActor(),
+            {
+                invoiceId: invoiceId
+            },
+            {
+                source: 'ui'
             }
+        );
 
-            const invoice = Object.assign({ id: snap.id }, snap.data());
-            const user = auth.currentUser;
-            const deviceId = await deviceIdService.getDeviceId();
-            await updateDoc(docRef, {
-                previousStatus: invoice.status || 'open',
-                status: 'archived',
-                archivedAt: serverTimestamp(),
-                archivedBy: getActorId(user),
-                updatedAt: serverTimestamp(),
-                updatedBy: user ? user.uid : '',
-                deviceId: deviceId,
-                localUpdatedAt: new Date().toISOString(),
-                syncState: 'synced'
-            });
-            return true;
-        } catch (error) {
-            console.error("Error archiving invoice:", error);
-            throw error;
-        }
+        return icfPipeline.run(intent);
+    },
+
+    async deleteInvoice(id) {
+        return this.archiveInvoice(id);
     },
 
     async restoreArchivedInvoice(invoiceId) {
