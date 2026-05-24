@@ -170,8 +170,25 @@ export const renderInvoices = async () => {
     let sort = { key: 'createdAt', order: 'desc' };
     let filters = { customer: 'all', period: 'all' };
     let historyLimit = 50;
+    let activeInvoiceTab = 'active';
+    let archivedInvoices = [];
+    let archivedLoaded = false;
+
+    function renderInvoiceTabs() {
+        return `
+            <div style="display: flex; gap: 4px; background: var(--color-gray-50); padding: 4px; border-radius: 8px;">
+                <button id="active-invoices-tab" class="invoice-tab-btn btn btn-sm ${activeInvoiceTab === 'active' ? 'btn-primary' : 'btn-ghost'}" data-tab="active" style="font-size: 11px; padding: 4px 10px;">Active Invoices</button>
+                <button id="archived-invoices-tab" class="invoice-tab-btn btn btn-sm ${activeInvoiceTab === 'archived' ? 'btn-primary' : 'btn-ghost'}" data-tab="archived" style="font-size: 11px; padding: 4px 10px;">Archived Invoices</button>
+            </div>
+        `;
+    }
 
     const applyInvoicesFilters = () => {
+        if (activeInvoiceTab === 'archived') {
+            renderArchivedTable();
+            return;
+        }
+
         filtered = allInvoices.filter(inv => {
             const matchesCustomer = filters.customer === 'all' || inv.customerName === filters.customer;
 
@@ -225,6 +242,99 @@ export const renderInvoices = async () => {
         applyInvoicesFilters();
     };
 
+    async function loadArchivedInvoices(forceRefresh) {
+        if (!forceRefresh && archivedLoaded) {
+            return archivedInvoices;
+        }
+        archivedInvoices = await invoiceController.loadArchivedInvoices();
+        archivedLoaded = true;
+        return archivedInvoices;
+    }
+
+    function attachInvoiceTabListeners() {
+        document.querySelectorAll('.invoice-tab-btn').forEach(function(button) {
+            button.addEventListener('click', async function() {
+                activeInvoiceTab = button.dataset.tab || 'active';
+                if (activeInvoiceTab === 'archived') {
+                    container.innerHTML = LoadingSkeleton();
+                    await loadArchivedInvoices(false);
+                    renderArchivedTable();
+                    return;
+                }
+                applyInvoicesFilters();
+            });
+        });
+    }
+
+    function attachArchivedRowListeners() {
+        container.querySelectorAll('.data-row').forEach(function(row) {
+            row.addEventListener('click', function() {
+                const id = row.dataset.id;
+                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));
+            });
+        });
+    }
+
+    function renderArchivedTable() {
+        const archivedTable = new DataTable({
+            columns: [
+                { key: 'invoiceNumber', label: t('table_invoice_num'), sortable: false, render: function(val) { return `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${escapeHtml(val || '-')}</span>`; } },
+                { key: 'customerName', label: 'Customer', sortable: false, render: function(val) { return `<span style="font-weight: 700;">${escapeHtml(val || '-')}</span>`; } },
+                { key: 'totalAmount', label: 'Amount', sortable: false, render: function(val) { return `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>`; } },
+                { key: 'archivedAt', label: 'Archived At', sortable: false, render: function(val) { return `<span style="color: #5a7052;">${escapeHtml(toDisplayDate(val))}</span>`; } },
+                { key: 'archivedBy', label: 'Archived By', sortable: false, render: function(val) { return `<span>${escapeHtml(val || '-')}</span>`; } }
+            ],
+            data: archivedInvoices,
+            sortKey: 'archivedAt',
+            sortOrder: 'desc',
+            onRowClick: true,
+            sortHandlerName: 'handleArchivedInvoiceSort',
+            actions: function(row) {
+                return `
+                    <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.viewInvoice('${row.id}')">
+                            ${t('btn_view') || 'View'}
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); window.restoreArchivedInvoice('${row.id}')">
+                            Restore
+                        </button>
+                    </div>
+                `;
+            }
+        });
+
+        container.innerHTML = `
+            <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-4);">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap;">
+                        ${renderInvoiceTabs()}
+                    </div>
+                    <button id="refresh-archived-invoices" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
+                        Refresh
+                    </button>
+                </div>
+
+                ${createCard({
+                    title: 'Archived Invoices',
+                    content: archivedTable.render()
+                })}
+            </div>
+        `;
+
+        attachInvoiceTabListeners();
+        attachArchivedRowListeners();
+
+        const refreshArchivedButton = document.getElementById('refresh-archived-invoices');
+        if (refreshArchivedButton) {
+            refreshArchivedButton.addEventListener('click', async function() {
+                refreshArchivedButton.disabled = true;
+                refreshArchivedButton.textContent = 'Loading...';
+                await loadArchivedInvoices(true);
+                renderArchivedTable();
+            });
+        }
+    }
+
     const renderTable = () => {
         const table = new DataTable({
             columns: [
@@ -262,8 +372,10 @@ export const renderInvoices = async () => {
 
         container.innerHTML = `
             <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-4);">
-                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); gap: 12px;">
-                    <div style="display: flex; gap: var(--space-4); align-items: center;">
+                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); gap: 12px; flex-wrap: wrap;">
+                    <div style="display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap;">
+                        ${renderInvoiceTabs()}
+                        <div style="height: 20px; width: 1px; background: var(--color-gray-200);"></div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <label style="font-size: 12px; font-weight: 600; color: var(--color-gray-500);">Customer:</label>
                             <select id="filter-customer" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-gray-200); font-size: 13px;">
@@ -297,6 +409,8 @@ export const renderInvoices = async () => {
         })}
             </div>
         `;
+
+        attachInvoiceTabListeners();
 
         // Row Click Listeners
         container.querySelectorAll('.data-row').forEach(row => {
@@ -360,6 +474,26 @@ export const renderInvoices = async () => {
     // Global Action Helper
     window.viewInvoice = (id) => router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));
 
+    window.restoreArchivedInvoice = function(id) {
+        import("../components/modal.js").then(function(module) {
+            module.Modal.confirm(
+                'Restore Invoice?',
+                'Restore this invoice? This will move it back to its previous status.',
+                async function() {
+                    const restored = await invoiceController.restoreArchivedInvoice(id);
+                    if (restored) {
+                        allInvoices = await invoiceController.loadAllInvoices();
+                        customers = [...new Set(allInvoices.map(function(invoiceRow) {
+                            return invoiceRow.customerName;
+                        }).filter(Boolean))].sort();
+                        await loadArchivedInvoices(true);
+                        renderArchivedTable();
+                    }
+                }
+            );
+        });
+    };
+
     window.toggleInvoicePrinted = async (orderId, isPrintedState) => {
         const { orderService } = await import("../services/orderService.js");
         if (orderId) {
@@ -371,8 +505,8 @@ export const renderInvoices = async () => {
     window.deleteInvoice = (id) => {
         import("../components/modal.js").then(({ Modal }) => {
             Modal.confirm(
-                'Delete Invoice?',
-                'This will permanently remove the invoice record. The associated order will remain. This action cannot be undone.',
+                'Archive Invoice?',
+                'This will hide the invoice from active lists. Admins can restore it from Archived Invoices.',
                 async () => {
                     const { invoiceService } = await import("../services/invoiceService.js");
                     await invoiceService.deleteInvoice(id);

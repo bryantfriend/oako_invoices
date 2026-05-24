@@ -30,6 +30,15 @@ export const invoiceController = {
         }
     },
 
+    async loadArchivedInvoices() {
+        try {
+            return await invoiceService.getArchivedInvoices();
+        } catch (error) {
+            notificationService.error('Failed to load archived invoices.');
+            return [];
+        }
+    },
+
     async generateForOrder(orderId, orderSnapshot) {
         try {
             const invoiceId = await invoiceService.createInvoice(orderId, {}, orderSnapshot);
@@ -47,6 +56,20 @@ export const invoiceController = {
             return true;
         } catch (error) {
             notificationService.error(t('msg_update_fail'));
+            return false;
+        }
+    },
+
+    async restoreArchivedInvoice(invoiceId) {
+        try {
+            const result = await invoiceService.restoreArchivedInvoice(invoiceId);
+            if (!result || !result.ok) {
+                throw new Error((result && (result.reason || result.message)) || 'Failed to restore invoice.');
+            }
+            notificationService.success('Invoice restored.');
+            return true;
+        } catch (error) {
+            notificationService.error(error.message || 'Failed to restore invoice.');
             return false;
         }
     }

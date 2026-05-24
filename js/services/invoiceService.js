@@ -10,7 +10,6 @@ import {
     orderBy,
     limit,
     serverTimestamp,
-    deleteDoc,
     updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { orderService } from "./orderService.js";
@@ -26,6 +25,22 @@ import { conflictService } from "./conflictService.js";
 const COLLECTION = 'invoices';
 const WORKING_INVOICE_LIMIT = 120;
 const RECENT_HISTORY_LIMIT = 60;
+const ARCHIVED_INVOICE_LIMIT = 200;
+
+function getActorId(user) {
+    if (!user) {
+        return '';
+    }
+    return user.email || user.uid || '';
+}
+
+function isActiveInvoice(invoice) {
+    return invoice && invoice.status !== 'archived';
+}
+
+function isArchivedInvoice(invoice) {
+    return invoice && invoice.status === 'archived';
+}
 
 function getMillis(value) {
     if (!value) {
@@ -98,6 +113,135 @@ async function applyLocalInvoiceOverlays(invoices) {
         return byId[id];
     }).sort(sortInvoicesByNewest);
 }
+
+async function validateRestoreArchivedInvoiceIntent(intent) {
+    if (!intent || typeof intent.invoiceId !== 'string' || !intent.invoiceId.trim()) {
+        throw new Error('Invoice ID is required.');
+    }
+    return intent;
+}
+
+async function normalizeRestoreArchivedInvoiceIntent(intent) {
+    return Object.assign({}, intent, {
+        invoiceId: intent.invoiceId.trim()
+    });
+}
+
+async function addRestoreArchivedInvoiceContext(intent) {
+    const user = auth.currentUser;
+    const invoice = await invoiceService.getInvoice(intent.invoiceId);
+    const settings = await settingsService.getInvoiceSettings().catch(function() {
+        return {};
+    });
+
+    return Object.assign({}, intent, {
+        invoice: invoice,
+        currentUser: user,
+        actor: {
+            id: getActorId(user),
+            role: user ? 'admin' : 'anonymous'
+        },
+        settings: settings
+    });
+}
+
+async function authorizeRestoreArchivedInvoiceIntent(context) {
+    const user = context.currentUser;
+    if (!user) {
+        throw new Error('Only admins can restore archived invoices.');
+    }
+
+    const invoice = context.invoice;
+    const settings = context.settings || {};
+    const scopeId = settings.storeId || settings.companyId || '';
+    const invoiceScopeId = invoice ? (invoice.storeId || invoice.companyId || '') : '';
+    if (scopeId && invoiceScopeId && scopeId !== invoiceScopeId) {
+        throw new Error('You do not have access to restore this invoice.');
+    }
+
+    return context;
+}
+
+async function processRestoreArchivedInvoiceIntent(context) {
+    const invoice = context.invoice;
+    if (!invoice) {
+        throw new Error('Invoice not found.');
+    }
+    if (invoice.status !== 'archived') {
+        throw new Error('Only archived invoices can be restored.');
+    }
+
+    const restoreStatus = invoice.previousStatus || 'open';
+    await invoiceService.updateInvoice(context.invoiceId, {
+        status: restoreStatus,
+        restoredAt: serverTimestamp(),
+        restoredBy: getActorId(context.currentUser)
+    }, 'restoreArchivedInvoice');
+
+    return Object.assign({}, context, {
+        restoredStatus: restoreStatus
+    });
+}
+
+async function emitRestoreArchivedInvoiceIntent(context) {
+    return {
+        ok: true,
+        message: 'Invoice restored successfully.',
+        data: {
+            invoiceId: context.invoiceId,
+            status: context.restoredStatus || 'open'
+        }
+    };
+}
+
+export const RestoreArchivedInvoiceIntent = {
+    type: 'RestoreArchivedInvoiceIntent',
+    stages: {
+        Validate: validateRestoreArchivedInvoiceIntent,
+        Normalize: normalizeRestoreArchivedInvoiceIntent,
+        AddContext: addRestoreArchivedInvoiceContext,
+        Authorize: authorizeRestoreArchivedInvoiceIntent,
+        Process: processRestoreArchivedInvoiceIntent,
+        Emit: emitRestoreArchivedInvoiceIntent
+    },
+
+    async run(intent) {
+        const stageOrder = ['Validate', 'Normalize', 'AddContext', 'Authorize', 'Process', 'Emit'];
+        let currentIntent = Object.assign({
+            type: this.type,
+            payload: {},
+            context: {},
+            meta: {
+                createdAt: Date.now(),
+                source: 'ui'
+            }
+        }, intent || {});
+
+        for (let index = 0; index < stageOrder.length; index += 1) {
+            const stageName = stageOrder[index];
+            const stageFunction = this.stages[stageName];
+            if (typeof stageFunction !== 'function') {
+                return {
+                    ok: false,
+                    stage: stageName,
+                    reason: 'Intent stage is not registered.'
+                };
+            }
+
+            try {
+                currentIntent = await stageFunction(currentIntent);
+            } catch (error) {
+                return {
+                    ok: false,
+                    stage: stageName,
+                    reason: error.message || 'Intent stage failed.'
+                };
+            }
+        }
+
+        return currentIntent;
+    }
+};
 
 function buildInvoicePayload(order, settings, customer, orderId, adjustments, invoiceNumber, secureToken, metadata) {
     const subtotal = order.totalAmount || 0;
@@ -320,12 +464,14 @@ export const invoiceService = {
 
         const byId = {};
         for (let index = 0; index < groups.length; index += 1) {
-            mergeById(byId, groups[index]);
+            mergeById(byId, groups[index].filter(isActiveInvoice));
         }
 
         return applyLocalInvoiceOverlays(Object.keys(byId).map(function(id) {
             return byId[id];
-        }));
+        })).then(function(invoices) {
+            return invoices.filter(isActiveInvoice);
+        });
     },
 
     async getInvoiceHistoryPage(pageSize) {
@@ -336,7 +482,21 @@ export const invoiceService = {
             limit(safeLimit)
         );
         const snapshot = await getDocs(historyQuery);
-        return applyLocalInvoiceOverlays(mapSnapshot(snapshot));
+        return applyLocalInvoiceOverlays(mapSnapshot(snapshot).filter(isActiveInvoice)).then(function(invoices) {
+            return invoices.filter(isActiveInvoice);
+        });
+    },
+
+    async getArchivedInvoices() {
+        const archivedQuery = query(
+            collection(db, COLLECTION),
+            where('status', '==', 'archived'),
+            limit(ARCHIVED_INVOICE_LIMIT)
+        );
+        const snapshot = await getDocs(archivedQuery);
+        return mapSnapshot(snapshot).filter(isArchivedInvoice).sort(function(a, b) {
+            return getMillis(b.archivedAt || b.updatedAt || b.createdAt) - getMillis(a.archivedAt || a.updatedAt || a.createdAt);
+        });
     },
 
     async getAllInvoices() {
@@ -346,12 +506,36 @@ export const invoiceService = {
     async deleteInvoice(id) {
         try {
             const docRef = doc(db, COLLECTION, id);
-            await deleteDoc(docRef);
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+                throw new Error("Invoice not found");
+            }
+
+            const invoice = Object.assign({ id: snap.id }, snap.data());
+            const user = auth.currentUser;
+            const deviceId = await deviceIdService.getDeviceId();
+            await updateDoc(docRef, {
+                previousStatus: invoice.status || 'open',
+                status: 'archived',
+                archivedAt: serverTimestamp(),
+                archivedBy: getActorId(user),
+                updatedAt: serverTimestamp(),
+                updatedBy: user ? user.uid : '',
+                deviceId: deviceId,
+                localUpdatedAt: new Date().toISOString(),
+                syncState: 'synced'
+            });
             return true;
         } catch (error) {
-            console.error("Error deleting invoice:", error);
+            console.error("Error archiving invoice:", error);
             throw error;
         }
+    },
+
+    async restoreArchivedInvoice(invoiceId) {
+        return RestoreArchivedInvoiceIntent.run({
+            invoiceId: invoiceId
+        });
     },
 
     async updateInvoiceDate(id, newDate) {
