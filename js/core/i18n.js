@@ -92,6 +92,11 @@ const DICTIONARY = {
         login_err_missing: "Please enter email and password",
         login_success: "Login successful",
         login_fail: "Login failed",
+        password_reset_link: "Forgot password?",
+        password_reset_loading: "Sending...",
+        password_reset_err_missing_email: "Please enter your email address first",
+        password_reset_success: "If an account exists for this email, a password reset link has been sent.",
+        password_reset_fail: "Could not send password reset email",
 
         // Modals / Common
         btn_view: "View",
@@ -235,6 +240,11 @@ const DICTIONARY = {
         login_err_missing: "Пожалуйста, введите email и пароль",
         login_success: "Вход выполнен успешно",
         login_fail: "Ошибка входа",
+        password_reset_link: "Забыли пароль?",
+        password_reset_loading: "Отправка...",
+        password_reset_err_missing_email: "Сначала введите email адрес",
+        password_reset_success: "Если аккаунт с этим email существует, ссылка для сброса пароля отправлена.",
+        password_reset_fail: "Не удалось отправить email для сброса пароля",
 
         // Modals / Common
         btn_view: "Просмотр",
@@ -378,6 +388,11 @@ const DICTIONARY = {
         login_err_missing: "Электрондук почтаны жана сырсөздү киргизиңиз",
         login_success: "Кирүү ийгиликтүү болду",
         login_fail: "Кирүү катасы",
+        password_reset_link: "Сыр сөздү унуттуңузбу?",
+        password_reset_loading: "Жөнөтүлүүдө...",
+        password_reset_err_missing_email: "Адегенде email дарегин киргизиңиз",
+        password_reset_success: "Эгер бул email үчүн аккаунт бар болсо, сыр сөздү жаңылоо шилтемеси жөнөтүлдү.",
+        password_reset_fail: "Сыр сөздү жаңылоо emailин жөнөтүү мүмкүн болгон жок",
 
         // Modals / Common
         btn_view: "Көрүү",

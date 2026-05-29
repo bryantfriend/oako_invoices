@@ -1,6 +1,7 @@
 import { auth } from "./firebase.js";
 import {
     signInWithEmailAndPassword,
+    sendPasswordResetEmail,
     signOut,
     onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -27,6 +28,21 @@ class AuthService {
             return { success: true, user: cred.user };
         } catch (err) {
             console.error("Login failed:", err);
+            return { success: false, error: err.message };
+        }
+    }
+
+    async sendPasswordReset(email) {
+        try {
+            await sendPasswordResetEmail(auth, email);
+            return { success: true };
+        } catch (err) {
+            console.error("Password reset failed:", err);
+
+            if (err.code === 'auth/user-not-found') {
+                return { success: true };
+            }
+
             return { success: false, error: err.message };
         }
     }

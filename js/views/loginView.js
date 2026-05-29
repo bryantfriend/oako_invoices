@@ -43,6 +43,12 @@ export const renderLogin = async () => {
                         <input type="password" id="password" required placeholder="••••••••">
                     </div>
 
+                    <div style="display: flex; justify-content: flex-end; margin: calc(var(--space-2) * -1) 0 var(--space-4);">
+                        <button type="button" id="password-reset-btn" style="background: none; border: none; color: var(--color-primary-600); font-size: var(--text-sm); font-weight: 500; padding: 4px 0;">
+                            ${t('password_reset_link')}
+                        </button>
+                    </div>
+
                     <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 12px;">
                         ${t('login_btn')}
                     </button>
@@ -56,6 +62,12 @@ export const renderLogin = async () => {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
         authController.handleLogin(email, password);
+    });
+
+    document.getElementById('password-reset-btn').addEventListener('click', (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        authController.handlePasswordReset(email);
     });
 
     document.querySelectorAll('.lang-switch-btn').forEach(btn => {
