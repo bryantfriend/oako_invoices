@@ -3,11 +3,30 @@ import { router } from "./router.js";
 import { ROUTES } from "./core/constants.js";
 import { notificationService } from "./core/notificationService.js";
 import { t } from "./core/i18n.js";
+import { APP_CONFIG } from "./config.js";
 import * as firebaseCore from "./core/firebase.js";
 import { offlineStatusService } from "./services/offlineStatusService.js";
 import { syncService } from "./services/syncService.js";
 
 const offlinePersistenceState = firebaseCore.offlinePersistenceState || { warning: '' };
+
+window.clearAppCacheAndReload = async function clearAppCacheAndReload() {
+    if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(function(registration) {
+            return registration.unregister();
+        }));
+    }
+
+    if ("caches" in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(function(cacheName) {
+            return caches.delete(cacheName);
+        }));
+    }
+
+    window.location.reload(true);
+};
 
 // View Imports (Dynamic or Static)
 import { renderLogin } from "./views/loginView.js";
@@ -158,10 +177,19 @@ window.playClickAnimation = (e, type) => {
 
 // Start
 document.addEventListener('DOMContentLoaded', () => {
+    console.info(`Kyrgyz Organics invoice app v${APP_CONFIG.VERSION}`);
     initApp();
 
     // Register Service Worker
     if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(function(registration) {
+            if (registration) {
+                registration.update().catch(function(err) {
+                    console.warn('ServiceWorker startup update skipped:', err);
+                });
+            }
+        });
+
         let refreshedForNewWorker = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
             if (refreshedForNewWorker) return;

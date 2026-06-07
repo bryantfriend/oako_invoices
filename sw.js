@@ -1,11 +1,10 @@
-const CACHE_NAME = 'kyrgyz-organics-v1.089';
+const CACHE_NAME = 'oako-invoices-v1.89';
 const ASSETS_TO_CACHE = [
-    './index.html',
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js?v=1.089',
+    './js/main.js?v=1.89',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',
@@ -68,10 +67,10 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => cache.addAll(ASSETS_TO_CACHE))
-            .then(() => self.skipWaiting())
     );
 });
 
@@ -79,11 +78,14 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
             return Promise.all(
-                cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME) {
-                        return caches.delete(cacheName);
-                    }
-                })
+                cacheNames
+                    .filter((cacheName) => {
+                        return (
+                            cacheName.startsWith('oako-invoices-') ||
+                            cacheName.startsWith('kyrgyz-organics-')
+                        ) && cacheName !== CACHE_NAME;
+                    })
+                    .map((cacheName) => caches.delete(cacheName))
             );
         }).then(() => self.clients.claim())
     );
@@ -103,7 +105,16 @@ self.addEventListener('fetch', (event) => {
 
     if (event.request.mode === 'navigate') {
         event.respondWith(
-            fetch(event.request)
+            fetch(new Request(event.request, { cache: 'no-store' }))
+                .then((response) => {
+                    if (response && response.status === 200 && response.type === 'basic') {
+                        const responseToCache = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put('./index.html', responseToCache);
+                        });
+                    }
+                    return response;
+                })
                 .catch(async () => {
                     const cachedIndex = await caches.match('./index.html');
                     return cachedIndex || new Response('App shell is unavailable offline.', {
