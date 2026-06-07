@@ -5,7 +5,10 @@ import {
 import { deviceIdService } from "../../../../services/deviceIdService.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 import {
+  getItemAdjustedTotal,
   getInvoiceItemName,
+  getItemOriginalTotal,
+  getItemRemainingQuantity,
   normalizeInvoiceItemsForEditing,
   safeNumber
 } from "./invoiceEditHelpers.js";
@@ -36,17 +39,30 @@ async function processRecordInvoiceReturn(intent) {
     createdAt: new Date(),
     createdBy: actorName,
     note: intent.payload.note || "",
+    reason: intent.payload.reason || "",
     items: returnItems.items,
     totalReturnedQuantity: returnItems.totalReturnedQuantity,
     totalReturnedAmount: returnItems.totalReturnedAmount
   };
   var previousSummary = invoice.returnSummary || {};
+  var cumulativeReturnedQuantity = returnItems.updatedInvoiceItems.reduce(function(sum, item) {
+    return sum + safeNumber(item.returnedQuantity, 0);
+  }, 0);
+  var cumulativeReturnedAmount = returnItems.updatedInvoiceItems.reduce(function(sum, item) {
+    if (item.returnedAmount !== undefined) {
+      return sum + safeNumber(item.returnedAmount, 0);
+    }
+    return sum + (safeNumber(item.price, 0) * safeNumber(item.returnedQuantity, 0));
+  }, 0);
+  var originalTotalAmount = safeNumber(previousSummary.originalTotalAmount, safeNumber(invoice.totalAmount, returnItems.originalTotalAmount));
   var updatePayload = {
     items: returnItems.updatedInvoiceItems,
     returns: existingReturns.concat([returnRecord]),
     returnSummary: {
-      totalReturnedQuantity: safeNumber(previousSummary.totalReturnedQuantity, 0) + returnItems.totalReturnedQuantity,
-      totalReturnedAmount: safeNumber(previousSummary.totalReturnedAmount, 0) + returnItems.totalReturnedAmount,
+      totalReturnedQuantity: cumulativeReturnedQuantity,
+      totalReturnedAmount: cumulativeReturnedAmount,
+      originalTotalAmount: originalTotalAmount,
+      adjustedTotalAmount: Math.max(0, originalTotalAmount - cumulativeReturnedAmount),
       lastReturnedAt: serverTimestamp()
     },
     status: "returned",
@@ -112,9 +128,12 @@ function buildReturnItems(invoiceItems, requestedItems) {
     }
 
     var unitPrice = safeNumber(invoiceItem.price, 0);
+    var originalAmount = getItemOriginalTotal(invoiceItem);
     var returnAmount = unitPrice * quantity;
     invoiceItem.returnedQuantity = alreadyReturned + quantity;
     invoiceItem.returnedAmount = safeNumber(invoiceItem.returnedAmount, 0) + returnAmount;
+    invoiceItem.remainingQuantity = getItemRemainingQuantity(invoiceItem);
+    invoiceItem.adjustedTotal = getItemAdjustedTotal(invoiceItem);
 
     recordedItems.push({
       lineItemId: invoiceItem.lineItemId,
@@ -122,7 +141,10 @@ function buildReturnItems(invoiceItems, requestedItems) {
       productName: getInvoiceItemName(invoiceItem),
       originalQuantity: originalQuantity,
       returnedQuantity: quantity,
+      remainingQuantity: invoiceItem.remainingQuantity,
       unitPrice: unitPrice,
+      originalAmount: originalAmount,
+      adjustedAmount: invoiceItem.adjustedTotal,
       returnAmount: returnAmount
     });
     totalReturnedQuantity += quantity;
@@ -133,7 +155,13 @@ function buildReturnItems(invoiceItems, requestedItems) {
     items: recordedItems,
     updatedInvoiceItems: updatedItems,
     totalReturnedQuantity: totalReturnedQuantity,
-    totalReturnedAmount: totalReturnedAmount
+    totalReturnedAmount: totalReturnedAmount,
+    originalTotalAmount: updatedItems.reduce(function(sum, item) {
+      return sum + getItemOriginalTotal(item);
+    }, 0),
+    adjustedTotalAmount: updatedItems.reduce(function(sum, item) {
+      return sum + getItemAdjustedTotal(item);
+    }, 0)
   };
 }
 

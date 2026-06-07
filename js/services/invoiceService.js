@@ -690,7 +690,8 @@ export const invoiceService = {
             {
                 invoiceId: invoiceId,
                 items: returnPayload.items || [],
-                note: returnPayload.note || ''
+                note: returnPayload.note || '',
+                reason: returnPayload.reason || ''
             },
             { source: 'ui' }
         );
@@ -712,6 +713,17 @@ export const invoiceService = {
         const snapshot = await getDocs(recentQuery);
         return mapSnapshot(snapshot).filter(function(invoice) {
             if (Array.isArray(invoice.returns) && invoice.returns.length > 0) {
+                return true;
+            }
+            if (Array.isArray(invoice.courierReturns) && invoice.courierReturns.length > 0) {
+                return true;
+            }
+            if (Array.isArray(invoice.returnItems) && invoice.returnItems.some(function(item) {
+                return Number(item && item.quantity) > 0;
+            })) {
+                return true;
+            }
+            if (invoice.returnRequested || invoice.returnedBy || invoice.returnedAt) {
                 return true;
             }
             return Number(invoice.returnSummary?.totalReturnedQuantity || 0) > 0;

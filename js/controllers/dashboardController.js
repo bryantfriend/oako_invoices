@@ -144,13 +144,14 @@ export const dashboardController = {
 
             return {
                 orders: ordersWithCategory,
+                returnOrders: ordersWithCategory,
                 returnInvoices: returnInvoices,
                 metrics: this.calculateMetrics(ordersWithCategory)
             };
         } catch (error) {
             console.error("Dashboard Load Error:", error);
             notificationService.error(t('msg_load_fail'));
-            return { orders: [], returnInvoices: [], metrics: {} };
+            return { orders: [], returnOrders: [], returnInvoices: [], metrics: {} };
         }
     },
 
@@ -190,8 +191,11 @@ export const dashboardController = {
         };
     },
 
-    loadStats(orders, period, revenueGranularity = 'day', returnInvoices = []) {
-        return statsService.getDashboardStats(orders, period, revenueGranularity, returnInvoices);
+    loadStats(orders, period, revenueGranularity = 'day', returnInvoices = [], returnOrders = orders) {
+        return statsService.getDashboardStats(orders, period, revenueGranularity, {
+            invoices: returnInvoices,
+            orders: returnOrders
+        });
     },
 
     getTopProductsForCategory(orders, categoryId) {

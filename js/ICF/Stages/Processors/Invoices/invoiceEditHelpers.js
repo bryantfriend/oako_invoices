@@ -10,13 +10,65 @@ function getInvoiceItemName(item) {
   return item.displayName || item.name || item.name_en || item.name_ru || item.name_kg || item.productName || "Product";
 }
 
-function makeLineItemId(productId) {
+function makeLineItemId(productId, index) {
+  var safeProductId = String(productId || "item").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24) || "item";
+
+  if (Number.isInteger(index)) {
+    return [
+      "line",
+      safeProductId,
+      String(index)
+    ].join("-");
+  }
+
   return [
     "line",
-    String(productId || "item").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 24) || "item",
+    safeProductId,
     Date.now().toString(36),
     Math.random().toString(36).slice(2, 8)
   ].join("-");
+}
+
+function getItemReturnedQuantity(item) {
+  return Math.max(0, safeNumber(item && item.returnedQuantity, 0));
+}
+
+function getItemRemainingQuantity(item) {
+  var quantity = safeNumber(item && item.quantity, 0);
+  var returnedQuantity = getItemReturnedQuantity(item);
+  return Math.max(0, quantity - returnedQuantity);
+}
+
+function getItemOriginalTotal(item) {
+  var source = item || {};
+  if (source.total !== undefined) {
+    return safeNumber(source.total, 0);
+  }
+  return safeNumber(source.price, 0) * safeNumber(source.quantity, 0);
+}
+
+function getItemAdjustedTotal(item) {
+  var source = item || {};
+  if (source.adjustedTotal !== undefined) {
+    return safeNumber(source.adjustedTotal, 0);
+  }
+  return safeNumber(source.price, 0) * getItemRemainingQuantity(source);
+}
+
+function normalizeInvoiceItemReturnFields(item) {
+  var source = item || {};
+  var returnedQuantity = getItemReturnedQuantity(source);
+  var remainingQuantity = getItemRemainingQuantity(source);
+  var originalTotal = getItemOriginalTotal(source);
+  var adjustedTotal = safeNumber(source.price, 0) * remainingQuantity;
+
+  return Object.assign({}, source, {
+    returnedQuantity: returnedQuantity,
+    remainingQuantity: remainingQuantity,
+    returnedAmount: safeNumber(source.returnedAmount, 0),
+    adjustedTotal: adjustedTotal,
+    total: originalTotal
+  });
 }
 
 function normalizeInvoiceItem(item, index) {
@@ -25,18 +77,18 @@ function normalizeInvoiceItem(item, index) {
   var price = safeNumber(source.price, 0);
   var returnedQuantity = safeNumber(source.returnedQuantity, 0);
   var normalized = Object.assign({}, source, {
-    lineItemId: source.lineItemId || makeLineItemId(source.productId || index),
+    lineItemId: source.lineItemId || makeLineItemId(source.productId || source.id || "item", index),
     productId: source.productId || source.id || "",
     displayName: source.displayName || getInvoiceItemName(source),
     quantity: quantity,
     adjustedQuantity: quantity,
     price: price,
-    total: price * quantity,
+    total: source.total !== undefined ? safeNumber(source.total, 0) : price * quantity,
     returnedQuantity: returnedQuantity,
     returnedAmount: safeNumber(source.returnedAmount, 0)
   });
 
-  return normalized;
+  return normalizeInvoiceItemReturnFields(normalized);
 }
 
 function normalizeInvoiceItemsForEditing(invoice) {
@@ -122,7 +174,12 @@ function validateEditableItems(items) {
 export {
   buildInvoiceItemFromProduct,
   getInvoiceItemName,
+  getItemAdjustedTotal,
+  getItemOriginalTotal,
+  getItemRemainingQuantity,
+  getItemReturnedQuantity,
   makeLineItemId,
+  normalizeInvoiceItemReturnFields,
   normalizeInvoiceItemsForEditing,
   recalculateInvoiceTotals,
   safeNumber,

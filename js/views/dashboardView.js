@@ -32,6 +32,7 @@ export const renderDashboard = async () => {
 
     // Internal State
     let allOrders = [];
+    let returnOrders = [];
     let returnInvoices = [];
     let filteredOrders = [];
     let inventoryCategories = [];
@@ -48,11 +49,12 @@ export const renderDashboard = async () => {
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
-    const [{ orders, returnInvoices: loadedReturnInvoices = [] }, inventoryData] = await Promise.all([
+    const [{ orders, returnOrders: loadedReturnOrders = [], returnInvoices: loadedReturnInvoices = [] }, inventoryData] = await Promise.all([
         dashboardController.loadDashboard(),
         inventoryController.loadInventoryData(today)
     ]);
     allOrders = orders.filter(order => order.archived !== true);
+    returnOrders = loadedReturnOrders;
     returnInvoices = loadedReturnInvoices;
     filteredOrders = [...allOrders];
     inventoryCategories = inventoryData;
@@ -67,12 +69,13 @@ export const renderDashboard = async () => {
 
     const refreshDashboardDataPreservingState = async () => {
         const scrollTop = getScrollPosition();
-        const [{ orders: refreshedOrders, returnInvoices: refreshedReturnInvoices = [] }, refreshedInventoryData] = await Promise.all([
+        const [{ orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [] }, refreshedInventoryData] = await Promise.all([
             dashboardController.loadDashboard(),
             inventoryController.loadInventoryData(today)
         ]);
 
         allOrders = refreshedOrders.filter(order => order.archived !== true);
+        returnOrders = refreshedReturnOrders;
         returnInvoices = refreshedReturnInvoices;
         inventoryCategories = refreshedInventoryData;
         pendingCheckmarkUpdates.clear();
@@ -147,7 +150,7 @@ export const renderDashboard = async () => {
 
     const renderUI = () => {
         cleanupCharts();
-        const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity, returnInvoices);
+        const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity, returnInvoices, returnOrders);
         const alerts = dashboardController.getRiskAlerts(allOrders);
         const productChart = getProductChartData(stats.charts);
 
@@ -430,15 +433,17 @@ export const renderDashboard = async () => {
     const renderReturnAnalytics = (returns) => {
         const productRows = (returns.byProduct || []).slice(0, 6);
         const dateRows = (returns.byDate || []).slice(-6).reverse();
+        const courierRows = (returns.byCourier || []).slice(0, 4);
+        const sourceRows = (returns.bySource || []).slice(0, 2);
 
         return `
             <div class="card" style="padding: 12px; margin: 0; display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr) minmax(260px, 1fr); gap: 12px; align-items: stretch;">
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <div>
-                        <h3 style="font-size: 12px; font-weight: 800; color: var(--color-gray-800); margin: 0;">Returned Items</h3>
-                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Recorded returns in the selected period</div>
+                        <h3 style="font-size: 12px; font-weight: 800; color: var(--color-gray-800); margin: 0;">Total returned</h3>
+                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Invoice returns and courier returns. Deleted/cancelled orders excluded.</div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
                         <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px;">
                             <div style="font-size: 10px; color: #92400e; font-weight: 800; text-transform: uppercase;">Quantity</div>
                             <div style="font-size: 22px; color: #b45309; font-weight: 900; margin-top: 4px;">${returns.totalReturnedQuantity || 0}</div>
@@ -447,6 +452,19 @@ export const renderDashboard = async () => {
                             <div style="font-size: 10px; color: #9a3412; font-weight: 800; text-transform: uppercase;">Value</div>
                             <div style="font-size: 18px; color: #c2410c; font-weight: 900; margin-top: 6px;">${formatCurrency(returns.totalReturnedAmount || 0)}</div>
                         </div>
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 10px; color: #475569; font-weight: 800; text-transform: uppercase;">Orders</div>
+                            <div style="font-size: 22px; color: #334155; font-weight: 900; margin-top: 4px;">${returns.returnedOrdersCount || 0}</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; gap: 6px;">
+                        ${sourceRows.length ? sourceRows.map(row => `
+                            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 11px; padding: 7px 8px; background: var(--color-gray-50); border-radius: 6px;">
+                                <span style="font-weight: 800;">${row.label}</span>
+                                <span style="font-weight: 900; color: ${row.source === 'courier' ? '#0f766e' : '#b45309'};">${row.quantity}</span>
+                                <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
+                            </div>
+                        `).join('') : '<div style="padding: 10px; color: var(--color-gray-500); font-size: 12px; background: var(--color-gray-50); border-radius: 8px;">No invoice returns or courier returns in this period.</div>'}
                     </div>
                     <div style="flex: 1; min-height: 110px;">
                         ${(returns.byDate || []).length ? '<canvas id="chart-returns"></canvas>' : '<div style="height: 100%; display: grid; place-items: center; color: var(--color-gray-400); font-size: 12px; background: var(--color-gray-50); border-radius: 8px;">No returns found for this period.</div>'}
@@ -466,7 +484,7 @@ export const renderDashboard = async () => {
                 </div>
                 <div style="display: flex; flex-direction: column; min-width: 0;">
                     <h4 style="font-size: 11px; font-weight: 800; color: var(--color-gray-500); margin: 0 0 8px;">BY DATE</h4>
-                    <div style="display: grid; gap: 6px;">
+                    <div style="display: grid; gap: 6px; margin-bottom: 10px;">
                         ${dateRows.length ? dateRows.map(row => `
                             <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: var(--color-gray-50); border-radius: 6px;">
                                 <span style="font-weight: 800;">${row.date}</span>
@@ -474,6 +492,16 @@ export const renderDashboard = async () => {
                                 <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
                             </div>
                         `).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returns found for this period.</div>'}
+                    </div>
+                    <h4 style="font-size: 11px; font-weight: 800; color: var(--color-gray-500); margin: 0 0 8px;">RETURNS BY COURIER</h4>
+                    <div style="display: grid; gap: 6px;">
+                        ${courierRows.length ? courierRows.map(row => `
+                            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: #f0fdfa; border-radius: 6px;">
+                                <span style="font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${row.courierName}</span>
+                                <span style="font-weight: 900; color: #0f766e;">${row.quantity}</span>
+                                <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
+                            </div>
+                        `).join('') : '<div style="padding: 12px; color: var(--color-gray-500); font-size: 12px; background: var(--color-gray-50); border-radius: 8px;">No courier returns in this period.</div>'}
                     </div>
                 </div>
             </div>
@@ -822,8 +850,12 @@ export const renderDashboard = async () => {
         selectedOrderIds = new Set([...selectedOrderIds].filter(id => visibleIds.has(id)));
 
         wrapper.querySelectorAll('.order-select-checkbox').forEach(checkbox => {
-            checkbox.addEventListener('click', e => e.stopPropagation());
+            checkbox.addEventListener('click', e => {
+                e.stopPropagation();
+                scheduleInvoiceListRefresh(6000);
+            });
             checkbox.addEventListener('change', e => {
+                scheduleInvoiceListRefresh(6000);
                 const id = e.target.dataset.id;
                 if (e.target.checked) {
                     selectedOrderIds.add(id);
@@ -838,8 +870,12 @@ export const renderDashboard = async () => {
         if (selectAll) {
             selectAll.checked = filteredOrders.length > 0 && filteredOrders.every(order => selectedOrderIds.has(order.id));
             selectAll.indeterminate = selectedOrderIds.size > 0 && !selectAll.checked;
-            selectAll.addEventListener('click', e => e.stopPropagation());
+            selectAll.addEventListener('click', e => {
+                e.stopPropagation();
+                scheduleInvoiceListRefresh(6000);
+            });
             selectAll.addEventListener('change', e => {
+                scheduleInvoiceListRefresh(6000);
                 filteredOrders.forEach(order => {
                     if (e.target.checked) {
                         selectedOrderIds.add(order.id);

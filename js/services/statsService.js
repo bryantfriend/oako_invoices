@@ -1,3 +1,285 @@
+function safeNumber(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+function getRecordId(record = {}) {
+    return record.id || record.invoiceId || record.orderId || record.deliveryId || '';
+}
+
+function toDate(value, fallback = new Date(0)) {
+    if (!value) return fallback;
+    if (value.toDate) return value.toDate();
+    if (value.seconds) return new Date(value.seconds * 1000);
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? fallback : date;
+}
+
+function isDeletedOrCancelledRecord(record) {
+    const status = String(record?.status || "").toLowerCase();
+
+    return Boolean(
+        record?.isDeleted ||
+        record?.deleted ||
+        record?.softDeleted ||
+        record?.archivedDeleted ||
+        record?.deletedAt ||
+        status === "deleted" ||
+        status === "cancelled" ||
+        status === "canceled"
+    );
+}
+
+function getProductName(item = {}, parentItem = {}) {
+    return item.productName || item.name || item.name_en || item.name_ru ||
+        parentItem.productName || parentItem.name || parentItem.name_en || parentItem.name_ru ||
+        item.productId || item.lineItemId || 'Unknown product';
+}
+
+function findParentItem(record = {}, returnItem = {}) {
+    const items = Array.isArray(record.items) ? record.items : [];
+    const productId = returnItem.productId || returnItem.id || '';
+    const lineItemId = returnItem.lineItemId || '';
+
+    return items.find(item => {
+        return (lineItemId && item.lineItemId === lineItemId) ||
+            (productId && (item.productId === productId || item.id === productId));
+    }) || {};
+}
+
+function getUnitPrice(returnItem = {}, parentItem = {}) {
+    if (returnItem.unitPrice !== undefined) return safeNumber(returnItem.unitPrice);
+    if (returnItem.price !== undefined) return safeNumber(returnItem.price);
+    return safeNumber(parentItem.price);
+}
+
+function getReturnEventDate(returnEvent) {
+    return toDate(returnEvent?.createdAt || returnEvent?.returnedAt || returnEvent?.updatedAt);
+}
+
+function buildReturnDedupeKey(event = {}) {
+    if (event.returnId) {
+        return `id:${event.returnId}`;
+    }
+
+    const parentId = event.orderId || event.invoiceId || event.deliveryId || '';
+    const returnDay = getReturnEventDate(event).toISOString().split('T')[0];
+
+    return [
+        'fallback',
+        parentId,
+        event.productId || event.productName || '',
+        returnDay,
+        event.returnedQuantity || 0,
+        event.returnAmount || 0
+    ].join('|');
+}
+
+function normalizeInvoiceReturnEvents(invoice = {}) {
+    if (isDeletedOrCancelledRecord(invoice)) {
+        return [];
+    }
+
+    const invoiceId = invoice.id || invoice.invoiceId || '';
+    const orderId = invoice.orderId || '';
+    const events = [];
+
+    (Array.isArray(invoice.returns) ? invoice.returns : []).forEach(returnRecord => {
+        const source = String(returnRecord.source || returnRecord.returnedBy || '').toLowerCase() === 'courier'
+            ? 'courier'
+            : 'invoice';
+        const createdAt = returnRecord.createdAt || returnRecord.returnedAt || invoice.returnedAt || invoice.updatedAt;
+        const returnId = returnRecord.returnId || returnRecord.id || '';
+
+        (returnRecord.items || []).forEach(item => {
+            const parentItem = findParentItem(invoice, item);
+            const returnedQuantity = safeNumber(item.returnedQuantity !== undefined ? item.returnedQuantity : item.quantity);
+            if (returnedQuantity <= 0) return;
+
+            const unitPrice = getUnitPrice(item, parentItem);
+            const returnAmount = item.returnAmount !== undefined
+                ? safeNumber(item.returnAmount)
+                : unitPrice * returnedQuantity;
+
+            events.push({
+                returnId,
+                source,
+                invoiceId,
+                orderId,
+                deliveryId: returnRecord.deliveryId || invoice.deliveryId || '',
+                courierId: returnRecord.courierId || invoice.courierId || '',
+                courierName: returnRecord.courierName || invoice.courierName || (source === 'courier' ? invoice.returnedBy : ''),
+                createdAt,
+                productId: item.productId || parentItem.productId || item.lineItemId || '',
+                productName: getProductName(item, parentItem),
+                returnedQuantity,
+                unitPrice,
+                returnAmount
+            });
+        });
+    });
+
+    return events;
+}
+
+function normalizeCourierReturnEvents(record = {}) {
+    if (isDeletedOrCancelledRecord(record)) {
+        return [];
+    }
+
+    const invoiceId = record.invoiceId || (record.invoiceNumber ? getRecordId(record) : '');
+    const orderId = record.orderId || (!record.invoiceNumber ? getRecordId(record) : '');
+    const deliveryId = record.deliveryId || '';
+    const courierId = record.courierId || '';
+    const courierName = record.courierName || record.returnedBy || '';
+    const createdAt = record.returnedAt || record.orderItemsReturnedAt || record.updatedAt || record.createdAt;
+    const sourceArrays = [];
+
+    if (Array.isArray(record.courierReturns)) sourceArrays.push(...record.courierReturns);
+    if (Array.isArray(record.deliveryReturns)) sourceArrays.push(...record.deliveryReturns);
+    if (Array.isArray(record.returnItems)) {
+        sourceArrays.push({
+            returnId: record.returnId || '',
+            createdAt,
+            items: record.returnItems,
+            courierId,
+            courierName
+        });
+    }
+    if (Array.isArray(record.returns)) {
+        record.returns
+            .filter(returnRecord => String(returnRecord.source || returnRecord.returnedBy || '').toLowerCase() === 'courier')
+            .forEach(returnRecord => sourceArrays.push(returnRecord));
+    }
+    if (Array.isArray(record.items)) {
+        const returnedItems = record.items
+            .filter(item => safeNumber(item.returnQuantity) > 0)
+            .map(item => ({
+                productId: item.productId || item.id || '',
+                quantity: safeNumber(item.returnQuantity)
+            }));
+        if (returnedItems.length > 0) {
+            sourceArrays.push({
+                returnId: record.returnId || '',
+                createdAt,
+                items: returnedItems,
+                courierId,
+                courierName
+            });
+        }
+    }
+
+    const events = [];
+    sourceArrays.forEach(returnRecord => {
+        const returnCreatedAt = returnRecord.createdAt || returnRecord.returnedAt || createdAt;
+        (returnRecord.items || returnRecord.returnItems || returnRecord.returns || []).forEach(item => {
+            const parentItem = findParentItem(record, item);
+            const returnedQuantity = safeNumber(item.returnedQuantity !== undefined ? item.returnedQuantity : item.quantity);
+            if (returnedQuantity <= 0) return;
+
+            const unitPrice = getUnitPrice(item, parentItem);
+            const returnAmount = item.returnAmount !== undefined
+                ? safeNumber(item.returnAmount)
+                : unitPrice * returnedQuantity;
+
+            events.push({
+                returnId: returnRecord.returnId || returnRecord.id || '',
+                source: 'courier',
+                invoiceId,
+                orderId,
+                deliveryId: returnRecord.deliveryId || deliveryId,
+                courierId: returnRecord.courierId || courierId,
+                courierName: returnRecord.courierName || courierName,
+                createdAt: returnCreatedAt,
+                productId: item.productId || parentItem.productId || item.lineItemId || '',
+                productName: getProductName(item, parentItem),
+                returnedQuantity,
+                unitPrice,
+                returnAmount
+            });
+        });
+    });
+
+    return events;
+}
+
+function aggregateReturnAnalytics(returnEvents = []) {
+    const byDate = {};
+    const byProduct = {};
+    const byCourier = {};
+    const bySource = {};
+    const returnedParents = new Set();
+    let totalReturnedQuantity = 0;
+    let totalReturnedAmount = 0;
+
+    returnEvents.forEach(event => {
+        const returnDate = getReturnEventDate(event);
+        const dateKey = returnDate.toISOString().split('T')[0];
+        const productId = event.productId || event.productName || 'unknown';
+        const productName = event.productName || productId;
+        const source = event.source || 'invoice';
+        const courierKey = event.courierId || event.courierName || 'unknown';
+        const courierName = event.courierName || 'Unknown courier';
+        const quantity = safeNumber(event.returnedQuantity);
+        const amount = safeNumber(event.returnAmount);
+        const parentKey = event.invoiceId || event.orderId || event.deliveryId || event.returnId;
+
+        if (!byDate[dateKey]) {
+            byDate[dateKey] = { date: dateKey, quantity: 0, amount: 0 };
+        }
+        if (!byProduct[productId]) {
+            byProduct[productId] = { productId, productName, quantity: 0, amount: 0 };
+        }
+        if (source === 'courier' && !byCourier[courierKey]) {
+            byCourier[courierKey] = { courierId: event.courierId || '', courierName, quantity: 0, amount: 0 };
+        }
+        if (!bySource[source]) {
+            bySource[source] = { source, label: source === 'courier' ? 'Courier returns' : 'Invoice returns', quantity: 0, amount: 0 };
+        }
+
+        totalReturnedQuantity += quantity;
+        totalReturnedAmount += amount;
+        byDate[dateKey].quantity += quantity;
+        byDate[dateKey].amount += amount;
+        byProduct[productId].quantity += quantity;
+        byProduct[productId].amount += amount;
+        if (source === 'courier') {
+            byCourier[courierKey].quantity += quantity;
+            byCourier[courierKey].amount += amount;
+        }
+        bySource[source].quantity += quantity;
+        bySource[source].amount += amount;
+        if (parentKey) returnedParents.add(parentKey);
+    });
+
+    const byDateRows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+    const byProductRows = Object.values(byProduct).sort((a, b) => {
+        if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+        return b.amount - a.amount;
+    });
+    const byCourierRows = Object.values(byCourier).sort((a, b) => {
+        if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+        return b.amount - a.amount;
+    });
+    const bySourceRows = Object.values(bySource).sort((a, b) => {
+        if (a.source === b.source) return 0;
+        return a.source === 'invoice' ? -1 : 1;
+    });
+
+    return {
+        totalReturnedQuantity,
+        totalReturnedAmount,
+        returnedOrdersCount: returnedParents.size,
+        byDate: byDateRows,
+        byProduct: byProductRows,
+        byCourier: byCourierRows,
+        bySource: bySourceRows,
+        labels: byDateRows.map(row => row.date.split('-').slice(1).join('/')),
+        quantities: byDateRows.map(row => row.quantity),
+        amounts: byDateRows.map(row => row.amount)
+    };
+}
+
 export const statsService = {
     /**
      * Calculates stats for a given period and compares with the previous period
@@ -114,12 +396,7 @@ export const statsService = {
     },
 
     _getReturnDate(returnRecord) {
-        const value = returnRecord?.createdAt;
-        if (!value) return new Date(0);
-        if (value.toDate) return value.toDate();
-        if (value.seconds) return new Date(value.seconds * 1000);
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? new Date(0) : date;
+        return getReturnEventDate(returnRecord);
     },
 
     _startOfBucket(date, granularity = 'day') {
@@ -280,65 +557,33 @@ export const statsService = {
         };
     },
 
-    getReturnedItemsAnalytics(invoices = [], range = {}) {
-        const byDate = {};
-        const byProduct = {};
-        let totalReturnedQuantity = 0;
-        let totalReturnedAmount = 0;
+    getReturnedItemsAnalytics(records = [], range = {}) {
+        const invoices = Array.isArray(records) ? records : (records.invoices || []);
+        const orders = Array.isArray(records) ? [] : (records.orders || []);
+        const deliveries = Array.isArray(records) ? [] : (records.deliveries || []);
+        const deduped = {};
 
         invoices.forEach(invoice => {
-            const returns = Array.isArray(invoice.returns) ? invoice.returns : [];
-            returns.forEach(returnRecord => {
-                const returnDate = this._getReturnDate(returnRecord);
+            normalizeInvoiceReturnEvents(invoice)
+                .concat(normalizeCourierReturnEvents(invoice))
+                .forEach(event => {
+                    const returnDate = getReturnEventDate(event);
+                    if (range.start && returnDate < range.start) return;
+                    if (range.end && returnDate > range.end) return;
+                    deduped[buildReturnDedupeKey(event)] = event;
+                });
+        });
+
+        orders.concat(deliveries).forEach(record => {
+            normalizeCourierReturnEvents(record).forEach(event => {
+                const returnDate = getReturnEventDate(event);
                 if (range.start && returnDate < range.start) return;
                 if (range.end && returnDate > range.end) return;
-
-                const dateKey = returnDate.toISOString().split('T')[0];
-                if (!byDate[dateKey]) {
-                    byDate[dateKey] = { date: dateKey, quantity: 0, amount: 0 };
-                }
-
-                (returnRecord.items || []).forEach(item => {
-                    const quantity = Number(item.returnedQuantity) || 0;
-                    const amount = Number(item.returnAmount) || 0;
-                    const productId = item.productId || item.lineItemId || item.productName || 'unknown';
-                    const productName = item.productName || productId;
-
-                    totalReturnedQuantity += quantity;
-                    totalReturnedAmount += amount;
-                    byDate[dateKey].quantity += quantity;
-                    byDate[dateKey].amount += amount;
-
-                    if (!byProduct[productId]) {
-                        byProduct[productId] = {
-                            productId,
-                            productName,
-                            quantity: 0,
-                            amount: 0
-                        };
-                    }
-                    byProduct[productId].quantity += quantity;
-                    byProduct[productId].amount += amount;
-                });
+                deduped[buildReturnDedupeKey(event)] = event;
             });
         });
 
-        const byDateRows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-        const byProductRows = Object.values(byProduct)
-            .sort((a, b) => {
-                if (b.quantity !== a.quantity) return b.quantity - a.quantity;
-                return b.amount - a.amount;
-            });
-
-        return {
-            totalReturnedQuantity,
-            totalReturnedAmount,
-            byDate: byDateRows,
-            byProduct: byProductRows,
-            labels: byDateRows.map(row => row.date.split('-').slice(1).join('/')),
-            quantities: byDateRows.map(row => row.quantity),
-            amounts: byDateRows.map(row => row.amount)
-        };
+        return aggregateReturnAnalytics(Object.values(deduped));
     },
 
     _getTopProducts(orders, categoryId = null) {

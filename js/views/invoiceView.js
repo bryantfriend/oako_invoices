@@ -681,6 +681,137 @@ export const renderInvoiceDetail = async ({ id }) => {
     ];
 
     const getItemDisplayName = item => item.displayName || item.name || item.name_en || item.name_ru || item.name_kg || item.productName || 'Product';
+    const safeNumber = (value, fallback = 0) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : fallback;
+    };
+
+    function getItemReturnedQuantity(item = {}) {
+        return Math.max(0, safeNumber(item.returnedQuantity, 0));
+    }
+
+    function getItemOriginalQuantity(item = {}) {
+        return safeNumber(item.quantity !== undefined ? item.quantity : item.adjustedQuantity, 0);
+    }
+
+    function getItemRemainingQuantity(item = {}) {
+        return Math.max(0, getItemOriginalQuantity(item) - getItemReturnedQuantity(item));
+    }
+
+    function getItemOriginalTotal(item = {}) {
+        if (item.total !== undefined) {
+            return safeNumber(item.total, 0);
+        }
+        return safeNumber(item.price, 0) * getItemOriginalQuantity(item);
+    }
+
+    function getItemAdjustedTotal(item = {}) {
+        if (item.adjustedTotal !== undefined) {
+            return safeNumber(item.adjustedTotal, 0);
+        }
+        return safeNumber(item.price, 0) * getItemRemainingQuantity(item);
+    }
+
+    function normalizeInvoiceItemReturnFields(item = {}) {
+        const returnedQuantity = getItemReturnedQuantity(item);
+        const remainingQuantity = getItemRemainingQuantity(item);
+        return Object.assign({}, item, {
+            returnedQuantity,
+            remainingQuantity,
+            adjustedTotal: getItemAdjustedTotal(item)
+        });
+    }
+
+    function hasInvoiceReturns(sourceInvoice = {}) {
+        const summaryQuantity = safeNumber(sourceInvoice.returnSummary?.totalReturnedQuantity, 0);
+        const hasReturnRecords = Array.isArray(sourceInvoice.returns) && sourceInvoice.returns.length > 0;
+        const hasReturnedItems = (sourceInvoice.items || []).some(item => getItemReturnedQuantity(item) > 0);
+        return summaryQuantity > 0 || hasReturnRecords || hasReturnedItems;
+    }
+
+    function calculateInvoiceReturnSummary(sourceInvoice = {}) {
+        const items = (sourceInvoice.items || []).map(normalizeInvoiceItemReturnFields);
+        const itemReturnedAmount = items.reduce((sum, item) => sum + (safeNumber(item.price, 0) * getItemReturnedQuantity(item)), 0);
+        const summary = sourceInvoice.returnSummary || {};
+        const totalReturnedQuantity = safeNumber(summary.totalReturnedQuantity, items.reduce((sum, item) => sum + getItemReturnedQuantity(item), 0));
+        const totalReturnedAmount = safeNumber(summary.totalReturnedAmount, itemReturnedAmount);
+        const originalTotalAmount = safeNumber(summary.originalTotalAmount, safeNumber(sourceInvoice.totalAmount, items.reduce((sum, item) => sum + getItemOriginalTotal(item), 0)));
+        const adjustedTotalAmount = Math.max(0, originalTotalAmount - totalReturnedAmount);
+
+        return {
+            totalReturnedQuantity,
+            totalReturnedAmount,
+            originalTotalAmount,
+            adjustedTotalAmount
+        };
+    }
+
+    function renderInvoiceReturnBadge(item, lang) {
+        const returnedQuantity = getItemReturnedQuantity(item);
+        if (returnedQuantity <= 0) {
+            return '';
+        }
+
+        const label = lang === 'en' ? 'RETURNED' : 'ВОЗВРАТ';
+        const unit = lang === 'en' ? 'pcs' : 'шт';
+        return `<div class="invoice-return-badge" style="display: inline-block; margin-top: 3px; padding: 2px 6px; border-radius: 4px; background: #fee2e2; color: #991b1b; font-size: 8px; font-weight: 900; letter-spacing: 0.04em;">${label}: ${returnedQuantity} ${unit}</div>`;
+    }
+
+    function renderInvoiceTotalsWithReturns(sourceInvoice, lang) {
+        const summary = calculateInvoiceReturnSummary(sourceInvoice);
+        const labels = lang === 'en'
+            ? { adjusted: 'Total after return', original: 'Original total', returned: 'Total returned' }
+            : { adjusted: 'Итого после возврата', original: 'Общая сумма до возврата', returned: 'Всего возвращено' };
+
+        return `
+            <div class="invoice-return-summary" style="width: 320px;">
+                <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
+                    <span class="invoice-total-original" style="color: #7f1d1d; font-size: 11px; font-weight: 700;">${labels.original}</span>
+                    <span style="color: #7f1d1d; font-size: 11px; text-decoration: line-through;">${formatCurrency(summary.originalTotalAmount)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #fee2e2;">
+                    <span class="invoice-total-returned" style="color: #991b1b; font-size: 11px; font-weight: 800;">${labels.returned}</span>
+                    <span style="color: #991b1b; font-size: 11px; font-weight: 900;">-${formatCurrency(summary.totalReturnedAmount)}</span>
+                </div>
+                <div class="invoice-total-adjusted" style="margin-top: 10px; background: #2e4a23; color: #fff; padding: 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-size: 10px; font-weight: 800; text-transform: uppercase;">${labels.adjusted}</span>
+                    <span style="font-size: 20px; font-weight: 900;">${formatCurrency(summary.adjustedTotalAmount)}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderInvoiceReturnDetails(sourceInvoice, lang) {
+        const returns = Array.isArray(sourceInvoice.returns) ? sourceInvoice.returns : [];
+        if (!returns.length) {
+            return '';
+        }
+
+        const title = lang === 'en' ? 'Return details' : 'Детали возврата';
+        const returnedByLabel = lang === 'en' ? 'Processed by' : 'Обработал';
+        const amountLabel = lang === 'en' ? 'Returned amount' : 'Сумма возврата';
+        const reasonLabel = lang === 'en' ? 'Reason' : 'Причина';
+        const noteLabel = lang === 'en' ? 'Note' : 'Примечание';
+
+        return `
+            <div class="invoice-return-details" style="border: 1px solid #fecaca; background: #fff7f7; border-radius: 8px; padding: 10px 12px; margin-bottom: 18px; page-break-inside: avoid;">
+                <div style="font-size: 10px; font-weight: 900; color: #991b1b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;">${title}</div>
+                <div style="display: grid; gap: 6px;">
+                    ${returns.map(returnRecord => `
+                        <div style="display: grid; grid-template-columns: 95px 1fr auto; gap: 8px; align-items: start; font-size: 10px; color: #7f1d1d; border-top: 1px solid #fee2e2; padding-top: 6px;">
+                            <span style="font-weight: 800;">${escapeHtml(toDisplayDate(returnRecord.createdAt))}</span>
+                            <span>
+                                ${returnRecord.createdBy ? `<strong>${returnedByLabel}:</strong> ${escapeHtml(returnRecord.createdBy)}<br>` : ''}
+                                ${returnRecord.reason ? `<strong>${reasonLabel}:</strong> ${escapeHtml(returnRecord.reason)}<br>` : ''}
+                                ${returnRecord.note ? `<strong>${noteLabel}:</strong> ${escapeHtml(returnRecord.note)}` : ''}
+                            </span>
+                            <span style="font-weight: 900;">${amountLabel}: ${formatCurrency(returnRecord.totalReturnedAmount || 0)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
 
     function renderInvoiceStatusControl() {
         const currentStatus = invoice.status || 'pending';
@@ -925,6 +1056,8 @@ export const renderInvoiceDetail = async ({ id }) => {
         const invoiceQrImageUrl = invoice.secureToken ? safeImageUrl(qrService.buildQrImageUrl(invoice, 240)) : '';
 
         const items = invoice.items || [];
+        const invoiceHasReturns = hasInvoiceReturns(invoice);
+        const returnSummary = calculateInvoiceReturnSummary(invoice);
         const pages = [];
 
         // Keep invoice pagination predictable: each page gets the configured item count.
@@ -940,8 +1073,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
         let calculatedSubtotal = 0;
         items.forEach(item => {
-            const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-            calculatedSubtotal += (item.price || 0) * finalQty;
+            calculatedSubtotal += getItemOriginalTotal(item);
         });
 
         const subtotal = calculatedSubtotal;
@@ -955,6 +1087,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         }
 
         const grandTotal = subtotal + taxAmount - discountAmount;
+        const displayGrandTotal = invoiceHasReturns ? returnSummary.adjustedTotalAmount : grandTotal;
 
         return pages.map((pageItems, index) => {
             const pageNum = index + 1;
@@ -1024,13 +1157,66 @@ export const renderInvoiceDetail = async ({ id }) => {
                                 <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">${t('print_date', lang).toUpperCase()}:</div>
                                 <div style="font-size: 13px; color: #1e3318; margin-bottom: 8px; font-weight: 500;">${formatDate(invoice.createdAt)}</div>
                                 <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0;">TOTAL DUE:</div>
-                                <div style="font-size: 22px; font-weight: 800; color: #1e3318; letter-spacing: -1px;">${formatCurrency(grandTotal).replace('$', '')} <span style="font-size: 11px; font-weight: 400; color: #5a7052;">SOM</span></div>
+                                <div style="font-size: 22px; font-weight: 800; color: #1e3318; letter-spacing: -1px;">${formatCurrency(displayGrandTotal).replace('$', '')} <span style="font-size: 11px; font-weight: 400; color: #5a7052;">SOM</span></div>
                              </div>
                         </div>
                     </div>
                     ` : ''}
 
                     <!-- Product Table -->
+                    ${invoiceHasReturns ? `
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
+                        <thead>
+                            <tr style="background: #f8faf6; color: #5a7052; font-size: 8px; text-transform: uppercase; letter-spacing: 0.04em;">
+                                <th style="padding: 6px 8px; text-align: left;">Product</th>
+                                <th style="padding: 6px 8px; text-align: center; width: 62px;">Qty Original</th>
+                                <th style="padding: 6px 8px; text-align: center; width: 62px;">Qty Returned</th>
+                                <th style="padding: 6px 8px; text-align: center; width: 68px;">Qty Remaining</th>
+                                <th style="padding: 6px 8px; text-align: right; width: 78px;">Price</th>
+                                <th style="padding: 6px 8px; text-align: right; width: 105px;">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody style="font-size: 11px;">
+                            ${pageItems.map((item, idx) => {
+                const normalizedItem = normalizeInvoiceItemReturnFields(item);
+                const returnedQuantity = getItemReturnedQuantity(normalizedItem);
+                const remainingQuantity = getItemRemainingQuantity(normalizedItem);
+                const originalQuantity = getItemOriginalQuantity(normalizedItem);
+                const originalAmount = getItemOriginalTotal(normalizedItem);
+                const adjustedAmount = getItemAdjustedTotal(normalizedItem);
+                let itemName = item.name;
+
+                if (lang === 'ru') {
+                    itemName = item.name_ru || item.name_en || item.displayName || item.name;
+                } else if (lang === 'kg') {
+                    itemName = item.name_kg || item.name_en || item.displayName || item.name;
+                } else {
+                    itemName = item.name_en || item.displayName || item.name;
+                }
+
+                return `
+                                <tr style="background: ${returnedQuantity > 0 ? '#fff7f7' : (idx % 2 === 0 ? '#fafaf8' : '#fff')}; border-bottom: 1px solid #e2e8e0;">
+                                    <td style="padding: 6px 8px;">
+                                        <div style="font-weight: 700; color: #1e3318; overflow-wrap: anywhere;">${escapeHtml(itemName || 'Product')}</div>
+                                        ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${escapeHtml(item.weight)}</div>` : ''}
+                                        ${renderInvoiceReturnBadge(normalizedItem, lang)}
+                                    </td>
+                                    <td style="padding: 6px 8px; text-align: center; color: #1e3318;">${originalQuantity}</td>
+                                    <td class="invoice-returned-quantity" style="padding: 6px 8px; text-align: center; color: ${returnedQuantity > 0 ? '#991b1b' : '#94a3b8'}; font-weight: ${returnedQuantity > 0 ? '900' : '500'};">${returnedQuantity > 0 ? returnedQuantity : '-'}</td>
+                                    <td style="padding: 6px 8px; text-align: center; color: #166534; font-weight: 800;">${remainingQuantity}</td>
+                                    <td style="padding: 6px 8px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
+                                    <td style="padding: 6px 8px; text-align: right;">
+                                        ${returnedQuantity > 0 ? `
+                                            <div class="invoice-original-amount is-struck" style="font-size: 9px; color: #991b1b; text-decoration: line-through;">${formatCurrency(originalAmount)}</div>
+                                            <div class="invoice-adjusted-amount" style="font-weight: 900; color: #166534;">${formatCurrency(adjustedAmount)}</div>
+                                        ` : `<span style="font-weight: 800; color: #1e3318;">${formatCurrency(originalAmount)}</span>`}
+                                    </td>
+                                </tr>
+                            `;
+            }).join('')}
+                        </tbody>
+                    </table>
+                    ` : `
                     <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
                         <tbody style="font-size: 12px;">
                             ${pageItems.map((item, idx) => {
@@ -1060,11 +1246,12 @@ export const renderInvoiceDetail = async ({ id }) => {
             }).join('')}
                         </tbody>
                     </table>
+                    `}
 
                     ${isLast ? `
                     <!-- Summary Section -->
                     <div style="display: flex; justify-content: flex-end; margin-bottom: 25px; page-break-inside: avoid;">
-                        <div style="width: 280px;">
+                        ${invoiceHasReturns ? renderInvoiceTotalsWithReturns(invoice, lang) : `<div style="width: 280px;">
                             <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
                                 <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t('print_subtotal', lang)}</span>
                                 <span style="font-weight: 600; color: #1e3318; font-size: 11px;">${formatCurrency(subtotal)}</span>
@@ -1078,8 +1265,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                                 <span style="font-size: 10px; font-weight: 700; text-transform: uppercase;">${t('print_grand_total', lang)}</span>
                                 <span style="font-size: 20px; font-weight: 800;">${formatCurrency(grandTotal)}</span>
                             </div>
-                        </div>
+                        </div>`}
                     </div>
+
+                    ${invoiceHasReturns ? renderInvoiceReturnDetails(invoice, lang) : ''}
 
                     <!-- Footer -->
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; border-top: 1px solid #e2e8e0; padding-top: 15px; margin-bottom: 20px; page-break-inside: avoid;">

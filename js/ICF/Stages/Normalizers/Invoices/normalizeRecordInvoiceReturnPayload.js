@@ -16,6 +16,7 @@ function normalizeRecordInvoiceReturnPayload(intent) {
   var normalizedPayload = Object.assign({}, payload, {
     invoiceId: String(payload.invoiceId || "").trim(),
     note: String(payload.note || "").trim(),
+    reason: String(payload.reason || "").trim(),
     items: items
   });
 
