@@ -136,6 +136,82 @@ function renderConflictReview(conflict) {
     `;
 }
 
+function renderApprovalResponseBanner(approvalLink) {
+    if (!approvalLink || (approvalLink.status !== 'accepted' && approvalLink.status !== 'modified')) {
+        return '';
+    }
+
+    const isAccepted = approvalLink.status === 'accepted';
+    const changes = approvalLink.customerChanges || {};
+    const modifiedItems = changes.modifiedItems || [];
+    const borderColor = isAccepted ? '#bbf7d0' : '#fde68a';
+    const backgroundColor = isAccepted ? '#f0fdf4' : '#fffbeb';
+    const textColor = isAccepted ? '#166534' : '#92400e';
+    const title = isAccepted ? 'Customer Accepted Order' : 'Customer Requested Changes';
+
+    return `
+        <section class="card" style="margin: 16px auto; width: min(1100px, calc(100% - 32px)); border-color: ${borderColor}; background: ${backgroundColor};">
+            <h2 style="font-size: 16px; font-weight: 900; color: ${textColor}; margin: 0 0 6px;">${title}</h2>
+            <div style="font-size: 12px; color: ${textColor}; font-weight: 700;">Response date: ${escapeHtml(toDisplayDate(approvalLink.responseSubmittedAt))}</div>
+            ${changes.notes ? `<p style="font-size: 13px; color: ${textColor}; margin: 10px 0 0;"><strong>Notes:</strong> ${escapeHtml(changes.notes)}</p>` : ''}
+            ${modifiedItems.length ? `
+                <div style="margin-top: 10px; display: grid; gap: 6px;">
+                    ${modifiedItems.map(function(item) {
+                        return `
+                            <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: ${textColor}; background: rgba(255,255,255,0.65); border-radius: 8px; padding: 8px 10px;">
+                                <span style="font-weight: 800;">${escapeHtml(item.name || item.productId || 'Product')}</span>
+                                <span>${Number(item.originalQuantity) || 0} → ${Number(item.requestedQuantity) || 0}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            ` : ''}
+        </section>
+    `;
+}
+
+function renderCustomerApprovalSection(approvalLink) {
+    const hasLink = !!approvalLink;
+    const approvalUrl = hasLink ? invoiceController.buildApprovalUrl(approvalLink.token) : '';
+    const displayStatus = invoiceController.getApprovalDisplayStatus(approvalLink);
+    const responseStatus = approvalLink && approvalLink.responseType ? approvalLink.responseType : 'No response';
+
+    return `
+        <section id="customer-approval-panel" class="card" style="padding: 18px; margin: 0 auto 28px; width: min(920px, calc(100% - 32px));">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                <div>
+                    <h3 style="font-size: 15px; font-weight: 900; margin: 0;">Customer Approval</h3>
+                    <div style="font-size: 12px; color: var(--color-gray-500); margin-top: 3px;">Generate a time-limited customer review link for this invoice.</div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button id="btn-generate-approval-link" class="btn btn-primary btn-sm">Generate Approval Link</button>
+                    <button id="btn-copy-approval-link" class="btn btn-secondary btn-sm" ${hasLink ? '' : 'disabled'}>Copy Link</button>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px;">
+                <div style="background: var(--color-gray-50); border-radius: 8px; padding: 10px;">
+                    <div style="font-size: 11px; font-weight: 900; color: var(--color-gray-500); text-transform: uppercase;">Link Status</div>
+                    <div style="font-size: 13px; font-weight: 900; color: var(--color-gray-900); margin-top: 4px;">${escapeHtml(displayStatus)}</div>
+                </div>
+                <div style="background: var(--color-gray-50); border-radius: 8px; padding: 10px;">
+                    <div style="font-size: 11px; font-weight: 900; color: var(--color-gray-500); text-transform: uppercase;">Expires</div>
+                    <div style="font-size: 13px; font-weight: 900; color: var(--color-gray-900); margin-top: 4px;">${hasLink ? escapeHtml(toDisplayDate(approvalLink.expiresAt)) : '-'}</div>
+                </div>
+                <div style="background: var(--color-gray-50); border-radius: 8px; padding: 10px;">
+                    <div style="font-size: 11px; font-weight: 900; color: var(--color-gray-500); text-transform: uppercase;">Customer Response Status</div>
+                    <div style="font-size: 13px; font-weight: 900; color: var(--color-gray-900); margin-top: 4px;">${escapeHtml(responseStatus)}</div>
+                </div>
+            </div>
+            ${hasLink ? `
+                <label style="display: grid; gap: 6px;">
+                    <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Approval URL</span>
+                    <input id="approval-link-url" class="input" readonly value="${escapeAttribute(approvalUrl)}" style="font-size: 12px;">
+                </label>
+            ` : ''}
+        </section>
+    `;
+}
+
 export const renderInvoices = async () => {
     layoutView.render();
     layoutView.updateTitle(t('invoice_title'));
@@ -565,6 +641,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         console.warn("Could not load QR activity for invoice.", error);
         return [];
     });
+    let approvalLink = await invoiceController.loadApprovalLink(invoice.id);
 
     if (!/^1\d{5}$/.test(String(invoice.customerPinCode || ''))) {
         const customer = await customerService.getCustomerByName(invoice.customerName).catch(() => null);
@@ -584,11 +661,6 @@ export const renderInvoiceDetail = async ({ id }) => {
         });
     }
 
-    const productMap = {};
-    allProducts.forEach(p => {
-        productMap[p.id] = p;
-    });
-
     // (liveSettings fetched unconditionally to always overwrite visibility flags)
 
     let currentLang = 'ru';
@@ -597,6 +669,231 @@ export const renderInvoiceDetail = async ({ id }) => {
     let is2UpMode = false;
 
     const DEFAULT_ITEMS_PER_PAGE = 7;
+    const getEditableItems = () => invoiceController.normalizeInvoiceItemsForEditing(invoice);
+    const isDraftEditable = () => invoice.status === 'draft';
+    const invoiceStatusOptions = [
+        { value: 'draft', label: 'Draft' },
+        { value: 'pending', label: 'Pending' },
+        { value: 'confirmed', label: 'Confirmed' },
+        { value: 'returned', label: 'Returned' },
+        { value: 'fulfilled', label: 'Fulfilled' },
+        { value: 'completed', label: 'Completed' }
+    ];
+
+    const getItemDisplayName = item => item.displayName || item.name || item.name_en || item.name_ru || item.name_kg || item.productName || 'Product';
+
+    function renderInvoiceStatusControl() {
+        const currentStatus = invoice.status || 'pending';
+        const options = invoiceStatusOptions.map(option => {
+            if (currentStatus === 'fullfilled' && option.value === 'fulfilled') {
+                return { value: 'fullfilled', label: 'Fulfilled' };
+            }
+            return option;
+        });
+
+        return `
+            <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
+                <span style="font-size: 12px; font-weight: 600;">Status:</span>
+                <select id="invoice-status-selector" class="input" style="height: 32px; padding: 2px 8px; font-size: 12px; width: 130px;">
+                    ${options.map(option => `
+                        <option value="${option.value}" ${currentStatus === option.value ? 'selected' : ''}>${option.label}</option>
+                    `).join('')}
+                </select>
+            </div>
+        `;
+    }
+
+    function renderDraftItemEditor() {
+        if (!isDraftEditable()) {
+            return '';
+        }
+
+        const editableItems = getEditableItems();
+        const totals = invoiceController.recalculateInvoiceTotals(Object.assign({}, invoice, {
+            items: editableItems
+        }));
+
+        return `
+            <section id="draft-item-editor" class="card" style="padding: 18px; margin: 16px auto; width: min(1100px, calc(100% - 32px));">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                    <div>
+                        <h3 style="font-size: 15px; font-weight: 900; margin: 0;">Draft Invoice Items</h3>
+                        <div style="font-size: 12px; color: var(--color-gray-500); margin-top: 3px;">Add, remove, and adjust products before finalizing this invoice.</div>
+                    </div>
+                    <button id="btn-add-draft-product" class="btn btn-primary btn-sm">Add Product</button>
+                </div>
+                ${editableItems.length ? `
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
+                                <tr>
+                                    <th style="text-align: left; padding: 10px;">Product</th>
+                                    <th style="text-align: right; padding: 10px; width: 120px;">Price</th>
+                                    <th style="text-align: center; padding: 10px; width: 120px;">Quantity</th>
+                                    <th style="text-align: right; padding: 10px; width: 130px;">Line Total</th>
+                                    <th style="text-align: right; padding: 10px; width: 80px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${editableItems.map(item => `
+                                    <tr style="border-bottom: 1px solid var(--color-gray-100);">
+                                        <td style="padding: 10px;">
+                                            <div style="font-weight: 800; color: var(--color-gray-900);">${escapeHtml(getItemDisplayName(item))}</div>
+                                            ${item.weight ? `<div style="font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">${escapeHtml(item.weight)}</div>` : ''}
+                                        </td>
+                                        <td style="padding: 10px; text-align: right;">${formatCurrency(item.price || 0)}</td>
+                                        <td style="padding: 10px; text-align: center;">
+                                            <input class="draft-item-qty input" type="number" min="1" step="1" value="${Number(item.quantity) || 1}" data-line-item-id="${escapeAttribute(item.lineItemId)}" style="width: 84px; height: 32px; text-align: center;">
+                                        </td>
+                                        <td style="padding: 10px; text-align: right; font-weight: 900;">${formatCurrency(item.total || 0)}</td>
+                                        <td style="padding: 10px; text-align: right;">
+                                            <button class="btn btn-secondary btn-sm draft-remove-item" data-line-item-id="${escapeAttribute(item.lineItemId)}" title="Remove product">Remove</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" style="padding: 10px; text-align: right; color: var(--color-gray-500); font-weight: 800;">Subtotal</td>
+                                    <td colspan="2" style="padding: 10px; text-align: right; font-weight: 900;">${formatCurrency(totals.subtotal || 0)}</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="3" style="padding: 10px; text-align: right; color: var(--color-gray-500); font-weight: 800;">Total</td>
+                                    <td colspan="2" style="padding: 10px; text-align: right; font-weight: 900; color: var(--color-primary-700);">${formatCurrency(totals.totalAmount || 0)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                ` : `<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No products on this draft invoice yet.</div>`}
+            </section>
+        `;
+    }
+
+    function renderProductSelectorContent(products) {
+        return `
+            <div style="display: grid; gap: 12px;">
+                <input id="draft-product-search" class="input" type="search" placeholder="Search products..." style="height: 38px;">
+                <div id="draft-product-list" style="display: grid; gap: 8px; max-height: 56vh; overflow: auto;">
+                    ${renderProductOptions(products)}
+                </div>
+                ${products.length ? '' : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No products available.</div>'}
+            </div>
+        `;
+    }
+
+    function renderProductOptions(products) {
+        if (!products.length) {
+            return '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No products found.</div>';
+        }
+
+        return products.map(product => `
+            <button type="button" class="draft-product-option" data-product-id="${escapeAttribute(product.id)}" style="border: 1px solid var(--color-gray-200); background: white; border-radius: 8px; padding: 10px; text-align: left; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;">
+                <span>
+                    <strong style="display: block; font-size: 13px; color: var(--color-gray-900);">${escapeHtml(product.displayName || product.name || 'Product')}</strong>
+                    <small style="color: var(--color-gray-500);">${escapeHtml(product.name_ru || product.name_en || '')}</small>
+                </span>
+                <span style="font-weight: 900; color: var(--color-primary-700);">${formatCurrency(product.price || 0)}</span>
+            </button>
+        `).join('');
+    }
+
+    async function openAddProductModal() {
+        const { Modal } = await import("../components/modal.js");
+        const modal = new Modal({
+            title: 'Add Product',
+            size: 'large',
+            footer: false,
+            content: renderProductSelectorContent(allProducts)
+        });
+        modal.open();
+
+        const search = document.getElementById('draft-product-search');
+        const list = document.getElementById('draft-product-list');
+        const attachProductListeners = () => {
+            document.querySelectorAll('.draft-product-option').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const product = allProducts.find(entry => entry.id === button.dataset.productId);
+                    if (!product) return;
+                    const success = await invoiceController.addInvoiceItem(invoice.id, product, 1);
+                    if (success) {
+                        modal.close();
+                        renderInvoiceDetail({ id });
+                    }
+                });
+            });
+        };
+
+        search?.addEventListener('input', () => {
+            const term = search.value.trim().toLowerCase();
+            const filteredProducts = allProducts.filter(product => {
+                return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
+                    .some(value => String(value || '').toLowerCase().includes(term));
+            });
+            list.innerHTML = renderProductOptions(filteredProducts);
+            attachProductListeners();
+        });
+        attachProductListeners();
+    }
+
+    async function openRecordReturnModal() {
+        const { Modal } = await import("../components/modal.js");
+        const items = getEditableItems();
+        const modal = new Modal({
+            title: 'Record Returned Items',
+            size: 'large',
+            confirmText: 'Save Return',
+            content: `
+                <div style="display: grid; gap: 12px;">
+                    ${items.length ? items.map(item => {
+                        const soldQuantity = Number(item.quantity) || 0;
+                        const alreadyReturned = Number(item.returnedQuantity) || 0;
+                        const remaining = Math.max(0, soldQuantity - alreadyReturned);
+                        return `
+                            <label style="display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(90px, auto)); gap: 10px; align-items: center; border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 10px;">
+                                <span style="font-weight: 800;">${escapeHtml(getItemDisplayName(item))}</span>
+                                <span style="font-size: 12px; color: var(--color-gray-500);">Sold: <strong>${soldQuantity}</strong></span>
+                                <span style="font-size: 12px; color: var(--color-gray-500);">Returned: <strong>${alreadyReturned}</strong></span>
+                                <span style="font-size: 12px; color: var(--color-gray-500);">Remaining: <strong>${remaining}</strong></span>
+                                <input class="record-return-qty input" type="number" min="0" max="${remaining}" step="1" value="0" data-line-item-id="${escapeAttribute(item.lineItemId)}" data-product-id="${escapeAttribute(item.productId || '')}" style="width: 90px; height: 32px; text-align: center;">
+                            </label>
+                        `;
+                    }).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returned items yet.</div>'}
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Note</span>
+                        <textarea id="return-note-input" class="input" rows="3" style="resize: vertical;" placeholder="Optional note"></textarea>
+                    </label>
+                </div>
+            `,
+            onConfirm: async () => {
+                const selectedItems = [...document.querySelectorAll('.record-return-qty')].map(input => ({
+                    lineItemId: input.dataset.lineItemId,
+                    productId: input.dataset.productId,
+                    returnedQuantity: Number(input.value) || 0,
+                    max: Number(input.max) || 0
+                }));
+                const invalid = selectedItems.find(item => item.returnedQuantity < 0 || item.returnedQuantity > item.max);
+                if (invalid) {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    notificationService.error('Return quantity cannot exceed remaining returnable quantity.');
+                    return false;
+                }
+                if (!selectedItems.some(item => item.returnedQuantity > 0)) {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    notificationService.error('At least one item must have a return quantity greater than 0.');
+                    return false;
+                }
+                const success = await invoiceController.recordInvoiceReturn(invoice.id, {
+                    note: document.getElementById('return-note-input')?.value || '',
+                    items: selectedItems
+                });
+                if (success) {
+                    renderInvoiceDetail({ id });
+                }
+                return success;
+            }
+        });
+        modal.open();
+    }
 
     const renderDocument = (lang, isCopy = false) => {
         // Never let fallback defaults overwrite the saved invoice snapshot.
@@ -737,15 +1034,14 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
                         <tbody style="font-size: 12px;">
                             ${pageItems.map((item, idx) => {
-                const liveProduct = productMap[item.productId];
                 let itemName = item.name;
 
                 if (lang === 'ru') {
-                    itemName = item.name_ru || (liveProduct && liveProduct.name_ru) || item.name_en || (liveProduct && liveProduct.name_en) || item.name;
+                    itemName = item.name_ru || item.name_en || item.displayName || item.name;
                 } else if (lang === 'kg') {
-                    itemName = item.name_kg || (liveProduct && liveProduct.name_kg) || item.name_en || (liveProduct && liveProduct.name_en) || item.name;
+                    itemName = item.name_kg || item.name_en || item.displayName || item.name;
                 } else {
-                    itemName = item.name_en || (liveProduct && liveProduct.name_en) || item.name;
+                    itemName = item.name_en || item.displayName || item.name;
                 }
 
                 const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
@@ -883,21 +1179,26 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <span style="font-size: 11px; width: 35px;">${Math.round(invoiceScale * 100)}%</span>
                 </div>
 
+                ${renderInvoiceStatusControl()}
+
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     <button id="btn-copy-qr" class="btn btn-secondary btn-sm">QR Link</button>
-                    <button id="btn-return-items" class="btn btn-secondary btn-sm">Return Items</button>
+                    <button id="btn-record-return-items" class="btn btn-secondary btn-sm">Record Return</button>
                     <button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>
                     <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
                     <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices stacked on Portrait A4">📄 2-up Portrait</button>
                 </div>
             </div>
             ${renderConflictReview(openConflict)}
+            ${renderApprovalResponseBanner(approvalLink)}
+            ${renderDraftItemEditor()}
 
             <div id="invoice-doc-container" class="animate-fade-in ${is2UpMode ? 'printing-2up-portrait' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
                 <div class="print-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
                     ${finalHtml}
                 </div>
             </div>
+            ${renderCustomerApprovalSection(approvalLink)}
             ${renderQrActivityTimeline(qrActivities)}
 
             <style>
@@ -1122,6 +1423,34 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }
             });
 
+            document.getElementById('btn-generate-approval-link')?.addEventListener('click', async () => {
+                const button = document.getElementById('btn-generate-approval-link');
+                button.disabled = true;
+                button.textContent = 'Generating...';
+                const generatedLink = await invoiceController.generateApprovalLink(invoice.id);
+                if (generatedLink) {
+                    approvalLink = generatedLink;
+                    refreshBody();
+                } else {
+                    button.disabled = false;
+                    button.textContent = 'Generate Approval Link';
+                }
+            });
+
+            document.getElementById('btn-copy-approval-link')?.addEventListener('click', async () => {
+                if (!approvalLink) {
+                    return;
+                }
+                const approvalUrl = invoiceController.buildApprovalUrl(approvalLink.token);
+                if (navigator.clipboard) {
+                    await navigator.clipboard.writeText(approvalUrl);
+                } else {
+                    prompt('Copy approval link:', approvalUrl);
+                }
+                const { notificationService } = await import("../core/notificationService.js");
+                notificationService.success('Approval link copied.');
+            });
+
             document.getElementById('prev-page').addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
             document.getElementById('next-page').addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
 
@@ -1171,45 +1500,69 @@ export const renderInvoiceDetail = async ({ id }) => {
                 });
             });
 
-            document.getElementById('btn-return-items').addEventListener('click', async () => {
-                const { Modal } = await import("../components/modal.js");
-                const returnItemsByProduct = {};
-                (invoice.returnItems || []).forEach(item => { returnItemsByProduct[item.productId] = item.quantity; });
-                const modal = new Modal({
-                    title: 'Return Items',
-                    size: 'large',
-                    confirmText: 'Save Return',
-                    content: `
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${(invoice.items || []).map(item => {
-                                const productId = item.productId || item.name;
-                                const itemName = item.name || item.productName || productMap[item.productId]?.displayName || 'Product';
-                                const quantity = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-                                return `
-                                    <label style="display: grid; grid-template-columns: 1fr 100px; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--color-gray-200); border-radius: 10px;">
-                                        <span style="font-weight: 700;">${itemName}<small style="display:block; color: var(--color-gray-500); font-weight: 500;">Ordered: ${quantity || 0}</small></span>
-                                        <input class="return-qty-input input" type="number" min="0" max="${quantity || 0}" value="${returnItemsByProduct[productId] || 0}" data-product-id="${productId}">
-                                    </label>
-                                `;
-                            }).join('')}
-                        </div>
-                    `,
-                    onConfirm: async () => {
-                        const returnItems = [...document.querySelectorAll('.return-qty-input')].map(input => ({
-                            productId: input.dataset.productId,
-                            quantity: Number(input.value) || 0
-                        }));
-                        const { returnsService } = await import("../services/returnsService.js");
-                        await returnsService.requestReturn(invoice.id, returnItems);
+            document.getElementById('btn-record-return-items')?.addEventListener('click', openRecordReturnModal);
+
+            document.getElementById('btn-add-draft-product')?.addEventListener('click', openAddProductModal);
+
+            document.querySelectorAll('.draft-item-qty').forEach(input => {
+                input.addEventListener('change', async () => {
+                    const quantity = Number(input.value);
+                    if (!Number.isFinite(quantity) || quantity <= 0) {
                         const { notificationService } = await import("../core/notificationService.js");
-                        notificationService.success('Return request saved.');
+                        notificationService.error('Quantity must be a positive number.');
+                        input.value = '1';
+                        return;
+                    }
+
+                    const success = await invoiceController.updateInvoiceItemQuantity(invoice.id, input.dataset.lineItemId, quantity);
+                    if (success) {
                         renderInvoiceDetail({ id });
                     }
                 });
-                modal.open();
+            });
+
+            document.querySelectorAll('.draft-remove-item').forEach(button => {
+                button.addEventListener('click', async () => {
+                    if (!confirm('Remove this product from the draft invoice? The product catalog will not be changed.')) {
+                        return;
+                    }
+                    const success = await invoiceController.removeInvoiceItem(invoice.id, button.dataset.lineItemId);
+                    if (success) {
+                        renderInvoiceDetail({ id });
+                    }
+                });
+            });
+
+            document.getElementById('invoice-status-selector')?.addEventListener('change', async event => {
+                const nextStatus = event.target.value;
+                const previousStatus = invoice.status || 'pending';
+                if (nextStatus === previousStatus) {
+                    return;
+                }
+
+                if (nextStatus === 'returned') {
+                    event.target.value = previousStatus;
+                    await openRecordReturnModal();
+                    return;
+                }
+
+                if (confirm(`Change invoice status to ${nextStatus === 'fullfilled' ? 'fulfilled' : nextStatus}?`)) {
+                    const success = await invoiceController.updateStatus(invoice.id, nextStatus);
+                    if (success) {
+                        renderInvoiceDetail({ id });
+                    }
+                    return;
+                }
+
+                event.target.value = previousStatus;
             });
 
             document.getElementById('btn-complete-invoice').addEventListener('click', async () => {
+                if (!getEditableItems().length) {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    notificationService.error('Invoice must have at least one item.');
+                    return;
+                }
                 const { returnsService } = await import("../services/returnsService.js");
                 const { notificationService } = await import("../core/notificationService.js");
                 await returnsService.markCompleted(invoice.id);

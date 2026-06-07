@@ -1,6 +1,7 @@
 import { orderService } from "../services/orderService.js";
 import { customerService } from "../services/customerService.js";
 import { productService } from "../services/productService.js";
+import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
@@ -79,11 +80,15 @@ function resolveProductCategory(item = {}, product = {}, categoryLookup = {}) {
 export const dashboardController = {
     async loadDashboard() {
         try {
-            const [orders, customers, products, productCategories] = await Promise.all([
+            const [orders, customers, products, productCategories, returnInvoices] = await Promise.all([
                 orderService.getAllOrders(),
                 customerService.getAllCustomers(),
                 productService.getAllProducts(),
-                productService.getAllCategories()
+                productService.getAllCategories(),
+                invoiceService.getReturnedInvoicesForAnalytics().catch(function(error) {
+                    console.warn("Could not load returned invoice analytics.", error);
+                    return [];
+                })
             ]);
 
             // Create a lookup map for customer categories
@@ -133,24 +138,25 @@ export const dashboardController = {
                     }),
                     customerCategory: categoryMap[(order.customerName || "").toLowerCase().trim()] || 'C',
                     agingDays: Math.max(0, diffDays),
-                    isOutstanding: order.status === 'confirmed' || order.status === 'fulfilled'
+                    isOutstanding: order.status === 'confirmed' || order.status === 'fulfilled' || order.status === 'fullfilled'
                 };
             });
 
             return {
                 orders: ordersWithCategory,
+                returnInvoices: returnInvoices,
                 metrics: this.calculateMetrics(ordersWithCategory)
             };
         } catch (error) {
             console.error("Dashboard Load Error:", error);
             notificationService.error(t('msg_load_fail'));
-            return { orders: [], metrics: {} };
+            return { orders: [], returnInvoices: [], metrics: {} };
         }
     },
 
     getRiskAlerts(orders) {
         const criticalOverdue = orders.filter(o =>
-            ['confirmed', 'fulfilled'].includes(o.status) && (o.agingDays || 0) >= 14
+            ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status) && (o.agingDays || 0) >= 14
         );
 
         if (criticalOverdue.length === 0) return null;
@@ -168,8 +174,8 @@ export const dashboardController = {
     },
 
     calculateMetrics(orders) {
-        const confirmedStati = ['confirmed', 'fulfilled', 'paid'];
-        const outstandingStati = ['confirmed', 'fulfilled'];
+        const confirmedStati = ['confirmed', 'fulfilled', 'fullfilled', 'paid'];
+        const outstandingStati = ['confirmed', 'fulfilled', 'fullfilled'];
 
         return {
             totalOrders: orders.length,
@@ -184,8 +190,8 @@ export const dashboardController = {
         };
     },
 
-    loadStats(orders, period, revenueGranularity = 'day') {
-        return statsService.getDashboardStats(orders, period, revenueGranularity);
+    loadStats(orders, period, revenueGranularity = 'day', returnInvoices = []) {
+        return statsService.getDashboardStats(orders, period, revenueGranularity, returnInvoices);
     },
 
     getTopProductsForCategory(orders, categoryId) {

@@ -147,6 +147,11 @@ export const renderSettings = async () => {
                             <input type="number" name="invoiceItemsPerPage" value="${settings.invoiceItemsPerPage ?? 7}" min="1" max="30" step="1" style="width: 120px;">
                             <small style="color: var(--color-gray-500);">Default is 7. Lower this if long product names or payment details need more room.</small>
                         </div>
+                        <div class="input-group">
+                            <label>Approval Link Expiration (hours)</label>
+                            <input type="number" name="approvalLinkExpirationHours" value="${settings.approvalLinkExpirationHours ?? 24}" min="1" max="720" step="1" style="width: 120px;">
+                            <small style="color: var(--color-gray-500);">Customer approval links expire after this many hours. Default is 24.</small>
+                        </div>
                     `
     })}
 
@@ -244,6 +249,7 @@ export const renderSettings = async () => {
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
             data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
+            data.approvalLinkExpirationHours = parseInt(data.approvalLinkExpirationHours, 10) || 24;
             data.showQrCode = formData.get('showQrCode') === 'true';
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
@@ -277,6 +283,7 @@ export const renderSettings = async () => {
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
             data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
+            data.approvalLinkExpirationHours = parseInt(data.approvalLinkExpirationHours, 10) || 24;
             data.showQrCode = formData.get('showQrCode') === 'true';
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
@@ -300,6 +307,7 @@ export const renderSettings = async () => {
         const data = Object.fromEntries(formData.entries());
         data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
         data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
+        data.approvalLinkExpirationHours = parseInt(data.approvalLinkExpirationHours, 10) || 24;
         data.showQrCode = formData.get('showQrCode') === 'true';
         data.showNotes = formData.get('showNotes') === 'true';
         data.showFooter = formData.get('showFooter') === 'true';

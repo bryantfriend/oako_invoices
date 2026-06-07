@@ -7,6 +7,9 @@ import requireActorRoleModule from "./Core/requireActorRole.js";
 import requireContextRoleModule from "./Core/requireContextRole.js";
 import requireContextValueModule from "./Core/requireContextValue.js";
 import authorizeArchiveInvoiceModule from "./Invoices/authorizeArchiveInvoice.js";
+import authorizeGenerateInvoiceApprovalLinkModule from "./Invoices/authorizeGenerateInvoiceApprovalLink.js";
+import authorizeSubmitInvoiceApprovalResponseModule from "./Invoices/authorizeSubmitInvoiceApprovalResponse.js";
+import authorizeInvoiceMutationModule from "./Invoices/authorizeInvoiceMutation.js";
 
 /**
  * Authorizers
@@ -24,6 +27,12 @@ var authorizers = {
   deny: denyModule.deny,
   passAuthorize: passAuthorizeModule.passAuthorize,
   authorizeArchiveInvoice: authorizeArchiveInvoiceModule.authorizeArchiveInvoice,
+  authorizeGenerateInvoiceApprovalLink:
+    authorizeGenerateInvoiceApprovalLinkModule.authorizeGenerateInvoiceApprovalLink,
+  authorizeSubmitInvoiceApprovalResponse:
+    authorizeSubmitInvoiceApprovalResponseModule.authorizeSubmitInvoiceApprovalResponse,
+  authorizeInvoiceMutation:
+    authorizeInvoiceMutationModule.authorizeInvoiceMutation,
 
   createRequireActorRoleAuthorizer:
     requireActorRoleModule.createRequireActorRoleAuthorizer,

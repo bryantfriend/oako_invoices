@@ -1,4 +1,3 @@
-import { authService } from "./authService.js";
 import { store } from "./store.js";
 
 export const guardService = {
@@ -7,7 +6,8 @@ export const guardService = {
      * @returns {boolean}
      */
     canActivate: (routePath) => {
-        const user = store.getState().currentUser;
+        const state = store.getState();
+        const user = state.currentUser;
 
         // Public routes
         if (routePath === '/login') {
@@ -15,6 +15,6 @@ export const guardService = {
         }
 
         // Protected routes
-        return !!user;
+        return !!user && state.isAdmin === true;
     }
 };

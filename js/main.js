@@ -66,23 +66,35 @@ async function initApp() {
         setTimeout(async () => {
             try {
                 const { productService } = await import("./services/productService.js");
-                const { customerController } = await import("./controllers/customerController.js");
-                const { orderService } = await import("./services/orderService.js");
-                const { invoiceService } = await import("./services/invoiceService.js");
-                const ignorePreloadError = (label) => (error) => {
-                    if (error?.message?.includes('timeout')) {
-                        console.debug(`Preload skipped after timeout: ${label}`);
-                        return;
-                    }
-                    console.warn(`Preload ignoring error: ${label}`, error);
+                const logPreloadError = (collectionName) => (error) => {
+                    const message = error?.message || '';
+                    const isTimeout = message.toLowerCase().includes('timeout');
+                    console.warn(`[preload] ${collectionName} ${isTimeout ? 'timed out' : 'failed'}.`, {
+                        collection: collectionName,
+                        code: error?.code || '',
+                        message,
+                        authState: authService.getAuthDebugState()
+                    });
                 };
 
-                // Fire and forget to populate IndexedDB cache, adding catch to prevent unhandled rejections
-                productService.getAllProducts().catch(ignorePreloadError('products'));
-                productService.getAllCategories().catch(ignorePreloadError('categories'));
-                customerController.loadAllCustomers().catch(ignorePreloadError('customers'));
-                orderService.getAllOrders().catch(ignorePreloadError('orders'));
-                invoiceService.getWorkingInvoices().catch(ignorePreloadError('invoices'));
+                productService.getAllProducts().catch(logPreloadError('products'));
+                productService.getAllCategories().catch(logPreloadError('categories'));
+
+                const authState = authService.getAuthDebugState();
+                if (!authState.signedIn || !authState.isAdmin) {
+                    console.info('[preload] Skipping admin collections until auth has a verified admin profile.', {
+                        authState
+                    });
+                    return;
+                }
+
+                const { customerService } = await import("./services/customerService.js");
+                const { orderService } = await import("./services/orderService.js");
+                const { invoiceService } = await import("./services/invoiceService.js");
+
+                customerService.getAllCustomers().catch(logPreloadError('customers'));
+                orderService.getAllOrders().catch(logPreloadError('orders'));
+                invoiceService.getWorkingInvoices().catch(logPreloadError('invoices'));
             } catch (e) {
                 console.warn("Failed to preload offline data:", e);
             }

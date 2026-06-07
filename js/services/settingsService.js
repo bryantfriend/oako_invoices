@@ -14,6 +14,7 @@ import {
 const storage = getStorage();
 const COLLECTION = 'settings';
 const DOCUMENT_ID = 'invoice_config';
+let invoiceSettingsCache = null;
 
 export const DEFAULT_INVOICE_SETTINGS = {
     companyName: 'Kyrgyz Organics',
@@ -28,6 +29,7 @@ export const DEFAULT_INVOICE_SETTINGS = {
     logoUrl: '',
     footerText: 'Thanks for supporting sustainable agriculture!',
     courierPin: '23456',
+    approvalLinkExpirationHours: 24,
     whatsappNumber: '',
     googleSheetId: '',
     googleSheetsWebhookUrl: '',
@@ -55,10 +57,12 @@ export function buildGoogleSheetUrl(sheetId = '') {
 
 function normalizeInvoiceSettings(data = {}) {
     const invoiceItemsPerPage = Math.min(30, Math.max(1, parseInt(data.invoiceItemsPerPage, 10) || DEFAULT_INVOICE_SETTINGS.invoiceItemsPerPage));
+    const approvalLinkExpirationHours = Math.min(720, Math.max(1, parseInt(data.approvalLinkExpirationHours, 10) || DEFAULT_INVOICE_SETTINGS.approvalLinkExpirationHours));
 
     return {
         ...data,
         invoiceItemsPerPage,
+        approvalLinkExpirationHours,
         googleSheetId: getGoogleSheetId(data.googleSheetId),
         googleSheetsWebhookUrl: String(data.googleSheetsWebhookUrl || '').trim()
     };
@@ -66,6 +70,10 @@ function normalizeInvoiceSettings(data = {}) {
 
 export const settingsService = {
     async getInvoiceSettings() {
+        if (invoiceSettingsCache) {
+            return invoiceSettingsCache;
+        }
+
         let timeoutId;
         try {
             const docRef = doc(db, COLLECTION, DOCUMENT_ID);
@@ -76,9 +84,10 @@ export const settingsService = {
             });
             const snap = await Promise.race([getDoc(docRef), timeoutPromise]);
 
-            return snap.exists()
+            invoiceSettingsCache = snap.exists()
                 ? { ...DEFAULT_INVOICE_SETTINGS, ...snap.data(), __fromFallback: false }
                 : { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: false };
+            return invoiceSettingsCache;
         } catch (error) {
             console.warn("Failed to fetch settings, using defaults.", error);
             return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
@@ -89,7 +98,9 @@ export const settingsService = {
 
     async updateInvoiceSettings(data) {
         const docRef = doc(db, COLLECTION, DOCUMENT_ID);
-        await setDoc(docRef, { ...normalizeInvoiceSettings(data), updatedAt: new Date() }, { merge: true });
+        const normalized = normalizeInvoiceSettings(data);
+        await setDoc(docRef, { ...normalized, updatedAt: new Date() }, { merge: true });
+        invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...normalized, __fromFallback: false };
         return true;
     },
 

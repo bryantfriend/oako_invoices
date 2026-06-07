@@ -2,6 +2,7 @@ export const ORDER_STATUS = {
     DRAFT: 'draft',
     PENDING: 'pending', // Submitted by customer/sales
     CONFIRMED: 'confirmed', // Reviewed by admin
+    RETURNED: 'returned', // Returned items recorded
     FULFILLED: 'fulfilled', // Shipped/Done
     PAID: 'paid', // Payment received
     CANCELLED: 'cancelled'

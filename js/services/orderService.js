@@ -15,6 +15,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { googleSheetsService } from "./googleSheetsService.js";
+import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
 
 const COLLECTION = 'orders';
 
@@ -24,12 +25,12 @@ export const orderService = {
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Orders fetch timeout')), 30000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
-            console.error("Error fetching orders:", error);
+            logCollectionError(COLLECTION, error);
             throw error;
         } finally {
             clearTimeout(timeoutId);
@@ -41,7 +42,7 @@ export const orderService = {
         try {
             const docRef = doc(db, COLLECTION, id);
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Order fetch timeout')), 30000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
             if (docSnap.exists()) {

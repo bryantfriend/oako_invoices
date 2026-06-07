@@ -21,13 +21,23 @@ import { offlineStatusService } from "./offlineStatusService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { deviceIdService } from "./deviceIdService.js";
 import { conflictService } from "./conflictService.js";
+import { logCollectionError } from "../core/firestoreDiagnostics.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import archiveInvoiceIntentModule from "../ICF/Intents/ArchiveInvoiceIntent.js";
+import updateInvoiceItemsIntentModule from "../ICF/Intents/UpdateInvoiceItemsIntent.js";
+import recordInvoiceReturnIntentModule from "../ICF/Intents/RecordInvoiceReturnIntent.js";
+import {
+    buildInvoiceItemFromProduct,
+    normalizeInvoiceItemsForEditing,
+    recalculateInvoiceTotals,
+    validateEditableItems
+} from "../ICF/Stages/Processors/Invoices/invoiceEditHelpers.js";
 
 const COLLECTION = 'invoices';
 const WORKING_INVOICE_LIMIT = 120;
 const RECENT_HISTORY_LIMIT = 60;
 const ARCHIVED_INVOICE_LIMIT = 200;
+const RETURN_ANALYTICS_LIMIT = 250;
 
 function getActorId(user) {
     if (!user) {
@@ -359,17 +369,19 @@ export const invoiceService = {
             }
 
             const order = orderSnapshot || await orderService.getOrderById(orderId);
-            const settings = await settingsService.getInvoiceSettings();
 
             if (!order) {
                 throw new Error("Order not found");
             }
 
-            const customer = await customerService.getCustomerByName(order.customerName).catch(function() {
-                return null;
-            });
+            const [settings, customer, deviceId] = await Promise.all([
+                settingsService.getInvoiceSettings(),
+                customerService.getCustomerByName(order.customerName).catch(function() {
+                    return null;
+                }),
+                deviceIdService.getDeviceId()
+            ]);
             const user = auth.currentUser;
-            const deviceId = await deviceIdService.getDeviceId();
             const storeId = getStoreId(settings);
             const isOffline = !offlineStatusService.isOnline();
             const invoiceId = isOffline ? await deviceIdService.createOfflineEntityId(storeId) : '';
@@ -454,7 +466,7 @@ export const invoiceService = {
 
         const openQuery = query(
             collection(db, COLLECTION),
-            where('status', 'in', ['pending', 'draft', 'confirmed', 'return_pending', 'completed_pending_sync']),
+            where('status', 'in', ['pending', 'draft', 'confirmed', 'returned', 'return_pending', 'completed_pending_sync']),
             limit(WORKING_INVOICE_LIMIT)
         );
         const todayQuery = query(
@@ -470,15 +482,15 @@ export const invoiceService = {
 
         const groups = await Promise.all([
             getDocs(openQuery).then(mapSnapshot).catch(function(error) {
-                console.warn("Open invoice query failed.", error);
+                logCollectionError(COLLECTION, error, 'fetch open invoices from');
                 return [];
             }),
             getDocs(todayQuery).then(mapSnapshot).catch(function(error) {
-                console.warn("Today invoice query failed.", error);
+                logCollectionError(COLLECTION, error, 'fetch today invoices from');
                 return [];
             }),
             getDocs(recentQuery).then(mapSnapshot).catch(function(error) {
-                console.warn("Recent invoice query failed.", error);
+                logCollectionError(COLLECTION, error, 'fetch recent invoices from');
                 return [];
             })
         ]);
@@ -524,6 +536,14 @@ export const invoiceService = {
         return this.getWorkingInvoices();
     },
 
+    normalizeInvoiceItemsForEditing(invoice) {
+        return normalizeInvoiceItemsForEditing(invoice);
+    },
+
+    recalculateInvoiceTotals(invoice) {
+        return recalculateInvoiceTotals(invoice);
+    },
+
     async archiveInvoice(invoiceId) {
         const intent = archiveInvoiceIntentModule.createArchiveInvoiceIntent(
             getCurrentAdminActor(),
@@ -554,6 +574,148 @@ export const invoiceService = {
             createdAt: dateObj,
             dueDate: dateObj
         }, 'updateInvoice');
+    },
+
+    async addInvoiceItem(invoiceId, product, quantity = 1) {
+        const invoice = await this.getInvoice(invoiceId);
+        if (!invoice) {
+            throw new Error('Invoice not found.');
+        }
+        if (invoice.status !== 'draft') {
+            throw new Error('Products can only be added while the invoice is in draft mode.');
+        }
+
+        const items = normalizeInvoiceItemsForEditing(invoice);
+        const productId = product.id || product.productId || '';
+        const existingIndex = items.findIndex(item => item.productId && item.productId === productId);
+        const addQuantity = Number(quantity) || 1;
+
+        if (addQuantity <= 0) {
+            throw new Error('Quantity must be a positive number.');
+        }
+
+        if (existingIndex >= 0) {
+            items[existingIndex].quantity = (Number(items[existingIndex].quantity) || 0) + addQuantity;
+            items[existingIndex].total = (Number(items[existingIndex].price) || 0) * items[existingIndex].quantity;
+        } else {
+            items.push(buildInvoiceItemFromProduct(product, addQuantity));
+        }
+
+        return this.saveInvoiceItems(invoiceId, items);
+    },
+
+    async removeInvoiceItem(invoiceId, lineItemId) {
+        const invoice = await this.getInvoice(invoiceId);
+        if (!invoice) {
+            throw new Error('Invoice not found.');
+        }
+        if (invoice.status !== 'draft') {
+            throw new Error('Products can only be removed while the invoice is in draft mode.');
+        }
+
+        const items = normalizeInvoiceItemsForEditing(invoice)
+            .filter(item => item.lineItemId !== lineItemId);
+
+        return this.saveInvoiceItems(invoiceId, items);
+    },
+
+    async updateInvoiceItemQuantity(invoiceId, lineItemId, quantity) {
+        const invoice = await this.getInvoice(invoiceId);
+        if (!invoice) {
+            throw new Error('Invoice not found.');
+        }
+        if (invoice.status !== 'draft') {
+            throw new Error('Invoice quantities can only be edited in draft mode.');
+        }
+
+        const nextQuantity = Number(quantity);
+        if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
+            throw new Error('Quantity must be a positive number.');
+        }
+
+        const items = normalizeInvoiceItemsForEditing(invoice).map(item => {
+            if (item.lineItemId !== lineItemId) {
+                return item;
+            }
+
+            return Object.assign({}, item, {
+                quantity: nextQuantity,
+                adjustedQuantity: nextQuantity,
+                total: (Number(item.price) || 0) * nextQuantity
+            });
+        });
+
+        return this.saveInvoiceItems(invoiceId, items);
+    },
+
+    async saveInvoiceItems(invoiceId, items) {
+        const invoice = await this.getInvoice(invoiceId);
+        if (!invoice) {
+            throw new Error('Invoice not found.');
+        }
+
+        const recalculated = recalculateInvoiceTotals(Object.assign({}, invoice, {
+            items: items
+        }));
+        const validationMessage = validateEditableItems(recalculated.items);
+        if (validationMessage) {
+            throw new Error(validationMessage);
+        }
+
+        const intent = updateInvoiceItemsIntentModule.createUpdateInvoiceItemsIntent(
+            getCurrentAdminActor(),
+            {
+                invoiceId: invoiceId,
+                items: recalculated.items,
+                taxRate: recalculated.taxRate,
+                discountType: recalculated.discountType,
+                discountValue: recalculated.discountValue,
+                discountAmount: recalculated.discountAmount,
+                totalWeight: recalculated.totalWeight
+            },
+            { source: 'ui' }
+        );
+
+        const result = await icfPipeline.run(intent);
+        if (!result || result.ok !== true) {
+            throw new Error((result && (result.reason || result.message || (result.errors && result.errors[0]))) || 'Failed to update invoice items.');
+        }
+
+        return result;
+    },
+
+    async recordInvoiceReturn(invoiceId, returnPayload = {}) {
+        const intent = recordInvoiceReturnIntentModule.createRecordInvoiceReturnIntent(
+            getCurrentAdminActor(),
+            {
+                invoiceId: invoiceId,
+                items: returnPayload.items || [],
+                note: returnPayload.note || ''
+            },
+            { source: 'ui' }
+        );
+
+        const result = await icfPipeline.run(intent);
+        if (!result || result.ok !== true) {
+            throw new Error((result && (result.reason || result.message || (result.errors && result.errors[0]))) || 'Failed to record returned items.');
+        }
+
+        return result;
+    },
+
+    async getReturnedInvoicesForAnalytics() {
+        const recentQuery = query(
+            collection(db, COLLECTION),
+            orderBy('updatedAt', 'desc'),
+            limit(RETURN_ANALYTICS_LIMIT)
+        );
+        const snapshot = await getDocs(recentQuery);
+        return mapSnapshot(snapshot).filter(function(invoice) {
+            if (Array.isArray(invoice.returns) && invoice.returns.length > 0) {
+                return true;
+            }
+            return Number(invoice.returnSummary?.totalReturnedQuantity || 0) > 0;
+        });
     },
 
     async updateInvoice(id, updates, actionType = 'updateInvoice') {

@@ -7,6 +7,9 @@ import addSourceContextModule from "./Core/addSourceContext.js";
 import addActorRoleContextModule from "./Core/addActorRoleContext.js";
 import addStaticContextValueModule from "./Core/addStaticContextValue.js";
 import addArchiveInvoiceContextModule from "./Invoices/addArchiveInvoiceContext.js";
+import addGenerateInvoiceApprovalLinkContextModule from "./Invoices/addGenerateInvoiceApprovalLinkContext.js";
+import addSubmitInvoiceApprovalResponseContextModule from "./Invoices/addSubmitInvoiceApprovalResponseContext.js";
+import addInvoiceMutationContextModule from "./Invoices/addInvoiceMutationContext.js";
 
 /**
  * Context Providers
@@ -29,6 +32,12 @@ var contextProviders = {
   addActorRoleContext: addActorRoleContextModule.addActorRoleContext,
   addArchiveInvoiceContext:
     addArchiveInvoiceContextModule.addArchiveInvoiceContext,
+  addGenerateInvoiceApprovalLinkContext:
+    addGenerateInvoiceApprovalLinkContextModule.addGenerateInvoiceApprovalLinkContext,
+  addSubmitInvoiceApprovalResponseContext:
+    addSubmitInvoiceApprovalResponseContextModule.addSubmitInvoiceApprovalResponseContext,
+  addInvoiceMutationContext:
+    addInvoiceMutationContextModule.addInvoiceMutationContext,
 
   createAddStaticContextValueProvider:
     addStaticContextValueModule.createAddStaticContextValueProvider

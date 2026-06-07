@@ -9,6 +9,7 @@ import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
+import { notificationService } from "../core/notificationService.js";
 
 // Global chart registry to prevent "broken" graphs
 let chartInstances = {};
@@ -31,6 +32,7 @@ export const renderDashboard = async () => {
 
     // Internal State
     let allOrders = [];
+    let returnInvoices = [];
     let filteredOrders = [];
     let inventoryCategories = [];
     let selectedOrderIds = new Set();
@@ -40,16 +42,96 @@ export const renderDashboard = async () => {
     let selectedProductCategory = null;
     let filters = { status: 'all', drill: null };
     let sort = { key: 'orderDate', order: 'desc' };
+    let invoiceRefreshTimer = null;
+    const pendingCheckmarkUpdates = new Set();
+    const updatedCheckmarkUpdates = new Set();
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
-    const [{ orders }, inventoryData] = await Promise.all([
+    const [{ orders, returnInvoices: loadedReturnInvoices = [] }, inventoryData] = await Promise.all([
         dashboardController.loadDashboard(),
         inventoryController.loadInventoryData(today)
     ]);
     allOrders = orders.filter(order => order.archived !== true);
+    returnInvoices = loadedReturnInvoices;
     filteredOrders = [...allOrders];
     inventoryCategories = inventoryData;
+
+    const getScrollPosition = () => container.scrollTop || 0;
+
+    const restoreScrollPosition = (scrollTop) => {
+        requestAnimationFrame(() => {
+            container.scrollTop = scrollTop;
+        });
+    };
+
+    const refreshDashboardDataPreservingState = async () => {
+        const scrollTop = getScrollPosition();
+        const [{ orders: refreshedOrders, returnInvoices: refreshedReturnInvoices = [] }, refreshedInventoryData] = await Promise.all([
+            dashboardController.loadDashboard(),
+            inventoryController.loadInventoryData(today)
+        ]);
+
+        allOrders = refreshedOrders.filter(order => order.archived !== true);
+        returnInvoices = refreshedReturnInvoices;
+        inventoryCategories = refreshedInventoryData;
+        pendingCheckmarkUpdates.clear();
+        updatedCheckmarkUpdates.clear();
+        renderUI();
+        restoreScrollPosition(scrollTop);
+    };
+
+    const scheduleInvoiceListRefresh = (delayMs = 6000) => {
+        if (invoiceRefreshTimer) {
+            clearTimeout(invoiceRefreshTimer);
+        }
+
+        invoiceRefreshTimer = setTimeout(async () => {
+            invoiceRefreshTimer = null;
+
+            if (pendingCheckmarkUpdates.size > 0) {
+                scheduleInvoiceListRefresh(1000);
+                return;
+            }
+
+            try {
+                await refreshDashboardDataPreservingState();
+            } catch (error) {
+                notificationService.error(error.message || t('msg_load_fail'));
+            }
+        }, delayMs);
+    };
+
+    const updateLocalOrder = (id, updates) => {
+        const applyUpdate = order => {
+            if (order && order.id === id) {
+                Object.assign(order, updates);
+            }
+        };
+
+        allOrders.forEach(applyUpdate);
+        filteredOrders.forEach(applyUpdate);
+    };
+
+    const renderPayCheckmarkButton = (row) => {
+        const isPending = pendingCheckmarkUpdates.has(row.id);
+        const isUpdated = updatedCheckmarkUpdates.has(row.id);
+        const stateClass = isPending ? 'is-pending' : (isUpdated ? 'is-updated' : '');
+        const title = isPending ? 'Updating...' : (isUpdated ? 'Updated' : 'Mark Paid');
+        const disabled = isPending || isUpdated ? 'disabled' : '';
+
+        return `
+            <button
+                class="btn-icon invoice-checkmark-button ${stateClass}"
+                onclick="event.stopPropagation(); window.playClickAnimation(event, 'pay'); window.markAsPaid('${row.id}', event.currentTarget)"
+                title="${title}"
+                data-order-id="${row.id}"
+                ${disabled}
+            >
+                ✓
+            </button>
+        `;
+    };
 
     const handleSort = (key) => {
         if (sort.key === key) {
@@ -65,7 +147,7 @@ export const renderDashboard = async () => {
 
     const renderUI = () => {
         cleanupCharts();
-        const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity);
+        const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity, returnInvoices);
         const alerts = dashboardController.getRiskAlerts(allOrders);
         const productChart = getProductChartData(stats.charts);
 
@@ -182,6 +264,8 @@ export const renderDashboard = async () => {
                         </div>
                     </div>
 
+                    ${renderReturnAnalytics(stats.charts.returnedItems)}
+
                     <!-- ROW 5: TABLE (FLEX GROW) -->
                     <div class="card" style="padding: 0; margin: 0; display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
                         <div style="padding: 8px 12px; border-bottom: 1px solid var(--color-gray-100); display: flex; justify-content: space-between; align-items: center; background: #fff;">
@@ -193,11 +277,12 @@ export const renderDashboard = async () => {
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <button id="archive-selected-orders" class="btn btn-secondary btn-sm" disabled style="font-size: 11px; padding: 4px 10px;">Archive Selected</button>
                                 <select id="filter-status" style="border: 1px solid #eee; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: 600;">
-                                    <option value="all">Status: All</option>
-                                    <option value="overdue">Overdue</option>
-                                    <option value="confirmed">Confirmed</option>
-                                    <option value="fulfilled">Fulfilled</option>
-                                    <option value="paid">Paid</option>
+                                    <option value="all" ${filters.status === 'all' ? 'selected' : ''}>Status: All</option>
+                                    <option value="overdue" ${filters.status === 'overdue' ? 'selected' : ''}>Overdue</option>
+                                    <option value="confirmed" ${filters.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
+                                    <option value="returned" ${filters.status === 'returned' ? 'selected' : ''}>Returned</option>
+                                    <option value="fulfilled" ${filters.status === 'fulfilled' ? 'selected' : ''}>Fulfilled</option>
+                                    <option value="paid" ${filters.status === 'paid' ? 'selected' : ''}>Paid</option>
                                 </select>
                             </div>
                         </div>
@@ -342,11 +427,65 @@ export const renderDashboard = async () => {
         </div>
     `;
 
+    const renderReturnAnalytics = (returns) => {
+        const productRows = (returns.byProduct || []).slice(0, 6);
+        const dateRows = (returns.byDate || []).slice(-6).reverse();
+
+        return `
+            <div class="card" style="padding: 12px; margin: 0; display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr) minmax(260px, 1fr); gap: 12px; align-items: stretch;">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div>
+                        <h3 style="font-size: 12px; font-weight: 800; color: var(--color-gray-800); margin: 0;">Returned Items</h3>
+                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Recorded returns in the selected period</div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 10px; color: #92400e; font-weight: 800; text-transform: uppercase;">Quantity</div>
+                            <div style="font-size: 22px; color: #b45309; font-weight: 900; margin-top: 4px;">${returns.totalReturnedQuantity || 0}</div>
+                        </div>
+                        <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 10px; color: #9a3412; font-weight: 800; text-transform: uppercase;">Value</div>
+                            <div style="font-size: 18px; color: #c2410c; font-weight: 900; margin-top: 6px;">${formatCurrency(returns.totalReturnedAmount || 0)}</div>
+                        </div>
+                    </div>
+                    <div style="flex: 1; min-height: 110px;">
+                        ${(returns.byDate || []).length ? '<canvas id="chart-returns"></canvas>' : '<div style="height: 100%; display: grid; place-items: center; color: var(--color-gray-400); font-size: 12px; background: var(--color-gray-50); border-radius: 8px;">No returns found for this period.</div>'}
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; min-width: 0;">
+                    <h4 style="font-size: 11px; font-weight: 800; color: var(--color-gray-500); margin: 0 0 8px;">BY PRODUCT</h4>
+                    <div style="display: grid; gap: 6px;">
+                        ${productRows.length ? productRows.map(row => `
+                            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: var(--color-gray-50); border-radius: 6px;">
+                                <span style="font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${row.productName}</span>
+                                <span style="font-weight: 900; color: #b45309;">${row.quantity}</span>
+                                <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
+                            </div>
+                        `).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returned items yet.</div>'}
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; min-width: 0;">
+                    <h4 style="font-size: 11px; font-weight: 800; color: var(--color-gray-500); margin: 0 0 8px;">BY DATE</h4>
+                    <div style="display: grid; gap: 6px;">
+                        ${dateRows.length ? dateRows.map(row => `
+                            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: var(--color-gray-50); border-radius: 6px;">
+                                <span style="font-weight: 800;">${row.date}</span>
+                                <span style="font-weight: 900; color: #b45309;">${row.quantity}</span>
+                                <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
+                            </div>
+                        `).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returns found for this period.</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    };
+
     const initCharts = (chartData, productChart) => {
         const ctxRev = document.getElementById('chart-revenue').getContext('2d');
         const ctxUnits = document.getElementById('chart-units').getContext('2d');
         const ctxPipeline = document.getElementById('chart-pipeline').getContext('2d');
         const ctxProducts = document.getElementById('chart-products').getContext('2d');
+        const ctxReturns = document.getElementById('chart-returns');
 
         // Revenue Chart (Line) - Compact
         chartInstances.rev = new Chart(ctxRev, {
@@ -453,7 +592,7 @@ export const renderDashboard = async () => {
                 labels: chartData.statusPipeline.labels,
                 datasets: [{
                     data: chartData.statusPipeline.data,
-                    backgroundColor: ['#94a3b8', '#f59e0b', '#3b82f6', '#8b5cf6', '#10b981'],
+                    backgroundColor: ['#94a3b8', '#f59e0b', '#3b82f6', '#b45309', '#8b5cf6', '#10b981'],
                     borderRadius: 3,
                     barThickness: 24
                 }]
@@ -525,20 +664,53 @@ export const renderDashboard = async () => {
                 }
             }
         });
+
+        if (ctxReturns) {
+            chartInstances.returns = new Chart(ctxReturns, {
+                type: 'bar',
+                data: {
+                    labels: chartData.returnedItems.labels,
+                    datasets: [{
+                        label: 'Returned Quantity',
+                        data: chartData.returnedItems.quantities,
+                        backgroundColor: '#b45309',
+                        borderRadius: 3,
+                        barThickness: 'flex',
+                        maxBarThickness: 16
+                    }]
+                },
+                options: {
+                    ...commonBarOptions,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            border: { display: false },
+                            grid: { color: '#f1f5f9' },
+                            ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 4 }
+                        },
+                        x: {
+                            border: { display: false },
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { size: 9 }, maxTicksLimit: 5 }
+                        }
+                    }
+                }
+            });
+        }
     };
 
     const applyFilters = () => {
         filteredOrders = allOrders.filter(o => {
             const matchesStatus = filters.status === 'all' ? true :
-                filters.status === 'overdue' ? (o.agingDays >= 1 && ['confirmed', 'fulfilled'].includes(o.status)) :
-                    filters.status === 'due-today' ? (o.agingDays === 0 && ['confirmed', 'fulfilled'].includes(o.status)) :
+                filters.status === 'overdue' ? (o.agingDays >= 1 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
+                    filters.status === 'due-today' ? (o.agingDays === 0 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
                         o.status === filters.status;
 
             const matchesDrill = !filters.drill ? true :
                 filters.drill.type === 'aging' ? (
                     filters.drill.value === 2 ? o.agingDays >= 30 :
                         filters.drill.value === 1 ? (o.agingDays >= 1 && o.agingDays < 30) :
-                            (o.agingDays === 0 && ['confirmed', 'fulfilled'].includes(o.status))
+                            (o.agingDays === 0 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status))
                 ) : true;
 
             return matchesStatus && matchesDrill;
@@ -633,11 +805,7 @@ export const renderDashboard = async () => {
                             📦
                         </button>
                     ` : ''}
-                    ${['confirmed', 'fulfilled'].includes(row.status) ? `
-                        <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'pay'); window.markAsPaid('${row.id}')" title="Mark Paid" style="color: #10b981; background: #ecfdf5;">
-                            ✓
-                        </button>
-                    ` : ''}
+                    ${['confirmed', 'fulfilled', 'fullfilled'].includes(row.status) || pendingCheckmarkUpdates.has(row.id) || updatedCheckmarkUpdates.has(row.id) ? renderPayCheckmarkButton(row) : ''}
                      <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">
                          <span style="opacity: 0.5; font-size: 12px;">👁️</span>
                     </button>
@@ -798,12 +966,41 @@ export const renderDashboard = async () => {
         document.getElementById('create-order-btn').addEventListener('click', () => router.navigate(ROUTES.CREATE_ORDER));
 
         // Global functions for actions
-        window.markAsPaid = async (id) => {
+        window.markAsPaid = async (id, button = null) => {
+            if (pendingCheckmarkUpdates.has(id) || updatedCheckmarkUpdates.has(id)) {
+                return;
+            }
+
+            pendingCheckmarkUpdates.add(id);
+            if (button) {
+                button.disabled = true;
+                button.classList.add('is-pending');
+                button.title = 'Updating...';
+            }
+            scheduleInvoiceListRefresh(6000);
+
             const { orderService } = await import("../services/orderService.js");
             const { gamificationService } = await import("../services/gamificationService.js");
-            await orderService.updateOrderStatus(id, 'paid');
-            await gamificationService.awardAction('ordersPaid');
-            renderDashboard();
+            try {
+                await orderService.updateOrderStatus(id, 'paid');
+                await gamificationService.awardAction('ordersPaid');
+                pendingCheckmarkUpdates.delete(id);
+                updatedCheckmarkUpdates.add(id);
+                updateLocalOrder(id, {
+                    status: 'paid',
+                    paidAt: new Date(),
+                    updatedAt: new Date()
+                });
+                refreshTable();
+            } catch (error) {
+                pendingCheckmarkUpdates.delete(id);
+                if (button) {
+                    button.disabled = false;
+                    button.classList.remove('is-pending', 'is-updated');
+                    button.title = 'Mark Paid';
+                }
+                notificationService.error(error.message || t('msg_update_fail'));
+            }
         };
 
         window.markAsFulfilled = async (id) => {

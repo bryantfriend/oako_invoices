@@ -13,6 +13,7 @@ import {
     limit,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
 
 const COLLECTION = 'customers';
 
@@ -41,7 +42,7 @@ export const customerService = {
             // Simplified query to avoid index requirements for now
             // We can add filtering/ordering back once index is created in Firebase
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Customers fetch timeout')), 30000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
             const snapshot = await Promise.race([getDocs(collection(db, COLLECTION)), timeoutPromise]);
             let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -64,7 +65,10 @@ export const customerService = {
                 .filter(d => d.archived !== true)
                 .sort((a, b) => (a.companyName || a.name || "").localeCompare(b.companyName || b.name || ""));
         } catch (error) {
-            console.error("Error fetching customers:", error);
+            logCollectionError(COLLECTION, error);
+            if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('timeout')) {
+                throw error;
+            }
             return [];
         } finally {
             clearTimeout(timeoutId);
@@ -76,7 +80,7 @@ export const customerService = {
         try {
             const docRef = doc(db, COLLECTION, id);
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Customer fetch timeout')), 30000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
             if (!docSnap.exists()) return null;

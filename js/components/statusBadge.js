@@ -4,7 +4,9 @@ const STATUS_CONFIG = {
     [ORDER_STATUS.DRAFT]: { color: 'var(--color-gray-600)', bg: 'var(--color-gray-100)' },
     [ORDER_STATUS.PENDING]: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
     [ORDER_STATUS.CONFIRMED]: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
+    [ORDER_STATUS.RETURNED]: { color: '#b45309', bg: '#fffbeb' },
     [ORDER_STATUS.FULFILLED]: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
+    fullfilled: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     [ORDER_STATUS.CANCELLED]: { color: 'var(--color-error)', bg: 'var(--color-error-bg)' },
     completed: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     return_pending: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
@@ -14,6 +16,9 @@ const STATUS_CONFIG = {
 
 export const createStatusBadge = (status) => {
     const config = STATUS_CONFIG[status] || STATUS_CONFIG[ORDER_STATUS.DRAFT];
+    const label = status === 'fullfilled'
+        ? 'Fulfilled'
+        : String(status || ORDER_STATUS.DRAFT).replace(/_/g, ' ');
 
     return `
         <span class="status-badge" style="
@@ -29,7 +34,7 @@ export const createStatusBadge = (status) => {
             letter-spacing: 0.5px;
             line-height: 1;
         ">
-            ${status}
+            ${label}
         </span>
     `;
 };

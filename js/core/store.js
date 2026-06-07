@@ -6,6 +6,8 @@ class Store {
         this.state = {
             currentUser: null,
             isAdmin: false,
+            adminProfile: null,
+            authReady: false,
             orders: [],
             invoices: [],
             theme: 'light',

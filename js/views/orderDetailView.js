@@ -132,14 +132,15 @@ export const renderOrderDetail = async ({ id }) => {
                                 <label style="font-size: 11px; font-weight: 700; color: var(--color-gray-400); text-transform: uppercase;">Manual Override</label>
                                 <div style="display: flex; gap: var(--space-2); align-items: center;">
                                     <div id="status-lock-btn" style="cursor: pointer; font-size: 16px; padding: 4px; background: var(--color-gray-50); border-radius: 4px; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">
-                                        ${['fulfilled', 'paid'].includes(order.status) ? '🔒' : '🔓'}
+                                        ${['fulfilled', 'fullfilled', 'paid'].includes(order.status) ? '🔒' : '🔓'}
                                     </div>
-                                    <select id="manual-status-selector" class="input" style="flex: 1; font-size: 13px; height: 32px; padding: 0 8px; ${['fulfilled', 'paid'].includes(order.status) ? 'pointer-events: none; opacity: 0.6;' : ''}">
+                                    <select id="manual-status-selector" class="input" style="flex: 1; font-size: 13px; height: 32px; padding: 0 8px; ${['fulfilled', 'fullfilled', 'paid'].includes(order.status) ? 'pointer-events: none; opacity: 0.6;' : ''}">
                                         ${Object.entries(ORDER_STATUS).map(([key, val]) => `
-                                            <option value="${val}" ${order.status === val ? 'selected' : ''}>${val.charAt(0).toUpperCase() + val.slice(1)}</option>
+                                            <option value="${val}" ${order.status === val ? 'selected' : ''}>${val === 'fulfilled' ? 'Fulfilled' : val.charAt(0).toUpperCase() + val.slice(1)}</option>
                                         `).join('')}
+                                        ${order.status === 'fullfilled' ? '<option value="fullfilled" selected>Fulfilled</option>' : ''}
                                     </select>
-                                    <button id="apply-manual-status" class="btn btn-secondary btn-sm" style="height: 32px; display: ${['fulfilled', 'paid'].includes(order.status) ? 'none' : 'block'};">Apply</button>
+                                    <button id="apply-manual-status" class="btn btn-secondary btn-sm" style="height: 32px; display: ${['fulfilled', 'fullfilled', 'paid'].includes(order.status) ? 'none' : 'block'};">Apply</button>
                                 </div>
                             </div>
                         </div>

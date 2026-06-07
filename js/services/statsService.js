@@ -4,7 +4,7 @@ export const statsService = {
      * @param {Array} orders - All orders
      * @param {string} period - 'today', '7d', '30d', 'all'
      */
-    getDashboardStats(orders, period = '30d', revenueGranularity = 'day') {
+    getDashboardStats(orders, period = '30d', revenueGranularity = 'day', returnInvoices = []) {
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -79,7 +79,8 @@ export const statsService = {
                 statusPipeline: this._getStatusPipeline(orders),
                 topProducts: this._getTopProducts(currentOrders),
                 topCategories: this._getTopCategories(currentOrders),
-                topProductsByCategory: this._getTopProductsByCategory(currentOrders)
+                topProductsByCategory: this._getTopProductsByCategory(currentOrders),
+                returnedItems: this.getReturnedItemsAnalytics(returnInvoices, currentRange)
             }
         };
     },
@@ -92,8 +93,8 @@ export const statsService = {
     },
 
     _calculateMetrics(orders) {
-        const confirmedStati = ['confirmed', 'fulfilled', 'paid'];
-        const outstandingStati = ['confirmed', 'fulfilled'];
+        const confirmedStati = ['confirmed', 'fulfilled', 'fullfilled', 'paid'];
+        const outstandingStati = ['confirmed', 'fulfilled', 'fullfilled'];
 
         return {
             count: orders.length,
@@ -110,6 +111,15 @@ export const statsService = {
 
     _getOrderDate(order) {
         return order.orderDate ? new Date(order.orderDate) : (order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || Date.now()));
+    },
+
+    _getReturnDate(returnRecord) {
+        const value = returnRecord?.createdAt;
+        if (!value) return new Date(0);
+        if (value.toDate) return value.toDate();
+        if (value.seconds) return new Date(value.seconds * 1000);
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? new Date(0) : date;
     },
 
     _startOfBucket(date, granularity = 'day') {
@@ -182,8 +192,8 @@ export const statsService = {
             if (groups[key]) {
                 const amount = o.totalAmount || 0;
                 if (o.status === 'paid') groups[key].paid += amount;
-                else if (['confirmed', 'fulfilled'].includes(o.status)) groups[key].outstanding += amount;
-                if (['confirmed', 'fulfilled', 'paid'].includes(o.status)) {
+                else if (['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) groups[key].outstanding += amount;
+                if (['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(o.status)) {
                     groups[key].gross += amount;
                     groups[key].confirmedRevenue += amount;
                     groups[key].orders += 1;
@@ -247,6 +257,7 @@ export const statsService = {
             { key: 'draft', label: 'Draft' },
             { key: 'pending', label: 'Pending' },
             { key: 'confirmed', label: 'Confirmed' },
+            { key: 'returned', label: 'Returned' },
             { key: 'fulfilled', label: 'Fulfilled' },
             { key: 'paid', label: 'Paid' }
         ];
@@ -257,14 +268,76 @@ export const statsService = {
         });
 
         orders.forEach(order => {
-            if (counts[order.status] !== undefined) {
-                counts[order.status] += 1;
+            const status = order.status === 'fullfilled' ? 'fulfilled' : order.status;
+            if (counts[status] !== undefined) {
+                counts[status] += 1;
             }
         });
 
         return {
             labels: stages.map(stage => stage.label),
             data: stages.map(stage => counts[stage.key])
+        };
+    },
+
+    getReturnedItemsAnalytics(invoices = [], range = {}) {
+        const byDate = {};
+        const byProduct = {};
+        let totalReturnedQuantity = 0;
+        let totalReturnedAmount = 0;
+
+        invoices.forEach(invoice => {
+            const returns = Array.isArray(invoice.returns) ? invoice.returns : [];
+            returns.forEach(returnRecord => {
+                const returnDate = this._getReturnDate(returnRecord);
+                if (range.start && returnDate < range.start) return;
+                if (range.end && returnDate > range.end) return;
+
+                const dateKey = returnDate.toISOString().split('T')[0];
+                if (!byDate[dateKey]) {
+                    byDate[dateKey] = { date: dateKey, quantity: 0, amount: 0 };
+                }
+
+                (returnRecord.items || []).forEach(item => {
+                    const quantity = Number(item.returnedQuantity) || 0;
+                    const amount = Number(item.returnAmount) || 0;
+                    const productId = item.productId || item.lineItemId || item.productName || 'unknown';
+                    const productName = item.productName || productId;
+
+                    totalReturnedQuantity += quantity;
+                    totalReturnedAmount += amount;
+                    byDate[dateKey].quantity += quantity;
+                    byDate[dateKey].amount += amount;
+
+                    if (!byProduct[productId]) {
+                        byProduct[productId] = {
+                            productId,
+                            productName,
+                            quantity: 0,
+                            amount: 0
+                        };
+                    }
+                    byProduct[productId].quantity += quantity;
+                    byProduct[productId].amount += amount;
+                });
+            });
+        });
+
+        const byDateRows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+        const byProductRows = Object.values(byProduct)
+            .sort((a, b) => {
+                if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+                return b.amount - a.amount;
+            });
+
+        return {
+            totalReturnedQuantity,
+            totalReturnedAmount,
+            byDate: byDateRows,
+            byProduct: byProductRows,
+            labels: byDateRows.map(row => row.date.split('-').slice(1).join('/')),
+            quantities: byDateRows.map(row => row.quantity),
+            amounts: byDateRows.map(row => row.amount)
         };
     },
 
@@ -369,7 +442,7 @@ export const statsService = {
         }).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
         const oldestUnpaid = orders
-            .filter(o => ['confirmed', 'fulfilled'].includes(o.status))
+            .filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status))
             .sort((a, b) => {
                 const da = a.orderDate ? new Date(a.orderDate).getTime() : 0;
                 const db = b.orderDate ? new Date(b.orderDate).getTime() : 0;
@@ -386,7 +459,7 @@ export const statsService = {
 
     getTopOverdueCustomers(orders) {
         const customers = {};
-        orders.filter(o => ['confirmed', 'fulfilled'].includes(o.status) && (o.agingDays || 0) > 0).forEach(o => {
+        orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status) && (o.agingDays || 0) > 0).forEach(o => {
             if (!customers[o.customerName]) {
                 customers[o.customerName] = { name: o.customerName, amount: 0, maxAge: 0 };
             }
@@ -420,7 +493,7 @@ export const statsService = {
         }
 
         // 2. Unusually large orders
-        const confirmedOrders = orders.filter(o => ['confirmed', 'fulfilled', 'paid'].includes(o.status));
+        const confirmedOrders = orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(o.status));
         if (confirmedOrders.length > 5) {
             const avg = confirmedOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0) / confirmedOrders.length;
             const recentLarge = confirmedOrders
@@ -434,7 +507,7 @@ export const statsService = {
         // 3. Customer payment lag
         // (Simple heuristic: if they have any unpaid older than their average)
         // For now, just flag any critical overdue as a signal if not already in alert strip
-        const critical = orders.filter(o => ['confirmed', 'fulfilled'].includes(o.status) && (o.agingDays || 0) >= 30);
+        const critical = orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status) && (o.agingDays || 0) >= 30);
         if (critical.length > 0) {
             signals.push({ type: 'danger', text: `${critical.length} customer(s) are at high risk (>30 days overdue).` });
         }

@@ -59,12 +59,10 @@ class Router {
         });
 
         if (!isPublicRoute && !guardService.canActivate(path)) {
-            if (authService.getCurrentUser() === null) {
-                return this.navigate(ROUTES.LOGIN);
-            }
+            return this.navigate(ROUTES.LOGIN);
         }
 
-        if (path === ROUTES.LOGIN && authService.getCurrentUser()) {
+        if (path === ROUTES.LOGIN && authService.getCurrentUser() && authService.isAdmin()) {
             return this.navigate(ROUTES.DASHBOARD);
         }
 

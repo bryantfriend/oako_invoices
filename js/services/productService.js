@@ -6,12 +6,14 @@ import {
     where,
     orderBy
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
 
 const COLLECTION = 'products';
 const CATEGORIES_COLLECTION = 'categories';
 
 export const productService = {
     async getAllProducts() {
+        let timeoutId;
         try {
             // Try to filter by active first, if index exists
             // If not, we might need to fetch all and filter client side or handle the index error
@@ -20,12 +22,10 @@ export const productService = {
             const q = collection(db, COLLECTION);
 
             // Added timeout wrapper to prevent hanging offline
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Products fetch timeout')), 15000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 15000)), 15000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-            clearTimeout(timeoutId);
 
             return snapshot.docs.map(doc => {
                 const data = doc.data();
@@ -39,21 +39,22 @@ export const productService = {
                 };
             }).filter(product => product.archived !== true && product.active !== false);
         } catch (error) {
-            console.error("Error fetching products:", error);
+            logCollectionError(COLLECTION, error);
             // Fallback for UI if permission denied or other error
             return [];
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 
     async getAllCategories() {
+        let timeoutId;
         try {
             const q = collection(db, CATEGORIES_COLLECTION);
-            let timeoutId;
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(new Error('Categories fetch timeout')), 15000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(CATEGORIES_COLLECTION, 15000)), 15000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-            clearTimeout(timeoutId);
             return snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
@@ -63,8 +64,10 @@ export const productService = {
                 };
             }).filter(category => category.archived !== true && category.active !== false);
         } catch (error) {
-            console.error("Error fetching categories:", error);
+            logCollectionError(CATEGORIES_COLLECTION, error);
             return [];
+        } finally {
+            clearTimeout(timeoutId);
         }
     }
 };

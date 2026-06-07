@@ -7,6 +7,10 @@ import addPayloadToResultDataModule from "./Core/addPayloadToResultData.js";
 import addContextToResultDataModule from "./Core/addContextToResultData.js";
 import exampleSetCreatedProductResultModule from "./Core/exampleSetCreatedProductResult.js";
 import processArchiveInvoiceModule from "./Invoices/processArchiveInvoice.js";
+import processGenerateInvoiceApprovalLinkModule from "./Invoices/processGenerateInvoiceApprovalLink.js";
+import processSubmitInvoiceApprovalResponseModule from "./Invoices/processSubmitInvoiceApprovalResponse.js";
+import processUpdateInvoiceItemsModule from "./Invoices/processUpdateInvoiceItems.js";
+import processRecordInvoiceReturnModule from "./Invoices/processRecordInvoiceReturn.js";
 
 /**
  * Processors
@@ -25,6 +29,14 @@ var processors = {
   exampleSetCreatedProductResult:
     exampleSetCreatedProductResultModule.exampleSetCreatedProductResult,
   processArchiveInvoice: processArchiveInvoiceModule.processArchiveInvoice,
+  processGenerateInvoiceApprovalLink:
+    processGenerateInvoiceApprovalLinkModule.processGenerateInvoiceApprovalLink,
+  processSubmitInvoiceApprovalResponse:
+    processSubmitInvoiceApprovalResponseModule.processSubmitInvoiceApprovalResponse,
+  processUpdateInvoiceItems:
+    processUpdateInvoiceItemsModule.processUpdateInvoiceItems,
+  processRecordInvoiceReturn:
+    processRecordInvoiceReturnModule.processRecordInvoiceReturn,
 
   createSetResultDataProcessor:
     setResultDataModule.createSetResultDataProcessor,

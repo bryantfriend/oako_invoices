@@ -8,6 +8,10 @@ import normalizePayloadBooleanFieldModule from "./Core/normalizePayloadBooleanFi
 import normalizePayloadDateFieldModule from "./Core/normalizePayloadDateField.js";
 import exampleTrimProductNameModule from "./Core/exampleTrimProductName.js";
 import normalizeArchiveInvoicePayloadModule from "./Invoices/normalizeArchiveInvoicePayload.js";
+import normalizeGenerateInvoiceApprovalLinkPayloadModule from "./Invoices/normalizeGenerateInvoiceApprovalLinkPayload.js";
+import normalizeSubmitInvoiceApprovalResponsePayloadModule from "./Invoices/normalizeSubmitInvoiceApprovalResponsePayload.js";
+import normalizeUpdateInvoiceItemsPayloadModule from "./Invoices/normalizeUpdateInvoiceItemsPayload.js";
+import normalizeRecordInvoiceReturnPayloadModule from "./Invoices/normalizeRecordInvoiceReturnPayload.js";
 
 /**
  * Normalizers
@@ -24,6 +28,14 @@ var normalizers = {
   exampleTrimProductName: exampleTrimProductNameModule.exampleTrimProductName,
   normalizeArchiveInvoicePayload:
     normalizeArchiveInvoicePayloadModule.normalizeArchiveInvoicePayload,
+  normalizeGenerateInvoiceApprovalLinkPayload:
+    normalizeGenerateInvoiceApprovalLinkPayloadModule.normalizeGenerateInvoiceApprovalLinkPayload,
+  normalizeSubmitInvoiceApprovalResponsePayload:
+    normalizeSubmitInvoiceApprovalResponsePayloadModule.normalizeSubmitInvoiceApprovalResponsePayload,
+  normalizeUpdateInvoiceItemsPayload:
+    normalizeUpdateInvoiceItemsPayloadModule.normalizeUpdateInvoiceItemsPayload,
+  normalizeRecordInvoiceReturnPayload:
+    normalizeRecordInvoiceReturnPayloadModule.normalizeRecordInvoiceReturnPayload,
 
   createTrimPayloadStringFieldNormalizer:
     trimPayloadStringFieldModule.createTrimPayloadStringFieldNormalizer,

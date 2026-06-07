@@ -10,6 +10,10 @@ import requireActorRoleModule from "./Core/requireActorRole.js";
 import requireBaseIntentShapeModule from "./Core/requireBaseIntentShape.js";
 import exampleRequireStoreIdModule from "./Core/exampleRequireStoreId.js";
 import validateArchiveInvoicePayloadModule from "./Invoices/validateArchiveInvoicePayload.js";
+import validateGenerateInvoiceApprovalLinkPayloadModule from "./Invoices/validateGenerateInvoiceApprovalLinkPayload.js";
+import validateSubmitInvoiceApprovalResponsePayloadModule from "./Invoices/validateSubmitInvoiceApprovalResponsePayload.js";
+import validateUpdateInvoiceItemsPayloadModule from "./Invoices/validateUpdateInvoiceItemsPayload.js";
+import validateRecordInvoiceReturnPayloadModule from "./Invoices/validateRecordInvoiceReturnPayload.js";
 
 /**
  * Validators
@@ -39,6 +43,14 @@ var validators = {
   exampleRequireStoreId: exampleRequireStoreIdModule.exampleRequireStoreId,
   validateArchiveInvoicePayload:
     validateArchiveInvoicePayloadModule.validateArchiveInvoicePayload,
+  validateGenerateInvoiceApprovalLinkPayload:
+    validateGenerateInvoiceApprovalLinkPayloadModule.validateGenerateInvoiceApprovalLinkPayload,
+  validateSubmitInvoiceApprovalResponsePayload:
+    validateSubmitInvoiceApprovalResponsePayloadModule.validateSubmitInvoiceApprovalResponsePayload,
+  validateUpdateInvoiceItemsPayload:
+    validateUpdateInvoiceItemsPayloadModule.validateUpdateInvoiceItemsPayload,
+  validateRecordInvoiceReturnPayload:
+    validateRecordInvoiceReturnPayloadModule.validateRecordInvoiceReturnPayload,
 
   createRequireActorRoleValidator: requireActorRoleModule.createRequireActorRoleValidator
 };

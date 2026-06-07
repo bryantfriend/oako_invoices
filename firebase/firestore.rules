@@ -10,13 +10,79 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function hasUserProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return hasUserProfile()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
     function isAdmin() {
-      return request.auth != null;
-      // Future: request.auth.token.admin == true
+      return userRole() in ['admin', 'superadmin'];
+    }
+
+    function isOwnUserProfile(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function isOwnProfileCreate(userId) {
+      return isOwnUserProfile(userId)
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'email',
+          'displayName',
+          'photoDataUrl',
+          'xp',
+          'actions',
+          'periodActions',
+          'badges',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && (!request.resource.data.keys().hasAny(['displayName']) || request.resource.data.displayName is string)
+        && (!request.resource.data.keys().hasAny(['photoDataUrl']) || request.resource.data.photoDataUrl is string)
+        && (!request.resource.data.keys().hasAny(['xp']) || request.resource.data.xp is number)
+        && (!request.resource.data.keys().hasAny(['actions']) || request.resource.data.actions is map)
+        && (!request.resource.data.keys().hasAny(['periodActions']) || request.resource.data.periodActions is map)
+        && (!request.resource.data.keys().hasAny(['badges']) || request.resource.data.badges is list)
+        && (!request.resource.data.keys().hasAny(['createdAt']) || request.resource.data.createdAt is timestamp)
+        && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp);
+    }
+
+    function isOwnProfileUpdate(userId) {
+      return isOwnUserProfile(userId)
+        && changedKeys().hasOnly([
+          'uid',
+          'email',
+          'displayName',
+          'photoDataUrl',
+          'xp',
+          'actions',
+          'periodActions',
+          'badges',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && (!changedKeys().hasAny(['displayName']) || request.resource.data.displayName is string)
+        && (!changedKeys().hasAny(['photoDataUrl']) || request.resource.data.photoDataUrl is string)
+        && (!changedKeys().hasAny(['xp']) || request.resource.data.xp is number)
+        && (!changedKeys().hasAny(['actions']) || request.resource.data.actions is map)
+        && (!changedKeys().hasAny(['periodActions']) || request.resource.data.periodActions is map)
+        && (!changedKeys().hasAny(['badges']) || request.resource.data.badges is list)
+        && (!changedKeys().hasAny(['createdAt']) || request.resource.data.createdAt is timestamp)
+        && (!changedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp);
     }
 
     function isNonIncreasingNumber(nextValue, currentValue) {
@@ -60,6 +126,51 @@ service cloud.firestore {
         && request.resource.data.totalBaked >= 0
         && request.resource.data.locked is bool
         && request.resource.data.updatedAt is timestamp;
+    }
+
+    function isPublicOrderCreate() {
+      return request.resource.data.keys().hasOnly([
+          'customerName',
+          'customerPhone',
+          'customerEmail',
+          'customerAddress',
+          'productId',
+          'productName',
+          'items',
+          'quantity',
+          'totalAmount',
+          'notes',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'orderDate',
+          'source',
+          'paymentMethod',
+          'campaignId',
+          'sessionId',
+          'storeId',
+          'companyId'
+        ])
+        && request.resource.data.customerName is string
+        && request.resource.data.status == "reserved"
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.keys().hasAny(['productId', 'items'])
+        && (!request.resource.data.keys().hasAny(['productId']) || request.resource.data.productId is string)
+        && (!request.resource.data.keys().hasAny(['productName']) || request.resource.data.productName is string)
+        && (!request.resource.data.keys().hasAny(['items']) || request.resource.data.items is list)
+        && (!request.resource.data.keys().hasAny(['quantity']) || (request.resource.data.quantity is number && request.resource.data.quantity > 0))
+        && (!request.resource.data.keys().hasAny(['totalAmount']) || (request.resource.data.totalAmount is number && request.resource.data.totalAmount >= 0))
+        && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp)
+        && (!request.resource.data.keys().hasAny(['customerPhone']) || request.resource.data.customerPhone is string)
+        && (!request.resource.data.keys().hasAny(['customerEmail']) || request.resource.data.customerEmail is string)
+        && (!request.resource.data.keys().hasAny(['customerAddress']) || request.resource.data.customerAddress is string)
+        && (!request.resource.data.keys().hasAny(['notes']) || request.resource.data.notes is string)
+        && (!request.resource.data.keys().hasAny(['source']) || request.resource.data.source is string)
+        && (!request.resource.data.keys().hasAny(['paymentMethod']) || request.resource.data.paymentMethod is string)
+        && (!request.resource.data.keys().hasAny(['campaignId']) || request.resource.data.campaignId is string)
+        && (!request.resource.data.keys().hasAny(['sessionId']) || request.resource.data.sessionId is string)
+        && (!request.resource.data.keys().hasAny(['storeId']) || request.resource.data.storeId is string)
+        && (!request.resource.data.keys().hasAny(['companyId']) || request.resource.data.companyId is string);
     }
 
     // ===============================
@@ -134,7 +245,7 @@ service cloud.firestore {
     // DAILY INVENTORY
     // ===============================
     match /inventory/{dateId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow create, update: if isAdmin() && isInventoryRecord();
       allow delete: if isAdmin();
     }
@@ -173,11 +284,7 @@ service cloud.firestore {
 
       allow create, update: if isAdmin();
 
-      allow create: if true
-        && request.resource.data.customerName is string
-        && request.resource.data.productId is string
-        && request.resource.data.status == "reserved"
-        && request.resource.data.createdAt is timestamp;
+      allow create: if isPublicOrderCreate();
 
       allow update: if
         isAdmin()
@@ -279,6 +386,76 @@ service cloud.firestore {
     }
 
     // ===============================
+    // CUSTOMER INVOICE APPROVAL LINKS
+    // ===============================
+    match /invoiceApprovalLinks/{token} {
+      allow get: if true;
+      allow list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'invoiceId',
+          'token',
+          'status',
+          'createdAt',
+          'expiresAt',
+          'responseSubmittedAt',
+          'responseType',
+          'customerChanges',
+          'invoiceSnapshot'
+        ])
+        && request.resource.data.invoiceId is string
+        && request.resource.data.token == token
+        && request.resource.data.status == "pending"
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.invoiceSnapshot is map;
+
+      allow update: if isAdmin()
+        ||
+        (
+          resource.data.token == token
+          && resource.data.status == "pending"
+          && request.time < resource.data.expiresAt
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status',
+              'responseSubmittedAt',
+              'responseType',
+              'customerChanges'
+            ])
+          && request.resource.data.status in ['accepted', 'modified']
+          && request.resource.data.responseType in ['accepted', 'modified']
+          && request.resource.data.responseType == request.resource.data.status
+          && request.resource.data.responseSubmittedAt is timestamp
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ===============================
+    // NOTIFICATIONS
+    // ===============================
+    match /notifications/{notificationId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAdmin()
+        ||
+        (
+          request.resource.data.keys().hasOnly([
+            'type',
+            'invoiceId',
+            'responseType',
+            'createdAt'
+          ])
+          &&
+          request.resource.data.type == "invoiceApprovalResponse"
+          && request.resource.data.invoiceId is string
+          && request.resource.data.responseType in ['accepted', 'modified']
+          && request.resource.data.createdAt is timestamp
+        );
+    }
+
+    // ===============================
     // INVOICE SETTINGS
     // ===============================
     match /settings/{id} {
@@ -311,7 +488,8 @@ service cloud.firestore {
     // ===============================
     match /users/{userId} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-      allow create, update: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow create: if isAdmin() || isOwnProfileCreate(userId);
+      allow update: if isAdmin() || isOwnProfileUpdate(userId);
       allow delete: if isAdmin();
     }
 
