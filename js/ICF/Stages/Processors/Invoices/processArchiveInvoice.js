@@ -1,10 +1,10 @@
 // ICF/Stages/Processors/Invoices/processArchiveInvoice.js
 
 import {
-  serverTimestamp,
-  updateDoc
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { deviceIdService } from "../../../../services/deviceIdService.js";
+import { dataIntegrityService } from "../../../../services/dataIntegrityService.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 
 /**
@@ -35,7 +35,7 @@ async function processArchiveInvoice(intent) {
   var deviceId = await deviceIdService.getDeviceId();
   var previousStatus = invoice.status || "open";
 
-  await updateDoc(intent.context.invoiceRef, {
+  await dataIntegrityService.updateInvoiceWithIntegrity(intent.context.invoiceRef, invoice, {
     previousStatus: previousStatus,
     status: "archived",
     archivedAt: serverTimestamp(),
@@ -45,6 +45,10 @@ async function processArchiveInvoice(intent) {
     deviceId: deviceId,
     localUpdatedAt: new Date().toISOString(),
     syncState: "synced"
+  }, {
+    action: "archive",
+    actor: intent.actor,
+    source: intent.meta && intent.meta.source ? intent.meta.source : "ui"
   });
 
   var updatedIntent = resultHelpers.addContextValue(

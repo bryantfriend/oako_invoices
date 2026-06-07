@@ -23,7 +23,7 @@ export const renderCustomerDetail = async ({ id }) => {
         return;
     }
 
-    const { customer, orders, stats, mostOrderedProducts = [] } = data;
+    const { customer, orders, invoices = [], returns = [], payments = [], stats, mostOrderedProducts = [] } = data;
     const latestOrder = orders[0] || null;
     layoutView.updateTitle(customer.companyName || customer.name || 'Customer Detail');
 
@@ -46,6 +46,25 @@ export const renderCustomerDetail = async ({ id }) => {
                     ${latestOrder ? `<button class="btn btn-primary" onclick="window.repeatCustomerOrder('${latestOrder.id}')">Repeat Last Order</button>` : ''}
                     <button class="btn btn-secondary" onclick="window.editCustomer('${customer.id}')">Edit Profile</button>
                 </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+                ${createCard({
+        title: 'Outstanding Balance',
+        content: `<div style="font-size: 24px; font-weight: 900; color: #b45309;">${formatCurrency(stats.outstandingBalance || 0)}</div>`
+    })}
+                ${createCard({
+        title: 'Total Sales',
+        content: `<div style="font-size: 24px; font-weight: 900; color: #0f766e;">${formatCurrency(stats.totalSales || stats.totalRevenue || 0)}</div>`
+    })}
+                ${createCard({
+        title: 'Total Returns',
+        content: `<div style="font-size: 24px; font-weight: 900; color: #c2410c;">${formatCurrency(stats.totalReturns || 0)}</div>`
+    })}
+                ${createCard({
+        title: 'Payments',
+        content: `<div style="font-size: 24px; font-weight: 900; color: #2563eb;">${formatCurrency(stats.totalPayments || 0)}</div>`
+    })}
             </div>
 
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
@@ -80,6 +99,31 @@ export const renderCustomerDetail = async ({ id }) => {
                 </div>
             </div>
             ` : ''}
+
+            <div class="card" style="display: flex; flex-direction: column;">
+                <div style="padding: 16px; border-bottom: 1px solid var(--color-gray-100); display: flex; justify-content: space-between; gap: 12px; align-items: center;">
+                    <h3 style="font-size: 16px; font-weight: 800; margin: 0;">Customer Statement</h3>
+                    <div style="display: flex; gap: 8px; color: var(--color-gray-500); font-size: 12px; font-weight: 800;">
+                        <span>${stats.invoiceCount || 0} invoices</span>
+                        <span>${stats.returnCount || 0} returns</span>
+                        <span>${stats.paymentCount || 0} payments</span>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 0; border-bottom: 1px solid var(--color-gray-100);">
+                    <div style="padding: 16px; border-right: 1px solid var(--color-gray-100); min-width: 0;">
+                        <h4 style="font-size: 12px; font-weight: 900; color: var(--color-gray-500); margin: 0 0 10px; text-transform: uppercase;">Invoices</h4>
+                        <div id="customer-invoices-table"></div>
+                    </div>
+                    <div style="padding: 16px; min-width: 0;">
+                        <h4 style="font-size: 12px; font-weight: 900; color: var(--color-gray-500); margin: 0 0 10px; text-transform: uppercase;">Payments</h4>
+                        <div id="customer-payments-table"></div>
+                    </div>
+                </div>
+                <div style="padding: 16px;">
+                    <h4 style="font-size: 12px; font-weight: 900; color: var(--color-gray-500); margin: 0 0 10px; text-transform: uppercase;">Returns</h4>
+                    <div id="customer-returns-table"></div>
+                </div>
+            </div>
             
             <!-- Orders List -->
             <div class="card" style="display: flex; flex-direction: column;">
@@ -90,6 +134,78 @@ export const renderCustomerDetail = async ({ id }) => {
     `;
 
     container.innerHTML = `<div class="animate-fade-in" style="width: 100%;">${headerHtml}</div>`;
+
+    const invoicesTable = new DataTable({
+        columns: [
+            { key: 'invoiceNumber', label: 'Invoice', render: (val, row) => `<span style="font-weight: 800;">${val || '#' + row.id.slice(-6)}</span>` },
+            { key: 'createdAt', label: 'Date', render: (val) => formatDate(val) },
+            { key: 'status', label: 'Status', align: 'center', render: (val, row) => createStatusBadge(row) },
+            { key: 'totalAmount', label: 'Total', align: 'right', render: (val) => `<span style="font-weight: 800;">${formatCurrency(val || 0)}</span>` }
+        ],
+        data: invoices,
+        onRowClick: (row) => router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', row.id))
+    });
+
+    const returnsTable = new DataTable({
+        columns: [
+            { key: 'invoiceNumber', label: 'Invoice', render: (val, row) => `<span style="font-weight: 800;">${val || '#' + row.invoiceId.slice(-6)}</span>` },
+            { key: 'createdAt', label: 'Date', render: (val) => formatDate(val) },
+            { key: 'itemSummary', label: 'Items', render: (val) => `<span style="font-size: 12px; color: var(--color-gray-600);">${val || '-'}</span>` },
+            { key: 'totalReturnedQuantity', label: 'Qty', align: 'right', render: (val) => `<span style="font-weight: 900; color: #b45309;">${val || 0}</span>` },
+            { key: 'totalReturnedAmount', label: 'Value', align: 'right', render: (val) => `<span style="font-weight: 900; color: #c2410c;">${formatCurrency(val || 0)}</span>` }
+        ],
+        data: returns,
+        onRowClick: (row) => router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', row.invoiceId))
+    });
+
+    const paymentsTable = new DataTable({
+        columns: [
+            { key: 'orderId', label: 'Order', render: (val) => `<span style="font-weight: 800;">#${val.slice(-6)}</span>` },
+            { key: 'paidAt', label: 'Paid At', render: (val) => formatDate(val) },
+            { key: 'amount', label: 'Amount', align: 'right', render: (val) => `<span style="font-weight: 900; color: #2563eb;">${formatCurrency(val || 0)}</span>` }
+        ],
+        data: payments,
+        onRowClick: (row) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.orderId))
+    });
+
+    const invoicesWrapper = document.getElementById('customer-invoices-table');
+    if (invoicesWrapper) {
+        invoicesWrapper.innerHTML = invoices.length
+            ? invoicesTable.render()
+            : '<div style="padding: 18px; text-align: center; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No invoices found.</div>';
+        invoicesWrapper.querySelectorAll('.data-row').forEach(row => {
+            row.addEventListener('click', () => {
+                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', row.dataset.id));
+            });
+        });
+    }
+
+    const returnsWrapper = document.getElementById('customer-returns-table');
+    if (returnsWrapper) {
+        returnsWrapper.innerHTML = returns.length
+            ? returnsTable.render()
+            : '<div style="padding: 18px; text-align: center; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returns recorded.</div>';
+        returnsWrapper.querySelectorAll('.data-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const returnRow = returns.find(entry => entry.id === row.dataset.id);
+                if (returnRow && returnRow.invoiceId) {
+                    router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', returnRow.invoiceId));
+                }
+            });
+        });
+    }
+
+    const paymentsWrapper = document.getElementById('customer-payments-table');
+    if (paymentsWrapper) {
+        paymentsWrapper.innerHTML = payments.length
+            ? paymentsTable.render()
+            : '<div style="padding: 18px; text-align: center; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No payments recorded.</div>';
+        paymentsWrapper.querySelectorAll('.data-row').forEach(row => {
+            row.addEventListener('click', () => {
+                router.navigate(ROUTES.ORDER_DETAIL.replace(':id', row.dataset.id));
+            });
+        });
+    }
 
     // 2. Orders Table
     const table = new DataTable({

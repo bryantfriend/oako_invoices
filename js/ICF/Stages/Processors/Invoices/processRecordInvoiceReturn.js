@@ -1,9 +1,13 @@
 import {
-  serverTimestamp,
-  updateDoc
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { deviceIdService } from "../../../../services/deviceIdService.js";
+import { dataIntegrityService } from "../../../../services/dataIntegrityService.js";
 import { orderService } from "../../../../services/orderService.js";
+import {
+  canRecordInvoiceReturn,
+  getInvoiceWorkflowLockMessage
+} from "../../../../core/invoiceWorkflow.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 import {
   getItemAdjustedTotal,
@@ -20,6 +24,10 @@ async function processRecordInvoiceReturn(intent) {
   }
 
   var invoice = intent.context.invoice;
+  if (!canRecordInvoiceReturn(invoice)) {
+    return resultHelpers.processFailure(getInvoiceWorkflowLockMessage(invoice));
+  }
+
   var items = normalizeInvoiceItemsForEditing(invoice);
   var returnItems = buildReturnItems(items, intent.payload.items || []);
 
@@ -83,7 +91,20 @@ async function processRecordInvoiceReturn(intent) {
     }]);
   }
 
-  await updateDoc(intent.context.invoiceRef, updatePayload);
+  await dataIntegrityService.updateInvoiceWithIntegrity(
+    intent.context.invoiceRef,
+    invoice,
+    updatePayload,
+    {
+      action: "return",
+      actor: intent.actor,
+      source: intent.meta && intent.meta.source ? intent.meta.source : "ui",
+      returnId: returnRecord.returnId,
+      returnItems: returnItems.items,
+      note: returnRecord.note,
+      reason: returnRecord.reason
+    }
+  );
 
   if (invoice.orderId) {
     await mirrorInvoiceReturnToOrder(invoice.orderId, invoice, returnItems.updatedInvoiceItems, updatePayload.returnSummary, returnRecord);

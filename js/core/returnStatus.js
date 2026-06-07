@@ -52,7 +52,9 @@ export function existingStatusLabel(status = '') {
     const normalized = String(status || 'draft').toLowerCase();
     const labels = {
         draft: 'Draft',
+        submitted: 'Submitted',
         pending: 'Pending',
+        approved: 'Approved',
         confirmed: 'Confirmed',
         returned: 'Returned',
         partially_returned: 'Partially Returned',

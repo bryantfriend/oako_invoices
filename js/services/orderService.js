@@ -15,9 +15,19 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { googleSheetsService } from "./googleSheetsService.js";
+import { dataIntegrityService } from "./dataIntegrityService.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
 
 const COLLECTION = 'orders';
+
+function buildOrderAuditDetails(order) {
+    var source = order || {};
+    return {
+        customerName: source.customerName || '',
+        status: source.status || '',
+        totalAmount: source.totalAmount || 0
+    };
+}
 
 export const orderService = {
     async getAllOrders() {
@@ -116,6 +126,17 @@ export const orderService = {
             };
             const docRef = await addDoc(collection(db, COLLECTION), payload);
             const createdOrder = await this.getOrderById(docRef.id).catch(() => ({ id: docRef.id, ...orderData, ...payload, createdAt: new Date(), updatedAt: new Date() }));
+            await dataIntegrityService.recordAuditLogSafely({
+                type: 'ORDER_CREATED',
+                entityType: 'order',
+                entityId: docRef.id,
+                orderId: docRef.id,
+                storeId: createdOrder.storeId || createdOrder.companyId || '',
+                companyId: createdOrder.companyId || createdOrder.storeId || '',
+                details: buildOrderAuditDetails(createdOrder)
+            }, {
+                source: 'ui'
+            });
             await googleSheetsService.syncOrderLifecycle(createdOrder);
             return docRef.id;
         } catch (error) {
@@ -127,11 +148,46 @@ export const orderService = {
     async updateOrder(id, updates) {
         try {
             const docRef = doc(db, COLLECTION, id);
+            const previousOrder = await this.getOrderById(id).catch(function() {
+                return null;
+            });
             await updateDoc(docRef, {
                 ...updates,
                 updatedAt: serverTimestamp()
             });
             const updatedOrder = await this.getOrderById(id).catch(() => ({ id, ...updates, updatedAt: new Date() }));
+            await dataIntegrityService.recordAuditLogSafely({
+                type: 'ORDER_UPDATED',
+                entityType: 'order',
+                entityId: id,
+                orderId: id,
+                storeId: updatedOrder.storeId || updatedOrder.companyId || '',
+                companyId: updatedOrder.companyId || updatedOrder.storeId || '',
+                details: {
+                    before: buildOrderAuditDetails(previousOrder),
+                    after: buildOrderAuditDetails(updatedOrder)
+                }
+            }, {
+                source: 'ui'
+            });
+            if (previousOrder && previousOrder.status !== updatedOrder.status) {
+                await dataIntegrityService.recordAuditLogSafely({
+                    type: 'STATUS_CHANGED',
+                    entityType: 'order',
+                    entityId: id,
+                    orderId: id,
+                    previousStatus: previousOrder.status || '',
+                    status: updatedOrder.status || '',
+                    storeId: updatedOrder.storeId || updatedOrder.companyId || '',
+                    companyId: updatedOrder.companyId || updatedOrder.storeId || '',
+                    details: {
+                        previousStatus: previousOrder.status || '',
+                        nextStatus: updatedOrder.status || ''
+                    }
+                }, {
+                    source: 'ui'
+                });
+            }
             await googleSheetsService.syncOrderLifecycle(updatedOrder);
             return true;
         } catch (error) {
@@ -163,8 +219,22 @@ export const orderService = {
 
     async deleteOrder(id) {
         try {
+            const existingOrder = await this.getOrderById(id).catch(function() {
+                return null;
+            });
             const docRef = doc(db, COLLECTION, id);
             await deleteDoc(docRef);
+            await dataIntegrityService.recordAuditLogSafely({
+                type: 'ORDER_DELETED',
+                entityType: 'order',
+                entityId: id,
+                orderId: id,
+                storeId: existingOrder ? existingOrder.storeId || existingOrder.companyId || '' : '',
+                companyId: existingOrder ? existingOrder.companyId || existingOrder.storeId || '' : '',
+                details: buildOrderAuditDetails(existingOrder)
+            }, {
+                source: 'ui'
+            });
             return true;
         } catch (error) {
             console.error("Error deleting order:", error);

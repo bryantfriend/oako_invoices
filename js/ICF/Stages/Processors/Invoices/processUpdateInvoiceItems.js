@@ -1,9 +1,12 @@
 import {
-  serverTimestamp,
-  updateDoc
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { deviceIdService } from "../../../../services/deviceIdService.js";
-import { getReturnState } from "../../../../core/returnStatus.js";
+import { dataIntegrityService } from "../../../../services/dataIntegrityService.js";
+import {
+  canEditInvoiceItems,
+  getInvoiceWorkflowLockMessage
+} from "../../../../core/invoiceWorkflow.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 import {
   recalculateInvoiceTotals,
@@ -17,7 +20,7 @@ async function processUpdateInvoiceItems(intent) {
 
   var invoice = intent.context.invoice;
   if (!isInvoiceItemsEditable(invoice)) {
-    return resultHelpers.processFailure("Invoice items can only be edited before completion or after returns.");
+    return resultHelpers.processFailure(getInvoiceWorkflowLockMessage(invoice));
   }
 
   var mergedInvoice = recalculateInvoiceTotals(Object.assign({}, invoice, {
@@ -50,7 +53,16 @@ async function processUpdateInvoiceItems(intent) {
     updatePayload.returnSummary = mergedInvoice.returnSummary;
   }
 
-  await updateDoc(intent.context.invoiceRef, updatePayload);
+  await dataIntegrityService.updateInvoiceWithIntegrity(
+    intent.context.invoiceRef,
+    invoice,
+    updatePayload,
+    {
+      action: "update",
+      actor: intent.actor,
+      source: intent.meta && intent.meta.source ? intent.meta.source : "ui"
+    }
+  );
 
   var updatedIntent = resultHelpers.addContextValue(intent, "invoiceItemsResult", {
     invoiceId: intent.payload.invoiceId,
@@ -63,10 +75,7 @@ async function processUpdateInvoiceItems(intent) {
 }
 
 function isInvoiceItemsEditable(invoice) {
-  var status = String(invoice && invoice.status || "");
-  return ["draft", "pending", "confirmed"].includes(status)
-    || getReturnState(invoice) !== "none"
-    || ["returned", "partially_returned", "partial_return", "fully_returned", "return_pending"].includes(status);
+  return canEditInvoiceItems(invoice);
 }
 
 export default {

@@ -8,6 +8,10 @@ import { googleSheetsService } from "./googleSheetsService.js";
 import { orderService } from "./orderService.js";
 import { invoiceService } from "./invoiceService.js";
 import { offlineStatusService } from "./offlineStatusService.js";
+import {
+    canRecordInvoiceReturn,
+    getInvoiceWorkflowLockMessage
+} from "../core/invoiceWorkflow.js";
 
 const COLLECTION = 'invoices';
 
@@ -69,6 +73,9 @@ export const returnsService = {
         if (!invoice) {
             throw new Error('Invoice not found');
         }
+        if (!canRecordInvoiceReturn(invoice)) {
+            throw new Error(getInvoiceWorkflowLockMessage(invoice));
+        }
 
         const items = returnItems
             .filter(item => item.productId && (Number(item.quantity) || 0) > 0)
@@ -110,13 +117,13 @@ export const returnsService = {
     async markCompleted(invoiceId) {
         if (!offlineStatusService.isOnline()) {
             await invoiceService.updateInvoice(invoiceId, {
-                status: 'completed'
+                status: 'fulfilled'
             }, 'completeInvoice');
             return true;
         }
 
         await invoiceService.updateInvoice(invoiceId, {
-            status: 'completed'
+            status: 'fulfilled'
         }, 'completeInvoice');
 
         const invoice = await invoiceService.getInvoice(invoiceId);

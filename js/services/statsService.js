@@ -55,6 +55,17 @@ function getUnitPrice(returnItem = {}, parentItem = {}) {
     return safeNumber(parentItem.price);
 }
 
+function getCustomerName(record = {}) {
+    return record.customerName || record.partnerName || record.companyName || record.customer || 'Unknown customer';
+}
+
+function getItemQuantity(item = {}) {
+    if (item.adjustedQuantity !== undefined) return safeNumber(item.adjustedQuantity);
+    if (item.quantity !== undefined) return safeNumber(item.quantity);
+    if (item.requestedQuantity !== undefined) return safeNumber(item.requestedQuantity);
+    return 0;
+}
+
 function getReturnEventDate(returnEvent) {
     return toDate(returnEvent?.createdAt || returnEvent?.returnedAt || returnEvent?.updatedAt);
 }
@@ -111,6 +122,7 @@ function normalizeInvoiceReturnEvents(invoice = {}) {
                 deliveryId: returnRecord.deliveryId || invoice.deliveryId || '',
                 courierId: returnRecord.courierId || invoice.courierId || '',
                 courierName: returnRecord.courierName || invoice.courierName || (source === 'courier' ? invoice.returnedBy : ''),
+                customerName: getCustomerName(invoice),
                 createdAt,
                 productId: item.productId || parentItem.productId || item.lineItemId || '',
                 productName: getProductName(item, parentItem),
@@ -192,6 +204,7 @@ function normalizeCourierReturnEvents(record = {}) {
                 deliveryId: returnRecord.deliveryId || deliveryId,
                 courierId: returnRecord.courierId || courierId,
                 courierName: returnRecord.courierName || courierName,
+                customerName: getCustomerName(record),
                 createdAt: returnCreatedAt,
                 productId: item.productId || parentItem.productId || item.lineItemId || '',
                 productName: getProductName(item, parentItem),
@@ -205,10 +218,11 @@ function normalizeCourierReturnEvents(record = {}) {
     return events;
 }
 
-function aggregateReturnAnalytics(returnEvents = []) {
+function aggregateReturnAnalytics(returnEvents = [], salesAnalytics = {}) {
     const byDate = {};
     const byProduct = {};
     const byCourier = {};
+    const byCustomer = {};
     const bySource = {};
     const returnedParents = new Set();
     let totalReturnedQuantity = 0;
@@ -222,6 +236,8 @@ function aggregateReturnAnalytics(returnEvents = []) {
         const source = event.source || 'invoice';
         const courierKey = event.courierId || event.courierName || 'unknown';
         const courierName = event.courierName || 'Unknown courier';
+        const customerName = event.customerName || 'Unknown customer';
+        const customerKey = customerName.toLowerCase();
         const quantity = safeNumber(event.returnedQuantity);
         const amount = safeNumber(event.returnAmount);
         const parentKey = event.invoiceId || event.orderId || event.deliveryId || event.returnId;
@@ -234,6 +250,9 @@ function aggregateReturnAnalytics(returnEvents = []) {
         }
         if (source === 'courier' && !byCourier[courierKey]) {
             byCourier[courierKey] = { courierId: event.courierId || '', courierName, quantity: 0, amount: 0 };
+        }
+        if (!byCustomer[customerKey]) {
+            byCustomer[customerKey] = { customerName, quantity: 0, amount: 0 };
         }
         if (!bySource[source]) {
             bySource[source] = { source, label: source === 'courier' ? 'Courier returns' : 'Invoice returns', quantity: 0, amount: 0 };
@@ -249,6 +268,8 @@ function aggregateReturnAnalytics(returnEvents = []) {
             byCourier[courierKey].quantity += quantity;
             byCourier[courierKey].amount += amount;
         }
+        byCustomer[customerKey].quantity += quantity;
+        byCustomer[customerKey].amount += amount;
         bySource[source].quantity += quantity;
         bySource[source].amount += amount;
         if (parentKey) returnedParents.add(parentKey);
@@ -258,8 +279,19 @@ function aggregateReturnAnalytics(returnEvents = []) {
     const byProductRows = Object.values(byProduct).sort((a, b) => {
         if (b.quantity !== a.quantity) return b.quantity - a.quantity;
         return b.amount - a.amount;
+    }).map(row => {
+        const salesRow = salesAnalytics.byProduct && salesAnalytics.byProduct[row.productId] ? salesAnalytics.byProduct[row.productId] : {};
+        const soldQuantity = safeNumber(salesRow.quantity, 0);
+        return Object.assign({}, row, {
+            soldQuantity,
+            returnPercent: soldQuantity > 0 ? (row.quantity / soldQuantity) * 100 : 0
+        });
     });
     const byCourierRows = Object.values(byCourier).sort((a, b) => {
+        if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+        return b.amount - a.amount;
+    });
+    const byCustomerRows = Object.values(byCustomer).sort((a, b) => {
         if (b.quantity !== a.quantity) return b.quantity - a.quantity;
         return b.amount - a.amount;
     });
@@ -271,14 +303,51 @@ function aggregateReturnAnalytics(returnEvents = []) {
     return {
         totalReturnedQuantity,
         totalReturnedAmount,
+        totalSoldQuantity: safeNumber(salesAnalytics.totalQuantity, 0),
+        returnPercent: safeNumber(salesAnalytics.totalQuantity, 0) > 0
+            ? (totalReturnedQuantity / safeNumber(salesAnalytics.totalQuantity, 0)) * 100
+            : 0,
         returnedOrdersCount: returnedParents.size,
         byDate: byDateRows,
         byProduct: byProductRows,
         byCourier: byCourierRows,
+        byCustomer: byCustomerRows,
         bySource: bySourceRows,
         labels: byDateRows.map(row => row.date.split('-').slice(1).join('/')),
         quantities: byDateRows.map(row => row.quantity),
         amounts: byDateRows.map(row => row.amount)
+    };
+}
+
+function buildSalesAnalytics(records = []) {
+    const byProduct = {};
+    let totalQuantity = 0;
+
+    records.forEach(record => {
+        if (isDeletedOrCancelledRecord(record)) return;
+
+        (Array.isArray(record.items) ? record.items : []).forEach(item => {
+            const productId = item.productId || item.id || item.name || item.productName || 'unknown';
+            const productName = getProductName(item);
+            const quantity = getItemQuantity(item);
+            if (quantity <= 0) return;
+
+            if (!byProduct[productId]) {
+                byProduct[productId] = {
+                    productId,
+                    productName,
+                    quantity: 0
+                };
+            }
+
+            byProduct[productId].quantity += quantity;
+            totalQuantity += quantity;
+        });
+    });
+
+    return {
+        byProduct,
+        totalQuantity
     };
 }
 
@@ -589,7 +658,8 @@ export const statsService = {
             });
         });
 
-        const analytics = aggregateReturnAnalytics(Object.values(deduped));
+        const salesAnalytics = buildSalesAnalytics(invoices.concat(orders, deliveries));
+        const analytics = aggregateReturnAnalytics(Object.values(deduped), salesAnalytics);
         const returnStateByParent = {};
         invoices.concat(orders, deliveries).forEach(record => {
             const returnState = getReturnState(record);

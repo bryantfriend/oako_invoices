@@ -1,7 +1,6 @@
 import { auth, db } from "../core/firebase.js";
 import {
     collection,
-    addDoc,
     getDocs,
     getDoc,
     doc,
@@ -21,8 +20,14 @@ import { offlineStatusService } from "./offlineStatusService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { deviceIdService } from "./deviceIdService.js";
 import { conflictService } from "./conflictService.js";
+import { dataIntegrityService } from "./dataIntegrityService.js";
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getReturnState } from "../core/returnStatus.js";
+import {
+    canEditInvoiceDate,
+    canEditInvoiceItems,
+    getInvoiceWorkflowLockMessage,
+    isInvoiceReadOnly
+} from "../core/invoiceWorkflow.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import archiveInvoiceIntentModule from "../ICF/Intents/ArchiveInvoiceIntent.js";
 import updateInvoiceItemsIntentModule from "../ICF/Intents/UpdateInvoiceItemsIntent.js";
@@ -97,10 +102,7 @@ function getStoreId(settings) {
 }
 
 function isInvoiceItemsEditable(invoice) {
-    const status = String(invoice && invoice.status || '');
-    return ['draft', 'pending', 'confirmed'].includes(status)
-        || getReturnState(invoice) !== 'none'
-        || ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending'].includes(status);
+    return canEditInvoiceItems(invoice);
 }
 
 function getReturnQuantityFromRecordItem(item = {}) {
@@ -256,11 +258,19 @@ async function processRestoreArchivedInvoiceIntent(context) {
     }
 
     const restoreStatus = invoice.previousStatus || 'open';
-    await invoiceService.updateInvoice(context.invoiceId, {
+    await dataIntegrityService.updateInvoiceWithIntegrity(doc(db, COLLECTION, context.invoiceId), invoice, {
         status: restoreStatus,
         restoredAt: serverTimestamp(),
-        restoredBy: getActorId(context.currentUser)
-    }, 'restoreArchivedInvoice');
+        restoredBy: getActorId(context.currentUser),
+        updatedAt: serverTimestamp(),
+        updatedBy: context.currentUser ? context.currentUser.uid : '',
+        localUpdatedAt: new Date().toISOString(),
+        syncState: 'synced'
+    }, {
+        action: 'restore',
+        actor: context.actor,
+        source: 'ui'
+    });
 
     return Object.assign({}, context, {
         restoredStatus: restoreStatus
@@ -364,7 +374,7 @@ function buildInvoicePayload(order, settings, customer, orderId, adjustments, in
         discountValue: adjustments.discountValue || 0,
         discountAmount: discountAmount,
         totalAmount: totalAmount,
-        status: 'pending',
+        status: 'draft',
         secureToken: secureToken,
         returnRequested: false,
         returnItems: [],
@@ -380,6 +390,22 @@ function buildInvoicePayload(order, settings, customer, orderId, adjustments, in
         syncState: metadata.syncState,
         offlineCreated: metadata.offlineCreated
     };
+}
+
+function getIntegrityAction(actionType, updates) {
+    if (actionType === 'addReturn') {
+        return 'return';
+    }
+
+    if (actionType === 'restoreArchivedInvoice') {
+        return 'restore';
+    }
+
+    if (updates && updates.status === 'archived') {
+        return 'archive';
+    }
+
+    return 'update';
 }
 
 async function queueInvoiceMutation(actionType, invoiceId, firestorePatch, localInvoiceSnapshot, baseUpdatedAtMillis, storeId) {
@@ -470,9 +496,14 @@ export const invoiceService = {
             }
 
             delete payload.id;
-            const docRef = await addDoc(collection(db, COLLECTION), payload);
+            const invoiceId = await dataIntegrityService.createInvoiceWithIntegrity(payload, {
+                actor: getCurrentAdminActor(),
+                source: 'ui',
+                storeId: storeId,
+                companyId: storeId
+            });
             await gamificationService.awardAction('invoicesCreated');
-            return docRef.id;
+            return invoiceId;
         } catch (error) {
             console.error("Error creating invoice:", error);
             throw error;
@@ -523,7 +554,7 @@ export const invoiceService = {
 
         const openQuery = query(
             collection(db, COLLECTION),
-            where('status', 'in', ['pending', 'draft', 'confirmed', 'returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending', 'completed_pending_sync']),
+            where('status', 'in', ['draft', 'submitted', 'pending', 'approved', 'confirmed', 'fulfilled', 'returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending', 'completed_pending_sync']),
             limit(WORKING_INVOICE_LIMIT)
         );
         const todayQuery = query(
@@ -575,6 +606,40 @@ export const invoiceService = {
         return applyLocalInvoiceOverlays(mapSnapshot(snapshot).filter(isActiveInvoice)).then(function(invoices) {
             return invoices.filter(isActiveInvoice);
         });
+    },
+
+    async getInvoicesByCustomerNames(customerNames) {
+        const names = Array.isArray(customerNames) ? customerNames : [];
+        const uniqueNames = names
+            .map(function(name) {
+                return String(name || '').trim();
+            })
+            .filter(function(name, index, allNames) {
+                return name && allNames.indexOf(name) === index;
+            });
+        const byId = {};
+
+        for (let index = 0; index < uniqueNames.length; index += 1) {
+            const customerName = uniqueNames[index];
+            const customerQuery = query(
+                collection(db, COLLECTION),
+                where('customerName', '==', customerName),
+                limit(150)
+            );
+            const snapshot = await getDocs(customerQuery).catch(function(error) {
+                logCollectionError(COLLECTION, error, 'fetch customer invoices from');
+                return { docs: [] };
+            });
+            const invoices = mapSnapshot(snapshot);
+            for (let invoiceIndex = 0; invoiceIndex < invoices.length; invoiceIndex += 1) {
+                const invoice = invoices[invoiceIndex];
+                byId[invoice.id] = invoice;
+            }
+        }
+
+        return Object.keys(byId).map(function(invoiceId) {
+            return byId[invoiceId];
+        }).sort(sortInvoicesByNewest);
     },
 
     async getArchivedInvoices() {
@@ -630,6 +695,11 @@ export const invoiceService = {
     },
 
     async updateInvoiceDate(id, newDate) {
+        const invoice = await this.getInvoice(id);
+        if (!canEditInvoiceDate(invoice)) {
+            throw new Error(getInvoiceWorkflowLockMessage(invoice));
+        }
+
         const dateObj = new Date(newDate + 'T12:00:00');
         return this.updateInvoice(id, {
             createdAt: dateObj,
@@ -643,7 +713,7 @@ export const invoiceService = {
             throw new Error('Invoice not found.');
         }
         if (!isInvoiceItemsEditable(invoice)) {
-            throw new Error('Products can only be added before completion or after returns.');
+            throw new Error(getInvoiceWorkflowLockMessage(invoice));
         }
 
         const items = normalizeInvoiceItemsForEditing(invoice);
@@ -671,7 +741,7 @@ export const invoiceService = {
             throw new Error('Invoice not found.');
         }
         if (!isInvoiceItemsEditable(invoice)) {
-            throw new Error('Products can only be removed before completion or after returns.');
+            throw new Error(getInvoiceWorkflowLockMessage(invoice));
         }
 
         const existingItems = normalizeInvoiceItemsForEditing(invoice);
@@ -692,7 +762,7 @@ export const invoiceService = {
             throw new Error('Invoice not found.');
         }
         if (!isInvoiceItemsEditable(invoice)) {
-            throw new Error('Invoice quantities can only be edited before completion or after returns.');
+            throw new Error(getInvoiceWorkflowLockMessage(invoice));
         }
 
         const nextQuantity = Number(quantity);
@@ -721,7 +791,7 @@ export const invoiceService = {
             throw new Error('Invoice not found.');
         }
         if (!isInvoiceItemsEditable(invoice)) {
-            throw new Error('Invoice items can only be edited before completion or after returns.');
+            throw new Error(getInvoiceWorkflowLockMessage(invoice));
         }
 
         const existingReturnedItems = normalizeInvoiceItemsForEditing(invoice).filter(item => getAnyReturnedQuantity(invoice, item) > 0);
@@ -829,7 +899,7 @@ export const invoiceService = {
                 const localPatch = Object.assign({}, updates);
 
                 if (actionType === 'completeInvoice') {
-                    firestorePatch.status = 'completed';
+                    firestorePatch.status = 'fulfilled';
                     localPatch.status = 'completed_pending_sync';
                 }
 
@@ -852,13 +922,36 @@ export const invoiceService = {
             }
 
             const docRef = doc(db, COLLECTION, id);
-            await updateDoc(docRef, Object.assign({}, updates, {
+            const updatePayload = Object.assign({}, updates, {
                 updatedAt: serverTimestamp(),
                 updatedBy: user ? user.uid : '',
                 deviceId: deviceId,
                 localUpdatedAt: new Date().toISOString(),
                 syncState: 'synced'
-            }));
+            });
+
+            if (!user && actionType === 'addReturn') {
+                await updateDoc(docRef, updatePayload);
+                return true;
+            }
+
+            const invoiceSnapshot = await getDoc(docRef);
+            if (!invoiceSnapshot.exists()) {
+                throw new Error('Invoice not found.');
+            }
+
+            const previousInvoice = Object.assign({ id: invoiceSnapshot.id }, invoiceSnapshot.data());
+            if (isInvoiceReadOnly(previousInvoice) && actionType !== 'restoreArchivedInvoice') {
+                throw new Error(getInvoiceWorkflowLockMessage(previousInvoice));
+            }
+
+            await dataIntegrityService.updateInvoiceWithIntegrity(docRef, previousInvoice, updatePayload, {
+                action: getIntegrityAction(actionType, updates),
+                actor: getCurrentAdminActor(),
+                source: 'ui',
+                returnItems: updates && updates.returnItems ? updates.returnItems : [],
+                note: updates && updates.returnNote ? updates.returnNote : ''
+            });
             return true;
         } catch (error) {
             console.error("Error updating invoice:", error);

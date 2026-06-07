@@ -121,7 +121,7 @@ export const googleSheetsService = {
     },
 
     async syncCompletedInvoice(invoice) {
-        if (invoice.status !== 'completed') {
+        if (invoice.status !== 'completed' && invoice.status !== 'fulfilled') {
             return { skipped: true };
         }
         return this.postInvoiceRows(invoice);

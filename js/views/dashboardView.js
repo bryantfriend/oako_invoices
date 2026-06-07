@@ -437,7 +437,9 @@ export const renderDashboard = async () => {
         const productRows = (returns.byProduct || []).slice(0, 6);
         const dateRows = (returns.byDate || []).slice(-6).reverse();
         const courierRows = (returns.byCourier || []).slice(0, 4);
+        const customerRows = (returns.byCustomer || []).slice(0, 4);
         const sourceRows = (returns.bySource || []).slice(0, 2);
+        const returnPercent = Number(returns.returnPercent || 0).toFixed(1);
 
         return `
             <div class="card" style="padding: 12px; margin: 0; display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr) minmax(260px, 1fr); gap: 12px; align-items: stretch;">
@@ -446,7 +448,7 @@ export const renderDashboard = async () => {
                         <h3 style="font-size: 12px; font-weight: 800; color: var(--color-gray-800); margin: 0;">Total returned</h3>
                         <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Invoice returns and courier returns. Deleted/cancelled orders excluded.</div>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;">
+                    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px;">
                         <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px;">
                             <div style="font-size: 10px; color: #92400e; font-weight: 800; text-transform: uppercase;">Quantity</div>
                             <div style="font-size: 22px; color: #b45309; font-weight: 900; margin-top: 4px;">${returns.totalReturnedQuantity || 0}</div>
@@ -467,6 +469,10 @@ export const renderDashboard = async () => {
                             <div style="font-size: 10px; color: #78350f; font-weight: 800; text-transform: uppercase;">Full</div>
                             <div style="font-size: 22px; color: #78350f; font-weight: 900; margin-top: 4px;">${returns.fullyReturnedCount || 0}</div>
                         </div>
+                        <div style="background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 10px; color: #0f766e; font-weight: 800; text-transform: uppercase;">Return %</div>
+                            <div style="font-size: 20px; color: #0f766e; font-weight: 900; margin-top: 6px;">${returnPercent}%</div>
+                        </div>
                     </div>
                     <div style="display: grid; gap: 6px;">
                         ${sourceRows.length ? sourceRows.map(row => `
@@ -485,9 +491,10 @@ export const renderDashboard = async () => {
                     <h4 style="font-size: 11px; font-weight: 800; color: var(--color-gray-500); margin: 0 0 8px;">BY PRODUCT</h4>
                     <div style="display: grid; gap: 6px;">
                         ${productRows.length ? productRows.map(row => `
-                            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: var(--color-gray-50); border-radius: 6px;">
+                            <div style="display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: var(--color-gray-50); border-radius: 6px;">
                                 <span style="font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${row.productName}</span>
                                 <span style="font-weight: 900; color: #b45309;">${row.quantity}</span>
+                                <span style="font-weight: 900; color: #0f766e;">${Number(row.returnPercent || 0).toFixed(1)}%</span>
                                 <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
                             </div>
                         `).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returned items yet.</div>'}
@@ -513,6 +520,16 @@ export const renderDashboard = async () => {
                                 <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
                             </div>
                         `).join('') : '<div style="padding: 12px; color: var(--color-gray-500); font-size: 12px; background: var(--color-gray-50); border-radius: 8px;">No courier returns in this period.</div>'}
+                    </div>
+                    <h4 style="font-size: 11px; font-weight: 800; color: var(--color-gray-500); margin: 12px 0 8px;">RETURNS BY CUSTOMER</h4>
+                    <div style="display: grid; gap: 6px;">
+                        ${customerRows.length ? customerRows.map(row => `
+                            <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; font-size: 12px; padding: 8px; background: #eff6ff; border-radius: 6px;">
+                                <span style="font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${row.customerName}</span>
+                                <span style="font-weight: 900; color: #2563eb;">${row.quantity}</span>
+                                <span style="font-weight: 800; color: var(--color-gray-600);">${formatCurrency(row.amount)}</span>
+                            </div>
+                        `).join('') : '<div style="padding: 12px; color: var(--color-gray-500); font-size: 12px; background: var(--color-gray-50); border-radius: 8px;">No customer returns in this period.</div>'}
                     </div>
                 </div>
             </div>

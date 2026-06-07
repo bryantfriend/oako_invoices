@@ -3,11 +3,11 @@ import {
     doc,
     getDoc,
     serverTimestamp,
-    setDoc,
     updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { googleSheetsService } from "./googleSheetsService.js";
 import { conflictService } from "./conflictService.js";
+import { dataIntegrityService } from "./dataIntegrityService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 
@@ -70,6 +70,36 @@ function buildPatch(queueItem) {
     return patch;
 }
 
+function getQueueActor(queueItem) {
+    if (!queueItem || !queueItem.userId) {
+        return {
+            id: 'anonymous',
+            role: 'anonymous'
+        };
+    }
+
+    return {
+        id: queueItem.userId,
+        role: 'admin'
+    };
+}
+
+function getIntegrityAction(queueItem, patch) {
+    if (queueItem && queueItem.actionType === 'addReturn') {
+        return 'return';
+    }
+
+    if (queueItem && queueItem.actionType === 'restoreArchivedInvoice') {
+        return 'restore';
+    }
+
+    if (patch && patch.status === 'archived') {
+        return 'archive';
+    }
+
+    return 'update';
+}
+
 function restoreDateField(record, fieldName) {
     if (typeof record[fieldName] === 'string') {
         const date = new Date(record[fieldName]);
@@ -121,7 +151,12 @@ async function writeInvoiceCreate(queueItem) {
     restoreDateField(invoice, 'createdAt');
     restoreDateField(invoice, 'dueDate');
 
-    await setDoc(invoiceRef, invoice, { merge: true });
+    await dataIntegrityService.setInvoiceWithIntegrity(invoiceRef, invoice, {
+        actor: getQueueActor(queueItem),
+        source: 'offline-sync',
+        storeId: queueItem.storeId || '',
+        companyId: queueItem.companyId || ''
+    });
 }
 
 async function writeInvoiceUpdate(queueItem) {
@@ -145,12 +180,23 @@ async function writeInvoiceUpdate(queueItem) {
         throw new Error('sync_conflict');
     }
 
-    await updateDoc(invoiceRef, buildPatch(queueItem));
+    const patch = buildPatch(queueItem);
+    await dataIntegrityService.updateInvoiceWithIntegrity(
+        invoiceRef,
+        Object.assign({ id: serverSnap.id }, serverSnap.data()),
+        patch,
+        {
+            action: getIntegrityAction(queueItem, patch),
+            actor: getQueueActor(queueItem),
+            source: 'offline-sync',
+            returnItems: patch.returnItems || []
+        }
+    );
 }
 
 async function syncCompletedInvoiceToSheet(queueItem) {
     const localVersion = Object.assign({}, getLocalSnapshot(queueItem));
-    localVersion.status = 'completed';
+    localVersion.status = 'fulfilled';
     localVersion.syncState = 'synced';
 
     const result = await googleSheetsService.syncCompletedInvoice(localVersion);
@@ -255,7 +301,7 @@ export const syncService = {
         nextPayload.firestorePatch = nextLocal;
         if (queueItem.actionType === 'completeInvoice' && nextPayload.firestorePatch.status === 'completed_pending_sync') {
             nextPayload.firestorePatch = Object.assign({}, nextPayload.firestorePatch, {
-                status: 'completed'
+                status: 'fulfilled'
             });
         }
 

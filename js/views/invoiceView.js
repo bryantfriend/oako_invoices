@@ -17,6 +17,15 @@ import { buildGoogleSheetUrl, settingsService } from "../services/settingsServic
 import { customerService } from "../services/customerService.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
 import { getDisplayStatus, getReturnState, isReturnFilterMatch } from "../core/returnStatus.js";
+import {
+    canEditInvoiceDate,
+    canEditInvoiceItems,
+    canFulfillInvoice,
+    canRecordInvoiceReturn,
+    getCanonicalInvoiceStatus,
+    getInvoiceWorkflowLockMessage,
+    isInvoiceReadOnly
+} from "../core/invoiceWorkflow.js";
 
 function escapeAttribute(value = '') {
     return escapeHtml(value).replace(/"/g, '&quot;');
@@ -272,7 +281,7 @@ export const renderInvoices = async () => {
                 filters.status === 'returned' ? isReturnFilterMatch(inv, 'any_return') :
                 ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'any_return'].includes(filters.status)
                     ? isReturnFilterMatch(inv, filters.status)
-                    : inv.status === filters.status;
+                    : getCanonicalInvoiceStatus(inv.status) === getCanonicalInvoiceStatus(filters.status);
 
             const date = (inv.createdAt && inv.createdAt.toDate) ? inv.createdAt.toDate() : new Date(inv.createdAt);
             const now = new Date();
@@ -472,7 +481,9 @@ export const renderInvoices = async () => {
                                 <option value="all" ${filters.status === 'all' ? 'selected' : ''}>All Statuses</option>
                                 <option value="returned" ${filters.status === 'returned' ? 'selected' : ''}>Returned</option>
                                 <option value="draft" ${filters.status === 'draft' ? 'selected' : ''}>Draft</option>
+                                <option value="submitted" ${filters.status === 'submitted' ? 'selected' : ''}>Submitted</option>
                                 <option value="pending" ${filters.status === 'pending' ? 'selected' : ''}>Pending</option>
+                                <option value="approved" ${filters.status === 'approved' ? 'selected' : ''}>Approved</option>
                                 <option value="confirmed" ${filters.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
                                 <option value="fulfilled" ${filters.status === 'fulfilled' ? 'selected' : ''}>Fulfilled</option>
                                 <option value="completed" ${filters.status === 'completed' ? 'selected' : ''}>Completed</option>
@@ -696,21 +707,17 @@ export const renderInvoiceDetail = async ({ id }) => {
     const getEditableItems = () => invoiceController
         .normalizeInvoiceItemsForEditing(invoice)
         .map(item => normalizeInvoiceItemReturnFields(item, invoice));
-    const isDraftEditable = () => invoice.status === 'draft';
+    const isDraftEditable = () => canEditInvoiceItems(invoice);
     const isInvoiceItemsEditable = () => {
-        const status = String(invoice.status || '');
-        return ['draft', 'pending', 'confirmed'].includes(status)
-            || getReturnState(invoice) !== 'none'
-            || ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending'].includes(status);
+        return canEditInvoiceItems(invoice);
     };
     const invoiceStatusOptions = [
         { value: 'draft', label: 'Draft' },
-        { value: 'pending', label: 'Pending' },
-        { value: 'confirmed', label: 'Confirmed' },
-        { value: 'partially_returned', label: 'Partially Returned' },
-        { value: 'returned', label: 'Returned' },
+        { value: 'submitted', label: 'Submitted' },
+        { value: 'approved', label: 'Approved' },
         { value: 'fulfilled', label: 'Fulfilled' },
-        { value: 'completed', label: 'Completed' }
+        { value: 'partially_returned', label: 'Partially Returned' },
+        { value: 'returned', label: 'Returned' }
     ];
 
     const getItemDisplayName = item => item.displayName || item.name || item.name_en || item.name_ru || item.name_kg || item.productName || 'Product';
@@ -893,22 +900,18 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 
     function renderInvoiceStatusControl() {
-        const currentStatus = invoice.status || 'pending';
+        const currentStatus = getCanonicalInvoiceStatus(invoice.status || 'draft');
         const returnState = getReturnState(invoice);
-        const options = invoiceStatusOptions.map(option => {
-            if (currentStatus === 'fullfilled' && option.value === 'fulfilled') {
-                return { value: 'fullfilled', label: 'Fulfilled' };
-            }
-            return option;
-        });
+        const options = invoiceStatusOptions;
         const selectedStatus = returnState === 'partial'
             ? 'partially_returned'
             : (returnState === 'full' ? 'returned' : currentStatus);
+        const disabledAttribute = isInvoiceReadOnly(invoice) ? 'disabled' : '';
 
         return `
             <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                 <span style="font-size: 12px; font-weight: 600;">Status:</span>
-                <select id="invoice-status-selector" class="input" style="height: 32px; padding: 2px 8px; font-size: 12px; width: 170px;">
+                <select id="invoice-status-selector" class="input" ${disabledAttribute} style="height: 32px; padding: 2px 8px; font-size: 12px; width: 170px;">
                     ${options.map(option => `
                         <option value="${option.value}" ${selectedStatus === option.value ? 'selected' : ''}>${option.label}</option>
                     `).join('')}
@@ -1120,7 +1123,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     async function openEditInvoiceItemsModal() {
         if (!isInvoiceItemsEditable()) {
             const { notificationService } = await import("../core/notificationService.js");
-            notificationService.error('Invoice items can only be edited before completion or after returns.');
+            notificationService.error(getInvoiceWorkflowLockMessage(invoice));
             return;
         }
 
@@ -1296,6 +1299,12 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 
     async function openRecordReturnModal() {
+        if (!canRecordInvoiceReturn(invoice)) {
+            const { notificationService } = await import("../core/notificationService.js");
+            notificationService.error(getInvoiceWorkflowLockMessage(invoice));
+            return;
+        }
+
         const { Modal } = await import("../components/modal.js");
         const items = getEditableItems();
         const modal = new Modal({
@@ -1684,7 +1693,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     <span style="font-size: 12px; font-weight: 600;">Date:</span>
                     <input type="date" id="invoice-date-picker" class="input" style="padding: 2px 8px; height: 32px; font-size: 13px; width: 140px;"
-                           value="${toDateInputValue(invoice.createdAt)}">
+                           value="${toDateInputValue(invoice.createdAt)}" ${canEditInvoiceDate(invoice) ? '' : 'disabled'}>
                 </div>
 
                 <div style="flex: 1; display: flex; justify-content: center; align-items: center; gap: 15px;">
@@ -1704,12 +1713,13 @@ export const renderInvoiceDetail = async ({ id }) => {
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     ${isInvoiceItemsEditable() ? '<button id="btn-edit-invoice-items" class="btn btn-secondary btn-sm">Edit Items</button>' : ''}
                     <button id="btn-copy-qr" class="btn btn-secondary btn-sm">QR Link</button>
-                    <button id="btn-record-return-items" class="btn btn-secondary btn-sm">Record Return</button>
-                    <button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>
+                    ${canRecordInvoiceReturn(invoice) ? '<button id="btn-record-return-items" class="btn btn-secondary btn-sm">Record Return</button>' : ''}
+                    ${canFulfillInvoice(invoice) ? '<button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>' : ''}
                     <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
                     <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices stacked on Portrait A4">📄 2-up Portrait</button>
                 </div>
             </div>
+            ${getInvoiceWorkflowLockMessage(invoice) ? `<div class="no-print" style="padding: 8px 16px; background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; font-size: 12px; font-weight: 800; text-align: center;">${escapeHtml(getInvoiceWorkflowLockMessage(invoice))}</div>` : ''}
             ${renderConflictReview(openConflict)}
             ${renderApprovalResponseBanner(approvalLink)}
             ${renderDraftItemEditor()}
@@ -1941,7 +1951,13 @@ export const renderInvoiceDetail = async ({ id }) => {
             document.getElementById('lang-en').addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
             document.getElementById('lang-ru').addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
 
-            document.getElementById('invoice-date-picker').addEventListener('change', async (e) => {
+            document.getElementById('invoice-date-picker')?.addEventListener('change', async (e) => {
+                if (!canEditInvoiceDate(invoice)) {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    notificationService.error(getInvoiceWorkflowLockMessage(invoice));
+                    e.target.value = toDateInputValue(invoice.createdAt);
+                    return;
+                }
                 const newDate = e.target.value;
                 const success = await invoiceController.updateDate(id, newDate);
                 if (success) {
@@ -2081,7 +2097,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
             document.getElementById('invoice-status-selector')?.addEventListener('change', async event => {
                 const nextStatus = event.target.value;
-                const previousStatus = invoice.status || 'pending';
+                const previousStatus = getCanonicalInvoiceStatus(invoice.status || 'draft');
                 const previousDisplayStatus = getReturnState(invoice) === 'partial'
                     ? 'partially_returned'
                     : (getReturnState(invoice) === 'full' ? 'returned' : previousStatus);
@@ -2116,7 +2132,12 @@ export const renderInvoiceDetail = async ({ id }) => {
                 event.target.value = previousDisplayStatus;
             });
 
-            document.getElementById('btn-complete-invoice').addEventListener('click', async () => {
+            document.getElementById('btn-complete-invoice')?.addEventListener('click', async () => {
+                if (!canFulfillInvoice(invoice)) {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    notificationService.error('Only approved invoices can be fulfilled.');
+                    return;
+                }
                 if (!getEditableItems().length) {
                     const { notificationService } = await import("../core/notificationService.js");
                     notificationService.error('Invoice must have at least one item.');
@@ -2125,7 +2146,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 const { returnsService } = await import("../services/returnsService.js");
                 const { notificationService } = await import("../core/notificationService.js");
                 await returnsService.markCompleted(invoice.id);
-                notificationService.success('Invoice completed.');
+                notificationService.success('Invoice fulfilled.');
                 renderInvoiceDetail({ id });
             });
 
@@ -2151,9 +2172,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                                         orderUpdates.status = 'confirmed';
                                     }
                                     await orderService.updateOrder(invoice.orderId, orderUpdates);
-                                    if (invoice.status === 'pending' || invoice.status === 'draft') {
-                                        await invoiceService.updateInvoice(invoice.id, { status: 'confirmed' });
-                                        invoice.status = 'confirmed';
+                                    const workflowStatus = getCanonicalInvoiceStatus(invoice.status);
+                                    if (workflowStatus === 'submitted' || workflowStatus === 'draft') {
+                                        await invoiceService.updateInvoice(invoice.id, { status: 'approved' });
+                                        invoice.status = 'approved';
                                     }
                                     if (!order?.isPrinted) {
                                         await gamificationService.awardAction('invoicesPrinted');

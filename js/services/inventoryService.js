@@ -40,10 +40,20 @@ export const inventoryService = {
         try {
             const docId = `${date}_${productId}`;
             const docRef = doc(db, COLLECTION, docId);
+            const existingSnap = await getDoc(docRef);
+            const existingData = existingSnap.exists() ? existingSnap.data() : {};
+            const nextData = data || {};
+            const totalBaked = Number(nextData.totalBaked !== undefined ? nextData.totalBaked : existingData.totalBaked) || 0;
+            const invoiceQuantity = Number(existingData.invoiceQuantity || 0);
+            const returnedQuantity = Number(existingData.returnedQuantity || 0);
             await setDoc(docRef, {
                 date,
                 productId,
-                ...data, // totalBaked, locked
+                ...nextData, // totalBaked, locked
+                totalBaked,
+                invoiceQuantity,
+                returnedQuantity,
+                availableQuantity: totalBaked - invoiceQuantity + returnedQuantity,
                 updatedAt: serverTimestamp()
             }, { merge: true });
             return true;

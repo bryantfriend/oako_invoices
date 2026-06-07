@@ -53,13 +53,19 @@ export const inventoryController = {
                         .filter(p => p.categoryId === cat.id)
                         .map(p => {
                             const record = dailyRecords[p.id] || { totalBaked: 0, locked: false };
-                            const sold = salesMap[p.id] || 0;
+                            const automaticSold = record.invoiceQuantity !== undefined ? Number(record.invoiceQuantity) || 0 : null;
+                            const returned = Number(record.returnedQuantity || 0);
+                            const sold = automaticSold !== null ? automaticSold : (salesMap[p.id] || 0);
+                            const left = record.availableQuantity !== undefined
+                                ? Number(record.availableQuantity) || 0
+                                : record.totalBaked - sold + returned;
                             return {
                                 ...p,
                                 totalBaked: record.totalBaked,
                                 locked: record.locked,
                                 sold: sold,
-                                left: record.totalBaked - sold
+                                returned: returned,
+                                left: left
                             };
                         })
                 }))

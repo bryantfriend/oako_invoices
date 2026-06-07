@@ -3,7 +3,9 @@ import { getDisplayStatus, normalizeStatusKey } from "../core/returnStatus.js";
 
 const STATUS_CONFIG = {
     [ORDER_STATUS.DRAFT]: { color: 'var(--color-gray-600)', bg: 'var(--color-gray-100)' },
+    submitted: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
     [ORDER_STATUS.PENDING]: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
+    approved: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
     [ORDER_STATUS.CONFIRMED]: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
     [ORDER_STATUS.RETURNED]: { color: '#b45309', bg: '#fffbeb' },
     partially_returned: { color: '#92400e', bg: '#fef3c7' },
