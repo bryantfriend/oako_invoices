@@ -16,6 +16,7 @@ import { qrService } from "../services/qrService.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
+import { getDisplayStatus, getReturnState, isReturnFilterMatch } from "../core/returnStatus.js";
 
 function escapeAttribute(value = '') {
     return escapeHtml(value).replace(/"/g, '&quot;');
@@ -244,7 +245,7 @@ export const renderInvoices = async () => {
 
     let filtered = [...allInvoices];
     let sort = { key: 'createdAt', order: 'desc' };
-    let filters = { customer: 'all', period: 'all' };
+    let filters = { customer: 'all', period: 'all', status: 'all' };
     let historyLimit = 50;
     let activeInvoiceTab = 'active';
     let archivedInvoices = [];
@@ -267,6 +268,11 @@ export const renderInvoices = async () => {
 
         filtered = allInvoices.filter(inv => {
             const matchesCustomer = filters.customer === 'all' || inv.customerName === filters.customer;
+            const matchesStatus = filters.status === 'all' ? true :
+                filters.status === 'returned' ? isReturnFilterMatch(inv, 'any_return') :
+                ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'any_return'].includes(filters.status)
+                    ? isReturnFilterMatch(inv, filters.status)
+                    : inv.status === filters.status;
 
             const date = (inv.createdAt && inv.createdAt.toDate) ? inv.createdAt.toDate() : new Date(inv.createdAt);
             const now = new Date();
@@ -283,7 +289,7 @@ export const renderInvoices = async () => {
                 matchesPeriod = date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
             }
 
-            return matchesCustomer && matchesPeriod;
+            return matchesCustomer && matchesStatus && matchesPeriod;
         });
 
         // Apply Sort
@@ -428,6 +434,7 @@ export const renderInvoices = async () => {
                 ` },
                 { key: 'createdAt', label: 'Date', render: (val) => `<span style="color: #5a7052;">${formatDate((val && val.toDate) ? val.toDate() : val)}</span>` },
                 { key: 'totalAmount', label: 'Amount', render: (val) => `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>` },
+                { key: 'status', label: 'Status', align: 'center', render: (val, row) => createStatusBadge(row) },
                 { key: 'syncState', label: 'Sync', align: 'center', render: (val, row) => renderInvoiceSyncPill(row) },
             ],
             data: filtered,
@@ -457,6 +464,18 @@ export const renderInvoices = async () => {
                             <select id="filter-customer" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-gray-200); font-size: 13px;">
                                 <option value="all">${t('invoice_all_customers')}</option>
                                 ${customers.map(c => `<option value="${escapeAttribute(c)}" ${filters.customer === c ? 'selected' : ''}>${escapeAttribute(c)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <label style="font-size: 12px; font-weight: 600; color: var(--color-gray-500);">Status:</label>
+                            <select id="filter-invoice-status" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--color-gray-200); font-size: 13px;">
+                                <option value="all" ${filters.status === 'all' ? 'selected' : ''}>All Statuses</option>
+                                <option value="returned" ${filters.status === 'returned' ? 'selected' : ''}>Returned</option>
+                                <option value="draft" ${filters.status === 'draft' ? 'selected' : ''}>Draft</option>
+                                <option value="pending" ${filters.status === 'pending' ? 'selected' : ''}>Pending</option>
+                                <option value="confirmed" ${filters.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
+                                <option value="fulfilled" ${filters.status === 'fulfilled' ? 'selected' : ''}>Fulfilled</option>
+                                <option value="completed" ${filters.status === 'completed' ? 'selected' : ''}>Completed</option>
                             </select>
                         </div>
                         <div style="height: 20px; width: 1px; background: var(--color-gray-200);"></div>
@@ -519,6 +538,11 @@ export const renderInvoices = async () => {
         // Event Listeners for filters
         document.getElementById('filter-customer').addEventListener('change', (e) => {
             filters.customer = e.target.value;
+            applyInvoicesFilters();
+        });
+
+        document.getElementById('filter-invoice-status')?.addEventListener('change', (e) => {
+            filters.status = e.target.value;
             applyInvoicesFilters();
         });
 
@@ -669,12 +693,21 @@ export const renderInvoiceDetail = async ({ id }) => {
     let is2UpMode = false;
 
     const DEFAULT_ITEMS_PER_PAGE = 7;
-    const getEditableItems = () => invoiceController.normalizeInvoiceItemsForEditing(invoice);
+    const getEditableItems = () => invoiceController
+        .normalizeInvoiceItemsForEditing(invoice)
+        .map(item => normalizeInvoiceItemReturnFields(item, invoice));
     const isDraftEditable = () => invoice.status === 'draft';
+    const isInvoiceItemsEditable = () => {
+        const status = String(invoice.status || '');
+        return ['draft', 'pending', 'confirmed'].includes(status)
+            || getReturnState(invoice) !== 'none'
+            || ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending'].includes(status);
+    };
     const invoiceStatusOptions = [
         { value: 'draft', label: 'Draft' },
         { value: 'pending', label: 'Pending' },
         { value: 'confirmed', label: 'Confirmed' },
+        { value: 'partially_returned', label: 'Partially Returned' },
         { value: 'returned', label: 'Returned' },
         { value: 'fulfilled', label: 'Fulfilled' },
         { value: 'completed', label: 'Completed' }
@@ -686,16 +719,62 @@ export const renderInvoiceDetail = async ({ id }) => {
         return Number.isFinite(number) ? number : fallback;
     };
 
-    function getItemReturnedQuantity(item = {}) {
-        return Math.max(0, safeNumber(item.returnedQuantity, 0));
+    function getReturnQuantityFromRecordItem(item = {}) {
+        if (item.returnedQuantity !== undefined) {
+            return safeNumber(item.returnedQuantity, 0);
+        }
+        if (item.returnQuantity !== undefined) {
+            return safeNumber(item.returnQuantity, 0);
+        }
+        return safeNumber(item.quantity, 0);
+    }
+
+    function isMatchingReturnItem(returnItem = {}, invoiceItem = {}) {
+        const returnLineItemId = returnItem.lineItemId || '';
+        const itemLineItemId = invoiceItem.lineItemId || '';
+        const returnProductId = returnItem.productId || returnItem.id || '';
+        const itemProductId = invoiceItem.productId || invoiceItem.id || '';
+
+        return (returnLineItemId && itemLineItemId && returnLineItemId === itemLineItemId)
+            || (returnProductId && itemProductId && returnProductId === itemProductId);
+    }
+
+    function sumMatchingReturnItems(returnItems = [], invoiceItem = {}) {
+        return (Array.isArray(returnItems) ? returnItems : []).reduce((sum, returnItem) => {
+            if (!isMatchingReturnItem(returnItem, invoiceItem)) {
+                return sum;
+            }
+            return sum + getReturnQuantityFromRecordItem(returnItem);
+        }, 0);
+    }
+
+    function getInvoiceRecordedReturnQuantity(sourceInvoice = {}, invoiceItem = {}) {
+        const returnItemsTotal = sumMatchingReturnItems(sourceInvoice.returnItems || [], invoiceItem);
+        const returnRecordTotal = (Array.isArray(sourceInvoice.returns) ? sourceInvoice.returns : []).reduce((sum, returnRecord) => {
+            return sum + sumMatchingReturnItems(returnRecord.items || returnRecord.returnItems || [], invoiceItem);
+        }, 0);
+        const courierReturnTotal = (Array.isArray(sourceInvoice.courierReturns) ? sourceInvoice.courierReturns : []).reduce((sum, returnRecord) => {
+            return sum + sumMatchingReturnItems(returnRecord.items || returnRecord.returnItems || [], invoiceItem);
+        }, 0);
+
+        return Math.max(returnItemsTotal, returnRecordTotal, courierReturnTotal);
+    }
+
+    function getItemReturnedQuantity(item = {}, sourceInvoice = null) {
+        const directReturnedQuantity = Math.max(
+            safeNumber(item.returnedQuantity, 0),
+            safeNumber(item.returnQuantity, 0)
+        );
+        const recordedReturnedQuantity = sourceInvoice ? getInvoiceRecordedReturnQuantity(sourceInvoice, item) : 0;
+        return Math.max(0, directReturnedQuantity, recordedReturnedQuantity);
     }
 
     function getItemOriginalQuantity(item = {}) {
         return safeNumber(item.quantity !== undefined ? item.quantity : item.adjustedQuantity, 0);
     }
 
-    function getItemRemainingQuantity(item = {}) {
-        return Math.max(0, getItemOriginalQuantity(item) - getItemReturnedQuantity(item));
+    function getItemRemainingQuantity(item = {}, sourceInvoice = null) {
+        return Math.max(0, getItemOriginalQuantity(item) - getItemReturnedQuantity(item, sourceInvoice));
     }
 
     function getItemOriginalTotal(item = {}) {
@@ -705,32 +784,32 @@ export const renderInvoiceDetail = async ({ id }) => {
         return safeNumber(item.price, 0) * getItemOriginalQuantity(item);
     }
 
-    function getItemAdjustedTotal(item = {}) {
-        if (item.adjustedTotal !== undefined) {
+    function getItemAdjustedTotal(item = {}, sourceInvoice = null) {
+        if (!sourceInvoice && item.adjustedTotal !== undefined) {
             return safeNumber(item.adjustedTotal, 0);
         }
-        return safeNumber(item.price, 0) * getItemRemainingQuantity(item);
+        return safeNumber(item.price, 0) * getItemRemainingQuantity(item, sourceInvoice);
     }
 
-    function normalizeInvoiceItemReturnFields(item = {}) {
-        const returnedQuantity = getItemReturnedQuantity(item);
-        const remainingQuantity = getItemRemainingQuantity(item);
+    function normalizeInvoiceItemReturnFields(item = {}, sourceInvoice = null) {
+        const returnedQuantity = getItemReturnedQuantity(item, sourceInvoice);
+        const remainingQuantity = getItemRemainingQuantity(item, sourceInvoice);
         return Object.assign({}, item, {
             returnedQuantity,
             remainingQuantity,
-            adjustedTotal: getItemAdjustedTotal(item)
+            adjustedTotal: getItemAdjustedTotal(item, sourceInvoice)
         });
     }
 
     function hasInvoiceReturns(sourceInvoice = {}) {
         const summaryQuantity = safeNumber(sourceInvoice.returnSummary?.totalReturnedQuantity, 0);
         const hasReturnRecords = Array.isArray(sourceInvoice.returns) && sourceInvoice.returns.length > 0;
-        const hasReturnedItems = (sourceInvoice.items || []).some(item => getItemReturnedQuantity(item) > 0);
+        const hasReturnedItems = (sourceInvoice.items || []).some(item => getItemReturnedQuantity(item, sourceInvoice) > 0);
         return summaryQuantity > 0 || hasReturnRecords || hasReturnedItems;
     }
 
     function calculateInvoiceReturnSummary(sourceInvoice = {}) {
-        const items = (sourceInvoice.items || []).map(normalizeInvoiceItemReturnFields);
+        const items = (sourceInvoice.items || []).map(item => normalizeInvoiceItemReturnFields(item, sourceInvoice));
         const itemReturnedAmount = items.reduce((sum, item) => sum + (safeNumber(item.price, 0) * getItemReturnedQuantity(item)), 0);
         const summary = sourceInvoice.returnSummary || {};
         const totalReturnedQuantity = safeNumber(summary.totalReturnedQuantity, items.reduce((sum, item) => sum + getItemReturnedQuantity(item), 0));
@@ -815,19 +894,23 @@ export const renderInvoiceDetail = async ({ id }) => {
 
     function renderInvoiceStatusControl() {
         const currentStatus = invoice.status || 'pending';
+        const returnState = getReturnState(invoice);
         const options = invoiceStatusOptions.map(option => {
             if (currentStatus === 'fullfilled' && option.value === 'fulfilled') {
                 return { value: 'fullfilled', label: 'Fulfilled' };
             }
             return option;
         });
+        const selectedStatus = returnState === 'partial'
+            ? 'partially_returned'
+            : (returnState === 'full' ? 'returned' : currentStatus);
 
         return `
             <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                 <span style="font-size: 12px; font-weight: 600;">Status:</span>
-                <select id="invoice-status-selector" class="input" style="height: 32px; padding: 2px 8px; font-size: 12px; width: 130px;">
+                <select id="invoice-status-selector" class="input" style="height: 32px; padding: 2px 8px; font-size: 12px; width: 170px;">
                     ${options.map(option => `
-                        <option value="${option.value}" ${currentStatus === option.value ? 'selected' : ''}>${option.label}</option>
+                        <option value="${option.value}" ${selectedStatus === option.value ? 'selected' : ''}>${option.label}</option>
                     `).join('')}
                 </select>
             </div>
@@ -835,69 +918,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 
     function renderDraftItemEditor() {
-        if (!isDraftEditable()) {
-            return '';
-        }
-
-        const editableItems = getEditableItems();
-        const totals = invoiceController.recalculateInvoiceTotals(Object.assign({}, invoice, {
-            items: editableItems
-        }));
-
-        return `
-            <section id="draft-item-editor" class="card no-print" style="padding: 18px; margin: 16px auto; width: min(1100px, calc(100% - 32px));">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
-                    <div>
-                        <h3 style="font-size: 15px; font-weight: 900; margin: 0;">Draft Invoice Items</h3>
-                        <div style="font-size: 12px; color: var(--color-gray-500); margin-top: 3px;">Add, remove, and adjust products before finalizing this invoice.</div>
-                    </div>
-                    <button id="btn-add-draft-product" class="btn btn-primary btn-sm">Add Product</button>
-                </div>
-                ${editableItems.length ? `
-                    <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                            <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
-                                <tr>
-                                    <th style="text-align: left; padding: 10px;">Product</th>
-                                    <th style="text-align: right; padding: 10px; width: 120px;">Price</th>
-                                    <th style="text-align: center; padding: 10px; width: 120px;">Quantity</th>
-                                    <th style="text-align: right; padding: 10px; width: 130px;">Line Total</th>
-                                    <th style="text-align: right; padding: 10px; width: 80px;"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${editableItems.map(item => `
-                                    <tr style="border-bottom: 1px solid var(--color-gray-100);">
-                                        <td style="padding: 10px;">
-                                            <div style="font-weight: 800; color: var(--color-gray-900);">${escapeHtml(getItemDisplayName(item))}</div>
-                                            ${item.weight ? `<div style="font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">${escapeHtml(item.weight)}</div>` : ''}
-                                        </td>
-                                        <td style="padding: 10px; text-align: right;">${formatCurrency(item.price || 0)}</td>
-                                        <td style="padding: 10px; text-align: center;">
-                                            <input class="draft-item-qty input" type="number" min="1" step="1" value="${Number(item.quantity) || 1}" data-line-item-id="${escapeAttribute(item.lineItemId)}" style="width: 84px; height: 32px; text-align: center;">
-                                        </td>
-                                        <td style="padding: 10px; text-align: right; font-weight: 900;">${formatCurrency(item.total || 0)}</td>
-                                        <td style="padding: 10px; text-align: right;">
-                                            <button class="btn btn-secondary btn-sm draft-remove-item" data-line-item-id="${escapeAttribute(item.lineItemId)}" title="Remove product">Remove</button>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="3" style="padding: 10px; text-align: right; color: var(--color-gray-500); font-weight: 800;">Subtotal</td>
-                                    <td colspan="2" style="padding: 10px; text-align: right; font-weight: 900;">${formatCurrency(totals.subtotal || 0)}</td>
-                                </tr>
-                                <tr>
-                                    <td colspan="3" style="padding: 10px; text-align: right; color: var(--color-gray-500); font-weight: 800;">Total</td>
-                                    <td colspan="2" style="padding: 10px; text-align: right; font-weight: 900; color: var(--color-primary-700);">${formatCurrency(totals.totalAmount || 0)}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                ` : `<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No products on this draft invoice yet.</div>`}
-            </section>
-        `;
+        return '';
     }
 
     function renderProductSelectorContent(products) {
@@ -926,6 +947,314 @@ export const renderInvoiceDetail = async ({ id }) => {
                 <span style="font-weight: 900; color: var(--color-primary-700);">${formatCurrency(product.price || 0)}</span>
             </button>
         `).join('');
+    }
+
+    function recalculateInvoiceDraftTotals(invoiceDraft) {
+        return invoiceController.recalculateInvoiceTotals(Object.assign({}, invoice, invoiceDraft));
+    }
+
+    function addProductToInvoiceDraft(invoiceDraft, product, quantity = 1) {
+        const addQuantity = safeNumber(quantity, 1);
+        if (addQuantity <= 0) {
+            return invoiceDraft;
+        }
+
+        const productId = product.id || product.productId || '';
+        const items = (invoiceDraft.items || []).map(item => Object.assign({}, item));
+        const existingIndex = items.findIndex(item => item.productId && item.productId === productId);
+
+        if (existingIndex >= 0) {
+            const currentQuantity = safeNumber(items[existingIndex].quantity, 0);
+            const nextQuantity = currentQuantity + addQuantity;
+            items[existingIndex] = Object.assign({}, items[existingIndex], {
+                quantity: nextQuantity,
+                adjustedQuantity: nextQuantity,
+                total: safeNumber(items[existingIndex].price, 0) * nextQuantity
+            });
+        } else {
+            items.push(invoiceController.buildInvoiceItemFromProduct(product, addQuantity));
+        }
+
+        return recalculateInvoiceDraftTotals(Object.assign({}, invoiceDraft, { items }));
+    }
+
+    function removeProductFromInvoiceDraft(invoiceDraft, lineItemId) {
+        const items = (invoiceDraft.items || []).filter(item => item.lineItemId !== lineItemId);
+        return recalculateInvoiceDraftTotals(Object.assign({}, invoiceDraft, { items }));
+    }
+
+    function updateInvoiceDraftItemQuantity(invoiceDraft, lineItemId, quantity) {
+        const nextQuantity = safeNumber(quantity, 0);
+        const items = (invoiceDraft.items || []).map(item => {
+            if (item.lineItemId !== lineItemId) {
+                return item;
+            }
+            return Object.assign({}, item, {
+                quantity: nextQuantity,
+                adjustedQuantity: nextQuantity,
+                total: safeNumber(item.price, 0) * nextQuantity
+            });
+        });
+        return recalculateInvoiceDraftTotals(Object.assign({}, invoiceDraft, { items }));
+    }
+
+    function validateInvoiceItemDraft(invoiceDraft) {
+        const items = invoiceDraft.items || [];
+        if (!items.length) {
+            return 'Invoice must have at least one item.';
+        }
+        for (const item of items) {
+            const quantity = safeNumber(item.quantity, 0);
+            const returnedQuantity = getItemReturnedQuantity(item);
+            if (quantity <= 0) {
+                return 'Quantity must be a positive number.';
+            }
+            if (quantity < returnedQuantity) {
+                return 'Quantity cannot be less than the returned quantity.';
+            }
+        }
+        return '';
+    }
+
+    function renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm = '') {
+        const items = invoiceDraft.items || [];
+        const term = productSearchTerm.trim().toLowerCase();
+        const filteredProducts = allProducts.filter(product => {
+            if (!term) return true;
+            return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
+                .some(value => String(value || '').toLowerCase().includes(term));
+        });
+        const productOptions = filteredProducts.map(product => `
+            <option value="${escapeAttribute(product.id)}">${escapeHtml(product.displayName || product.name || 'Product')} - ${escapeHtml(formatCurrency(product.price || 0))}</option>
+        `).join('');
+
+        return `
+            <div class="edit-invoice-items-modal no-print" style="display: grid; gap: 16px;">
+                <div style="display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.4fr) 90px auto; gap: 10px; align-items: end; padding: 12px; background: var(--color-gray-50); border: 1px solid var(--color-gray-200); border-radius: 8px;">
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Search products</span>
+                        <input id="edit-product-search" class="input" type="search" value="${escapeAttribute(productSearchTerm)}" placeholder="Search products..." style="height: 36px;">
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Product</span>
+                        <select id="edit-product-select" class="input" style="height: 36px;" ${filteredProducts.length ? '' : 'disabled'}>
+                            ${productOptions || '<option value="">No products found</option>'}
+                        </select>
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Qty</span>
+                        <input id="edit-product-quantity" class="input" type="number" min="1" step="1" value="1" style="height: 36px; text-align: center;">
+                    </label>
+                    <button type="button" id="btn-edit-add-product" class="btn btn-primary btn-sm" style="height: 36px;">Add Product</button>
+                </div>
+
+                <div style="overflow-x: auto; border: 1px solid var(--color-gray-200); border-radius: 8px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
+                            <tr>
+                                <th style="text-align: left; padding: 10px;">Product</th>
+                                <th style="text-align: right; padding: 10px; width: 120px;">Unit price</th>
+                                <th style="text-align: center; padding: 10px; width: 130px;">Quantity</th>
+                                <th style="text-align: right; padding: 10px; width: 130px;">Line total</th>
+                                <th style="text-align: right; padding: 10px; width: 90px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${items.length ? items.map(item => {
+                                const returnedQuantity = getItemReturnedQuantity(item);
+                                const minQuantity = Math.max(1, returnedQuantity);
+                                return `
+                                    <tr style="border-bottom: 1px solid var(--color-gray-100);">
+                                        <td style="padding: 10px;">
+                                            <div style="font-weight: 800; color: var(--color-gray-900);">${escapeHtml(getItemDisplayName(item))}</div>
+                                            ${item.weight ? `<div style="font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">${escapeHtml(item.weight)}</div>` : ''}
+                                            ${returnedQuantity > 0 ? `<div style="font-size: 11px; color: #991b1b; margin-top: 2px; font-weight: 800;">Returned: ${returnedQuantity}</div>` : ''}
+                                        </td>
+                                        <td style="padding: 10px; text-align: right;">${formatCurrency(item.price || 0)}</td>
+                                        <td style="padding: 10px; text-align: center;">
+                                            <input class="edit-item-qty input" type="number" min="${minQuantity}" step="1" value="${safeNumber(item.quantity, 1)}" data-line-item-id="${escapeAttribute(item.lineItemId)}" style="width: 88px; height: 32px; text-align: center;">
+                                        </td>
+                                        <td style="padding: 10px; text-align: right; font-weight: 900;">${formatCurrency(item.total || 0)}</td>
+                                        <td style="padding: 10px; text-align: right;">
+                                            <button type="button" class="btn btn-secondary btn-sm edit-remove-item" data-line-item-id="${escapeAttribute(item.lineItemId)}">Remove</button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('') : `
+                                <tr>
+                                    <td colspan="5" style="padding: 18px; text-align: center; color: var(--color-gray-500);">No products on this invoice.</td>
+                                </tr>
+                            `}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="edit-invoice-validation" style="min-height: 18px; font-size: 12px; font-weight: 800; color: #991b1b;">${escapeHtml(validateInvoiceItemDraft(invoiceDraft))}</div>
+
+                <div style="display: grid; justify-content: end; gap: 8px;">
+                    <div style="display: grid; grid-template-columns: 150px 140px; gap: 10px; font-size: 13px;">
+                        <span style="text-align: right; color: var(--color-gray-500); font-weight: 800;">Subtotal</span>
+                        <strong style="text-align: right;">${formatCurrency(invoiceDraft.subtotal || 0)}</strong>
+                        ${(invoiceDraft.taxRate || invoiceDraft.taxAmount) ? `
+                            <span style="text-align: right; color: var(--color-gray-500); font-weight: 800;">Tax</span>
+                            <strong style="text-align: right;">${formatCurrency(invoiceDraft.taxAmount || 0)}</strong>
+                        ` : ''}
+                        ${(invoiceDraft.discountAmount || 0) ? `
+                            <span style="text-align: right; color: var(--color-gray-500); font-weight: 800;">Discount</span>
+                            <strong style="text-align: right;">-${formatCurrency(invoiceDraft.discountAmount || 0)}</strong>
+                        ` : ''}
+                        ${(invoiceDraft.returnSummary?.totalReturnedAmount || 0) ? `
+                            <span style="text-align: right; color: #991b1b; font-weight: 800;">Returned</span>
+                            <strong style="text-align: right; color: #991b1b;">-${formatCurrency(invoiceDraft.returnSummary.totalReturnedAmount || 0)}</strong>
+                            <span style="text-align: right; color: #991b1b; font-weight: 800;">After returns</span>
+                            <strong style="text-align: right; color: #991b1b;">${formatCurrency(invoiceDraft.returnSummary.adjustedTotalAmount || 0)}</strong>
+                        ` : ''}
+                        <span style="text-align: right; color: var(--color-gray-900); font-weight: 900;">Total</span>
+                        <strong style="text-align: right; color: var(--color-primary-700);">${formatCurrency(invoiceDraft.totalAmount || 0)}</strong>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async function openEditInvoiceItemsModal() {
+        if (!isInvoiceItemsEditable()) {
+            const { notificationService } = await import("../core/notificationService.js");
+            notificationService.error('Invoice items can only be edited before completion or after returns.');
+            return;
+        }
+
+        const { Modal } = await import("../components/modal.js");
+        let productSearchTerm = '';
+        let invoiceDraft = recalculateInvoiceDraftTotals({
+            items: getEditableItems().map(item => Object.assign({}, item))
+        });
+
+        const modal = new Modal({
+            title: 'Edit Invoice Items',
+            size: 'xlarge',
+            confirmText: 'Save',
+            content: renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm),
+            onConfirm: async () => {
+                const { notificationService } = await import("../core/notificationService.js");
+                const validationMessage = validateInvoiceItemDraft(invoiceDraft);
+                if (validationMessage) {
+                    notificationService.error(validationMessage);
+                    return false;
+                }
+
+                const saveButton = modal.modalEl?.querySelector('.confirm-btn');
+                const originalText = saveButton?.textContent || 'Save';
+                if (saveButton) {
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }
+
+                const success = await invoiceController.saveInvoiceItems(invoice.id, invoiceDraft.items);
+                if (!success) {
+                    if (saveButton) {
+                        saveButton.disabled = false;
+                        saveButton.textContent = originalText;
+                    }
+                    return false;
+                }
+
+                invoice = recalculateInvoiceDraftTotals({
+                    items: invoiceDraft.items
+                });
+                refreshBody();
+                return true;
+            }
+        });
+
+        const refreshModal = () => {
+            const body = modal.modalEl?.querySelector('.modal-body');
+            if (!body) return;
+            invoiceDraft = recalculateInvoiceDraftTotals({
+                items: invoiceDraft.items || []
+            });
+            body.innerHTML = renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm);
+            attachModalListeners();
+        };
+
+        const refreshProductOptions = () => {
+            const search = document.getElementById('edit-product-search');
+            const select = document.getElementById('edit-product-select');
+            if (!search || !select) return;
+            productSearchTerm = search.value || '';
+            const term = productSearchTerm.trim().toLowerCase();
+            const filteredProducts = allProducts.filter(product => {
+                if (!term) return true;
+                return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
+                    .some(value => String(value || '').toLowerCase().includes(term));
+            });
+            select.disabled = filteredProducts.length === 0;
+            select.innerHTML = filteredProducts.length
+                ? filteredProducts.map(product => `<option value="${escapeAttribute(product.id)}">${escapeHtml(product.displayName || product.name || 'Product')} - ${escapeHtml(formatCurrency(product.price || 0))}</option>`).join('')
+                : '<option value="">No products found</option>';
+        };
+
+        const attachModalListeners = () => {
+            document.getElementById('edit-product-search')?.addEventListener('input', refreshProductOptions);
+
+            document.getElementById('btn-edit-add-product')?.addEventListener('click', async () => {
+                const { notificationService } = await import("../core/notificationService.js");
+                const select = document.getElementById('edit-product-select');
+                const quantityInput = document.getElementById('edit-product-quantity');
+                const product = allProducts.find(entry => entry.id === select?.value);
+                const quantity = safeNumber(quantityInput?.value, 1);
+                if (!product) {
+                    notificationService.error('Select a product to add.');
+                    return;
+                }
+                if (quantity <= 0) {
+                    notificationService.error('Quantity must be a positive number.');
+                    return;
+                }
+                invoiceDraft = addProductToInvoiceDraft(invoiceDraft, product, quantity);
+                refreshModal();
+            });
+
+            document.querySelectorAll('.edit-item-qty').forEach(input => {
+                input.addEventListener('change', async () => {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    const item = (invoiceDraft.items || []).find(entry => entry.lineItemId === input.dataset.lineItemId);
+                    const quantity = safeNumber(input.value, 0);
+                    const minQuantity = Math.max(1, getItemReturnedQuantity(item));
+                    if (quantity <= 0) {
+                        notificationService.error('Quantity must be a positive number.');
+                        input.value = String(minQuantity);
+                        return;
+                    }
+                    if (quantity < minQuantity) {
+                        notificationService.error('Quantity cannot be less than the returned quantity.');
+                        input.value = String(minQuantity);
+                        return;
+                    }
+                    invoiceDraft = updateInvoiceDraftItemQuantity(invoiceDraft, input.dataset.lineItemId, quantity);
+                    refreshModal();
+                });
+            });
+
+            document.querySelectorAll('.edit-remove-item').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    const item = (invoiceDraft.items || []).find(entry => entry.lineItemId === button.dataset.lineItemId);
+                    if (getItemReturnedQuantity(item) > 0) {
+                        notificationService.error('Returned items cannot be removed from the invoice.');
+                        return;
+                    }
+                    if (!confirm('Remove this product from this invoice? Inventory will not be changed.')) {
+                        return;
+                    }
+                    invoiceDraft = removeProductFromInvoiceDraft(invoiceDraft, button.dataset.lineItemId);
+                    refreshModal();
+                });
+            });
+        };
+
+        modal.open();
+        attachModalListeners();
     }
 
     async function openAddProductModal() {
@@ -1054,8 +1383,9 @@ export const renderInvoiceDetail = async ({ id }) => {
         const renderedBankInfo = renderBankInfo(s.bankInfo || defaultBankInfo);
         const renderedBannerFootText = escapeHtml(bannerFootText);
         const invoiceQrImageUrl = invoice.secureToken ? safeImageUrl(qrService.buildQrImageUrl(invoice, 240)) : '';
+        const displayStatus = escapeHtml(getDisplayStatus(invoice));
 
-        const items = invoice.items || [];
+        const items = (invoice.items || []).map(item => normalizeInvoiceItemReturnFields(item, invoice));
         const invoiceHasReturns = hasInvoiceReturns(invoice);
         const returnSummary = calculateInvoiceReturnSummary(invoice);
         const pages = [];
@@ -1136,6 +1466,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                              <div style="display: inline-block; text-align: left;">
                              <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t('print_invoice', lang)} #${invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
                                  <div style="font-size: 11px; color: #5a7052;">${t('print_date', lang)}: ${formatDate(invoice.createdAt)}</div>
+                                 <div style="font-size: 11px; color: #5a7052;">Status: ${displayStatus}</div>
                                  ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t('table_phone', lang)}: ${companyPhone}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
                              </div>
                         </div>
@@ -1371,6 +1702,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 ${renderInvoiceStatusControl()}
 
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
+                    ${isInvoiceItemsEditable() ? '<button id="btn-edit-invoice-items" class="btn btn-secondary btn-sm">Edit Items</button>' : ''}
                     <button id="btn-copy-qr" class="btn btn-secondary btn-sm">QR Link</button>
                     <button id="btn-record-return-items" class="btn btn-secondary btn-sm">Record Return</button>
                     <button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>
@@ -1698,17 +2030,27 @@ export const renderInvoiceDetail = async ({ id }) => {
                 });
             });
 
+            document.getElementById('btn-edit-invoice-items')?.addEventListener('click', openEditInvoiceItemsModal);
+
             document.getElementById('btn-record-return-items')?.addEventListener('click', openRecordReturnModal);
 
             document.getElementById('btn-add-draft-product')?.addEventListener('click', openAddProductModal);
 
             document.querySelectorAll('.draft-item-qty').forEach(input => {
                 input.addEventListener('change', async () => {
+                    const item = getEditableItems().find(entry => entry.lineItemId === input.dataset.lineItemId);
+                    const minQuantity = Math.max(1, getItemReturnedQuantity(item));
                     const quantity = Number(input.value);
                     if (!Number.isFinite(quantity) || quantity <= 0) {
                         const { notificationService } = await import("../core/notificationService.js");
                         notificationService.error('Quantity must be a positive number.');
-                        input.value = '1';
+                        input.value = String(minQuantity);
+                        return;
+                    }
+                    if (quantity < minQuantity) {
+                        const { notificationService } = await import("../core/notificationService.js");
+                        notificationService.error('Quantity cannot be less than the returned quantity.');
+                        input.value = String(minQuantity);
                         return;
                     }
 
@@ -1721,6 +2063,12 @@ export const renderInvoiceDetail = async ({ id }) => {
 
             document.querySelectorAll('.draft-remove-item').forEach(button => {
                 button.addEventListener('click', async () => {
+                    const item = getEditableItems().find(entry => entry.lineItemId === button.dataset.lineItemId);
+                    if (getItemReturnedQuantity(item) > 0) {
+                        const { notificationService } = await import("../core/notificationService.js");
+                        notificationService.error('Returned items cannot be removed from the invoice.');
+                        return;
+                    }
                     if (!confirm('Remove this product from the draft invoice? The product catalog will not be changed.')) {
                         return;
                     }
@@ -1734,17 +2082,30 @@ export const renderInvoiceDetail = async ({ id }) => {
             document.getElementById('invoice-status-selector')?.addEventListener('change', async event => {
                 const nextStatus = event.target.value;
                 const previousStatus = invoice.status || 'pending';
-                if (nextStatus === previousStatus) {
+                const previousDisplayStatus = getReturnState(invoice) === 'partial'
+                    ? 'partially_returned'
+                    : (getReturnState(invoice) === 'full' ? 'returned' : previousStatus);
+                if (nextStatus === previousDisplayStatus) {
                     return;
                 }
 
-                if (nextStatus === 'returned') {
-                    event.target.value = previousStatus;
+                if (nextStatus === 'returned' || nextStatus === 'partially_returned') {
+                    const returnState = getReturnState(invoice);
+                    if ((nextStatus === 'returned' && returnState !== 'full')
+                        || (nextStatus === 'partially_returned' && returnState !== 'partial')) {
+                        event.target.value = previousDisplayStatus;
+                        await openRecordReturnModal();
+                        return;
+                    }
+                }
+
+                if (nextStatus === 'returned' && getReturnState(invoice) !== 'full') {
+                    event.target.value = previousDisplayStatus;
                     await openRecordReturnModal();
                     return;
                 }
 
-                if (confirm(`Change invoice status to ${nextStatus === 'fullfilled' ? 'fulfilled' : nextStatus}?`)) {
+                if (confirm(`Change invoice status to ${getDisplayStatus(nextStatus)}?`)) {
                     const success = await invoiceController.updateStatus(invoice.id, nextStatus);
                     if (success) {
                         renderInvoiceDetail({ id });
@@ -1752,7 +2113,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     return;
                 }
 
-                event.target.value = previousStatus;
+                event.target.value = previousDisplayStatus;
             });
 
             document.getElementById('btn-complete-invoice').addEventListener('click', async () => {

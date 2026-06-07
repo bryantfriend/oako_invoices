@@ -22,12 +22,14 @@ import { offlineQueueService } from "./offlineQueueService.js";
 import { deviceIdService } from "./deviceIdService.js";
 import { conflictService } from "./conflictService.js";
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
+import { getReturnState } from "../core/returnStatus.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import archiveInvoiceIntentModule from "../ICF/Intents/ArchiveInvoiceIntent.js";
 import updateInvoiceItemsIntentModule from "../ICF/Intents/UpdateInvoiceItemsIntent.js";
 import recordInvoiceReturnIntentModule from "../ICF/Intents/RecordInvoiceReturnIntent.js";
 import {
     buildInvoiceItemFromProduct,
+    getItemReturnedQuantity,
     normalizeInvoiceItemsForEditing,
     recalculateInvoiceTotals,
     validateEditableItems
@@ -92,6 +94,61 @@ function getMillis(value) {
 function getStoreId(settings) {
     const source = settings || {};
     return source.storeId || source.companyId || 'KORG';
+}
+
+function isInvoiceItemsEditable(invoice) {
+    const status = String(invoice && invoice.status || '');
+    return ['draft', 'pending', 'confirmed'].includes(status)
+        || getReturnState(invoice) !== 'none'
+        || ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending'].includes(status);
+}
+
+function getReturnQuantityFromRecordItem(item = {}) {
+    if (item.returnedQuantity !== undefined) {
+        return Number(item.returnedQuantity) || 0;
+    }
+    if (item.returnQuantity !== undefined) {
+        return Number(item.returnQuantity) || 0;
+    }
+    return Number(item.quantity) || 0;
+}
+
+function isMatchingReturnItem(returnItem = {}, invoiceItem = {}) {
+    const returnLineItemId = returnItem.lineItemId || '';
+    const itemLineItemId = invoiceItem.lineItemId || '';
+    const returnProductId = returnItem.productId || returnItem.id || '';
+    const itemProductId = invoiceItem.productId || invoiceItem.id || '';
+
+    return (returnLineItemId && itemLineItemId && returnLineItemId === itemLineItemId)
+        || (returnProductId && itemProductId && returnProductId === itemProductId);
+}
+
+function sumMatchingReturnItems(returnItems = [], invoiceItem = {}) {
+    return (Array.isArray(returnItems) ? returnItems : []).reduce((sum, returnItem) => {
+        if (!isMatchingReturnItem(returnItem, invoiceItem)) {
+            return sum;
+        }
+        return sum + getReturnQuantityFromRecordItem(returnItem);
+    }, 0);
+}
+
+function getRecordedReturnQuantity(invoice = {}, invoiceItem = {}) {
+    const returnItemsTotal = sumMatchingReturnItems(invoice.returnItems || [], invoiceItem);
+    const returnRecordTotal = (Array.isArray(invoice.returns) ? invoice.returns : []).reduce((sum, returnRecord) => {
+        return sum + sumMatchingReturnItems(returnRecord.items || returnRecord.returnItems || [], invoiceItem);
+    }, 0);
+    const courierReturnTotal = (Array.isArray(invoice.courierReturns) ? invoice.courierReturns : []).reduce((sum, returnRecord) => {
+        return sum + sumMatchingReturnItems(returnRecord.items || returnRecord.returnItems || [], invoiceItem);
+    }, 0);
+
+    return Math.max(returnItemsTotal, returnRecordTotal, courierReturnTotal);
+}
+
+function getAnyReturnedQuantity(invoice = {}, invoiceItem = {}) {
+    return Math.max(
+        getItemReturnedQuantity(invoiceItem),
+        getRecordedReturnQuantity(invoice, invoiceItem)
+    );
 }
 
 function mergeById(target, invoices) {
@@ -435,7 +492,7 @@ export const invoiceService = {
                         return null;
                     });
                     if (order) {
-                        invoice = this.buildInvoiceFromOrder(invoice, order);
+                        invoice = this.buildInvoiceFromOrder(invoice, order, { preserveInvoiceItems: true });
                     }
                 }
             }
@@ -466,7 +523,7 @@ export const invoiceService = {
 
         const openQuery = query(
             collection(db, COLLECTION),
-            where('status', 'in', ['pending', 'draft', 'confirmed', 'returned', 'return_pending', 'completed_pending_sync']),
+            where('status', 'in', ['pending', 'draft', 'confirmed', 'returned', 'partially_returned', 'partial_return', 'fully_returned', 'return_pending', 'completed_pending_sync']),
             limit(WORKING_INVOICE_LIMIT)
         );
         const todayQuery = query(
@@ -540,6 +597,10 @@ export const invoiceService = {
         return normalizeInvoiceItemsForEditing(invoice);
     },
 
+    buildInvoiceItemFromProduct(product, quantity) {
+        return buildInvoiceItemFromProduct(product, quantity);
+    },
+
     recalculateInvoiceTotals(invoice) {
         return recalculateInvoiceTotals(invoice);
     },
@@ -581,8 +642,8 @@ export const invoiceService = {
         if (!invoice) {
             throw new Error('Invoice not found.');
         }
-        if (invoice.status !== 'draft') {
-            throw new Error('Products can only be added while the invoice is in draft mode.');
+        if (!isInvoiceItemsEditable(invoice)) {
+            throw new Error('Products can only be added before completion or after returns.');
         }
 
         const items = normalizeInvoiceItemsForEditing(invoice);
@@ -609,11 +670,17 @@ export const invoiceService = {
         if (!invoice) {
             throw new Error('Invoice not found.');
         }
-        if (invoice.status !== 'draft') {
-            throw new Error('Products can only be removed while the invoice is in draft mode.');
+        if (!isInvoiceItemsEditable(invoice)) {
+            throw new Error('Products can only be removed before completion or after returns.');
         }
 
-        const items = normalizeInvoiceItemsForEditing(invoice)
+        const existingItems = normalizeInvoiceItemsForEditing(invoice);
+        const removedItem = existingItems.find(item => item.lineItemId === lineItemId);
+        if (getAnyReturnedQuantity(invoice, removedItem) > 0) {
+            throw new Error('Returned items cannot be removed from the invoice.');
+        }
+
+        const items = existingItems
             .filter(item => item.lineItemId !== lineItemId);
 
         return this.saveInvoiceItems(invoiceId, items);
@@ -624,8 +691,8 @@ export const invoiceService = {
         if (!invoice) {
             throw new Error('Invoice not found.');
         }
-        if (invoice.status !== 'draft') {
-            throw new Error('Invoice quantities can only be edited in draft mode.');
+        if (!isInvoiceItemsEditable(invoice)) {
+            throw new Error('Invoice quantities can only be edited before completion or after returns.');
         }
 
         const nextQuantity = Number(quantity);
@@ -652,6 +719,24 @@ export const invoiceService = {
         const invoice = await this.getInvoice(invoiceId);
         if (!invoice) {
             throw new Error('Invoice not found.');
+        }
+        if (!isInvoiceItemsEditable(invoice)) {
+            throw new Error('Invoice items can only be edited before completion or after returns.');
+        }
+
+        const existingReturnedItems = normalizeInvoiceItemsForEditing(invoice).filter(item => getAnyReturnedQuantity(invoice, item) > 0);
+        for (let index = 0; index < existingReturnedItems.length; index += 1) {
+            const existingItem = existingReturnedItems[index];
+            const matchingItem = (items || []).find(item => {
+                return (existingItem.lineItemId && item.lineItemId === existingItem.lineItemId)
+                    || (existingItem.productId && item.productId === existingItem.productId);
+            });
+            if (!matchingItem) {
+                throw new Error('Returned items cannot be removed from the invoice.');
+            }
+            if ((Number(matchingItem.quantity) || 0) < getAnyReturnedQuantity(invoice, existingItem)) {
+                throw new Error('Quantity cannot be less than the returned quantity.');
+            }
         }
 
         const recalculated = recalculateInvoiceTotals(Object.assign({}, invoice, {
@@ -835,8 +920,9 @@ export const invoiceService = {
         }
     },
 
-    buildInvoiceFromOrder(invoice, order) {
-        const items = order.items || [];
+    buildInvoiceFromOrder(invoice, order, options = {}) {
+        const invoiceHasItems = Array.isArray(invoice.items) && invoice.items.length > 0;
+        const items = options.preserveInvoiceItems && invoiceHasItems ? invoice.items : (order.items || []);
         const subtotal = items.reduce(function(sum, item) {
             const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
             return sum + ((item.price || 0) * finalQty);

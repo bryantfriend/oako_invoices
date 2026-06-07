@@ -1,10 +1,14 @@
 import { ORDER_STATUS } from "../core/constants.js";
+import { getDisplayStatus, normalizeStatusKey } from "../core/returnStatus.js";
 
 const STATUS_CONFIG = {
     [ORDER_STATUS.DRAFT]: { color: 'var(--color-gray-600)', bg: 'var(--color-gray-100)' },
     [ORDER_STATUS.PENDING]: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
     [ORDER_STATUS.CONFIRMED]: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
     [ORDER_STATUS.RETURNED]: { color: '#b45309', bg: '#fffbeb' },
+    partially_returned: { color: '#92400e', bg: '#fef3c7' },
+    partial_return: { color: '#92400e', bg: '#fef3c7' },
+    fully_returned: { color: '#b45309', bg: '#fffbeb' },
     [ORDER_STATUS.FULFILLED]: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     fullfilled: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     [ORDER_STATUS.CANCELLED]: { color: 'var(--color-error)', bg: 'var(--color-error-bg)' },
@@ -14,11 +18,10 @@ const STATUS_CONFIG = {
     sync_conflict: { color: 'var(--color-error)', bg: 'var(--color-error-bg)' },
 };
 
-export const createStatusBadge = (status) => {
-    const config = STATUS_CONFIG[status] || STATUS_CONFIG[ORDER_STATUS.DRAFT];
-    const label = status === 'fullfilled'
-        ? 'Fulfilled'
-        : String(status || ORDER_STATUS.DRAFT).replace(/_/g, ' ');
+export const createStatusBadge = (statusOrRecord) => {
+    const statusKey = normalizeStatusKey(statusOrRecord);
+    const config = STATUS_CONFIG[statusKey] || STATUS_CONFIG[ORDER_STATUS.DRAFT];
+    const label = getDisplayStatus(statusOrRecord);
 
     return `
         <span class="status-badge" style="

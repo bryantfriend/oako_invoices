@@ -2,7 +2,9 @@ export const ORDER_STATUS = {
     DRAFT: 'draft',
     PENDING: 'pending', // Submitted by customer/sales
     CONFIRMED: 'confirmed', // Reviewed by admin
+    PARTIALLY_RETURNED: 'partially_returned', // Some returned quantity recorded
     RETURNED: 'returned', // Returned items recorded
+    FULLY_RETURNED: 'fully_returned', // All quantity returned
     FULFILLED: 'fulfilled', // Shipped/Done
     PAID: 'paid', // Payment received
     CANCELLED: 'cancelled'

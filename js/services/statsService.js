@@ -1,3 +1,5 @@
+import { getReturnState } from "../core/returnStatus.js";
+
 function safeNumber(value, fallback = 0) {
     const number = Number(value);
     return Number.isFinite(number) ? number : fallback;
@@ -534,6 +536,7 @@ export const statsService = {
             { key: 'draft', label: 'Draft' },
             { key: 'pending', label: 'Pending' },
             { key: 'confirmed', label: 'Confirmed' },
+            { key: 'partially_returned', label: 'Partially Returned' },
             { key: 'returned', label: 'Returned' },
             { key: 'fulfilled', label: 'Fulfilled' },
             { key: 'paid', label: 'Paid' }
@@ -545,7 +548,10 @@ export const statsService = {
         });
 
         orders.forEach(order => {
-            const status = order.status === 'fullfilled' ? 'fulfilled' : order.status;
+            const returnState = getReturnState(order);
+            const status = returnState === 'partial'
+                ? 'partially_returned'
+                : (returnState === 'full' ? 'returned' : (order.status === 'fullfilled' ? 'fulfilled' : order.status));
             if (counts[status] !== undefined) {
                 counts[status] += 1;
             }
@@ -583,7 +589,23 @@ export const statsService = {
             });
         });
 
-        return aggregateReturnAnalytics(Object.values(deduped));
+        const analytics = aggregateReturnAnalytics(Object.values(deduped));
+        const returnStateByParent = {};
+        invoices.concat(orders, deliveries).forEach(record => {
+            const returnState = getReturnState(record);
+            if (returnState === 'none') return;
+            const key = record.orderId || record.invoiceId || record.id || record.deliveryId || '';
+            if (!key) return;
+            if (returnState === 'full' || !returnStateByParent[key]) {
+                returnStateByParent[key] = returnState;
+            }
+        });
+        const returnStates = Object.values(returnStateByParent);
+
+        return Object.assign({}, analytics, {
+            partiallyReturnedCount: returnStates.filter(returnState => returnState === 'partial').length,
+            fullyReturnedCount: returnStates.filter(returnState => returnState === 'full').length
+        });
     },
 
     _getTopProducts(orders, categoryId = null) {

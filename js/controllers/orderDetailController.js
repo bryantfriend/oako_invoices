@@ -13,7 +13,27 @@ export const orderDetailController = {
                 notificationService.error(t('msg_load_fail'));
                 return null;
             }
-            return order;
+            const invoice = await invoiceService.getInvoiceByOrderId(id).catch(() => null);
+            if (!invoice) {
+                return order;
+            }
+
+            return {
+                ...order,
+                items: (order.items || []).map(item => {
+                    const invoiceItem = (invoice.items || []).find(entry => {
+                        return (item.lineItemId && entry.lineItemId === item.lineItemId)
+                            || (item.productId && entry.productId === item.productId);
+                    });
+                    return {
+                        ...item,
+                        returnedQuantity: invoiceItem ? Number(invoiceItem.returnedQuantity || 0) : Number(item.returnedQuantity || item.returnQuantity || 0),
+                        returnQuantity: invoiceItem ? Number(invoiceItem.returnedQuantity || 0) : Number(item.returnQuantity || item.returnedQuantity || 0)
+                    };
+                }),
+                returnSummary: invoice.returnSummary || order.returnSummary,
+                returns: invoice.returns || order.returns
+            };
         } catch (error) {
             notificationService.error(t('msg_load_fail'));
             return null;
@@ -37,14 +57,39 @@ export const orderDetailController = {
         }
     },
 
-    async updateQuantities(id, items) {
+    async updateOrderItems(id, items) {
         try {
-            const totalAmount = items.reduce((sum, item) => {
-                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-                return sum + (qty * (item.price || 0));
-            }, 0);
-            // Update items with adjusted quantities and the new totalAmount
-            await orderService.updateOrder(id, { items, totalAmount });
+            if (!Array.isArray(items) || items.length === 0) {
+                notificationService.error('Order must have at least one product.');
+                return false;
+            }
+
+            const normalizedItems = items.map((item, index) => {
+                const quantity = parseInt(item.quantity, 10) || 0;
+                const adjustedQuantity = item.adjustedQuantity !== undefined
+                    ? parseInt(item.adjustedQuantity, 10) || 0
+                    : quantity;
+                const price = parseFloat(item.price) || 0;
+
+                return {
+                    ...item,
+                    lineItemId: item.lineItemId || item.productId || `line-${index}`,
+                    quantity,
+                    adjustedQuantity,
+                    price,
+                    total: adjustedQuantity * price
+                };
+            }).filter(item => item.adjustedQuantity > 0);
+
+            if (normalizedItems.length === 0) {
+                notificationService.error('Order must have at least one product with a positive quantity.');
+                return false;
+            }
+
+            await orderService.updateOrder(id, {
+                items: normalizedItems,
+                totalAmount: normalizedItems.reduce((sum, item) => sum + item.total, 0)
+            });
             await invoiceService.syncInvoiceWithOrder(id).catch(() => null);
             notificationService.success(t('msg_update_success'));
             return true;
@@ -52,6 +97,10 @@ export const orderDetailController = {
             notificationService.error(t('msg_update_fail'));
             return false;
         }
+    },
+
+    async updateQuantities(id, items) {
+        return this.updateOrderItems(id, items);
     },
 
     async generateInvoice(id) {

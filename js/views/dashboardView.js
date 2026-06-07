@@ -10,6 +10,7 @@ import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
 import { notificationService } from "../core/notificationService.js";
+import { isReturnFilterMatch } from "../core/returnStatus.js";
 
 // Global chart registry to prevent "broken" graphs
 let chartInstances = {};
@@ -283,6 +284,8 @@ export const renderDashboard = async () => {
                                     <option value="all" ${filters.status === 'all' ? 'selected' : ''}>Status: All</option>
                                     <option value="overdue" ${filters.status === 'overdue' ? 'selected' : ''}>Overdue</option>
                                     <option value="confirmed" ${filters.status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
+                                    <option value="any_return" ${filters.status === 'any_return' ? 'selected' : ''}>Any Return</option>
+                                    <option value="partially_returned" ${filters.status === 'partially_returned' ? 'selected' : ''}>Partially Returned</option>
                                     <option value="returned" ${filters.status === 'returned' ? 'selected' : ''}>Returned</option>
                                     <option value="fulfilled" ${filters.status === 'fulfilled' ? 'selected' : ''}>Fulfilled</option>
                                     <option value="paid" ${filters.status === 'paid' ? 'selected' : ''}>Paid</option>
@@ -443,7 +446,7 @@ export const renderDashboard = async () => {
                         <h3 style="font-size: 12px; font-weight: 800; color: var(--color-gray-800); margin: 0;">Total returned</h3>
                         <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Invoice returns and courier returns. Deleted/cancelled orders excluded.</div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px;">
                         <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px;">
                             <div style="font-size: 10px; color: #92400e; font-weight: 800; text-transform: uppercase;">Quantity</div>
                             <div style="font-size: 22px; color: #b45309; font-weight: 900; margin-top: 4px;">${returns.totalReturnedQuantity || 0}</div>
@@ -455,6 +458,14 @@ export const renderDashboard = async () => {
                         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;">
                             <div style="font-size: 10px; color: #475569; font-weight: 800; text-transform: uppercase;">Orders</div>
                             <div style="font-size: 22px; color: #334155; font-weight: 900; margin-top: 4px;">${returns.returnedOrdersCount || 0}</div>
+                        </div>
+                        <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 10px; color: #92400e; font-weight: 800; text-transform: uppercase;">Partial</div>
+                            <div style="font-size: 22px; color: #92400e; font-weight: 900; margin-top: 4px;">${returns.partiallyReturnedCount || 0}</div>
+                        </div>
+                        <div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px;">
+                            <div style="font-size: 10px; color: #78350f; font-weight: 800; text-transform: uppercase;">Full</div>
+                            <div style="font-size: 22px; color: #78350f; font-weight: 900; margin-top: 4px;">${returns.fullyReturnedCount || 0}</div>
                         </div>
                     </div>
                     <div style="display: grid; gap: 6px;">
@@ -732,6 +743,7 @@ export const renderDashboard = async () => {
             const matchesStatus = filters.status === 'all' ? true :
                 filters.status === 'overdue' ? (o.agingDays >= 1 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
                     filters.status === 'due-today' ? (o.agingDays === 0 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
+                    ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'any_return'].includes(filters.status) ? isReturnFilterMatch(o, filters.status) :
                         o.status === filters.status;
 
             const matchesDrill = !filters.drill ? true :
@@ -819,7 +831,7 @@ export const renderDashboard = async () => {
                         return `<span style="font-weight: 800; color: ${textColor};">${val}d Overdue</span>`;
                     }
                 },
-                { key: 'status', label: t('table_status'), align: 'center', render: (val) => createStatusBadge(val) }
+                { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => createStatusBadge(row) }
             ],
             data: filteredOrders,
             sortKey: sort.key,

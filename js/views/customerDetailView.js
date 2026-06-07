@@ -96,7 +96,7 @@ export const renderCustomerDetail = async ({ id }) => {
         columns: [
             { key: 'id', label: t('table_order_id'), render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'}; font-size: 12px;">#${val.slice(-6)}</span>` },
             { key: 'createdAt', label: t('table_date'), render: (val, row) => `<span style="color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatDate(val)}</span>` },
-            { key: 'status', label: t('table_status'), align: 'center', render: (val) => createStatusBadge(val) },
+            { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => createStatusBadge(row) },
             { key: 'totalAmount', label: t('table_total'), align: 'right', render: (val, row) => `<span style="font-weight: 700; color: ${row.isPrinted ? '#10b981' : '#ef4444'};">${formatCurrency(val)}</span>` }
         ],
         data: orders,

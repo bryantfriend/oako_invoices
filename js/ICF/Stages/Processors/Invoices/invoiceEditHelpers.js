@@ -153,6 +153,26 @@ function recalculateInvoiceTotals(invoice) {
     totals.totalWeight = totalWeight;
   }
 
+  if (source.returnSummary || (Array.isArray(source.returns) && source.returns.length > 0) || items.some(function(item) {
+    return getItemReturnedQuantity(item) > 0;
+  })) {
+    var totalReturnedQuantity = items.reduce(function(sum, item) {
+      return sum + getItemReturnedQuantity(item);
+    }, 0);
+    var totalReturnedAmount = items.reduce(function(sum, item) {
+      if (item.returnedAmount !== undefined) {
+        return sum + safeNumber(item.returnedAmount, 0);
+      }
+      return sum + (safeNumber(item.price, 0) * getItemReturnedQuantity(item));
+    }, 0);
+    totals.returnSummary = Object.assign({}, source.returnSummary || {}, {
+      totalReturnedQuantity: totalReturnedQuantity,
+      totalReturnedAmount: totalReturnedAmount,
+      originalTotalAmount: totals.totalAmount,
+      adjustedTotalAmount: Math.max(0, totals.totalAmount - totalReturnedAmount)
+    });
+  }
+
   return Object.assign({}, source, totals);
 }
 
@@ -165,6 +185,9 @@ function validateEditableItems(items) {
     var item = items[index] || {};
     if (safeNumber(item.quantity, 0) <= 0) {
       return "Quantity must be a positive number.";
+    }
+    if (safeNumber(item.quantity, 0) < getItemReturnedQuantity(item)) {
+      return "Quantity cannot be less than the returned quantity.";
     }
   }
 

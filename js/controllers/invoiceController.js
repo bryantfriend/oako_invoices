@@ -99,8 +99,23 @@ export const invoiceController = {
         return invoiceService.normalizeInvoiceItemsForEditing(invoice);
     },
 
+    buildInvoiceItemFromProduct(product, quantity = 1) {
+        return invoiceService.buildInvoiceItemFromProduct(product, quantity);
+    },
+
     recalculateInvoiceTotals(invoice) {
         return invoiceService.recalculateInvoiceTotals(invoice);
+    },
+
+    async saveInvoiceItems(invoiceId, items) {
+        try {
+            await invoiceService.saveInvoiceItems(invoiceId, items);
+            notificationService.success('Invoice items updated.');
+            return true;
+        } catch (error) {
+            notificationService.error(error.message || t('msg_update_fail'));
+            return false;
+        }
     },
 
     async addInvoiceItem(invoiceId, product, quantity = 1) {

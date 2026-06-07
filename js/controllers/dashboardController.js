@@ -104,10 +104,17 @@ export const dashboardController = {
             });
 
             const productCategoryLookup = buildProductCategoryLookup(productCategories);
+            const returnInvoiceByOrderId = {};
+            returnInvoices.forEach(invoice => {
+                if (invoice.orderId) {
+                    returnInvoiceByOrderId[invoice.orderId] = invoice;
+                }
+            });
 
             // Map category back to orders and calculate aging
             const now = new Date();
             const ordersWithCategory = orders.map(order => {
+                const returnInvoice = returnInvoiceByOrderId[order.id] || null;
                 // Priority: orderDate (user-set date) > createdAt (system date)
                 let date;
                 if (order.orderDate) {
@@ -129,13 +136,21 @@ export const dashboardController = {
                     items: (order.items || []).map(item => {
                         const product = productMap[item.productId] || {};
                         const category = resolveProductCategory(item, product, productCategoryLookup);
+                        const returnedInvoiceItem = returnInvoice && (returnInvoice.items || []).find(invoiceItem => {
+                            return (item.lineItemId && invoiceItem.lineItemId === item.lineItemId)
+                                || (item.productId && invoiceItem.productId === item.productId);
+                        });
 
                         return {
                             ...item,
+                            returnedQuantity: returnedInvoiceItem ? Number(returnedInvoiceItem.returnedQuantity || 0) : Number(item.returnedQuantity || item.returnQuantity || 0),
+                            returnQuantity: returnedInvoiceItem ? Number(returnedInvoiceItem.returnedQuantity || 0) : Number(item.returnQuantity || item.returnedQuantity || 0),
                             categoryId: category.id,
                             categoryName: category.name
                         };
                     }),
+                    returnSummary: returnInvoice?.returnSummary || order.returnSummary,
+                    returns: returnInvoice?.returns || order.returns,
                     customerCategory: categoryMap[(order.customerName || "").toLowerCase().trim()] || 'C',
                     agingDays: Math.max(0, diffDays),
                     isOutstanding: order.status === 'confirmed' || order.status === 'fulfilled' || order.status === 'fullfilled'

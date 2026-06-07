@@ -7,6 +7,7 @@ import { qrService } from "../services/qrService.js";
 import { returnsService } from "../services/returnsService.js";
 import { settingsService } from "../services/settingsService.js";
 import { whatsappService } from "../services/whatsappService.js";
+import { getDisplayStatus } from "../core/returnStatus.js";
 
 function escapeHtml(value = '') {
     return String(value)
@@ -431,7 +432,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
             ${renderHero('Invoice details', `${invoice.invoiceNumber || invoice.id} · ${formatDate(invoice.createdAt)}`)}
             <section class="qr-card">
                 <h2 class="qr-section-title">${escapeHtml(invoice.customerName || 'Customer')}</h2>
-                <p class="qr-note">Status: ${escapeHtml(invoice.status || 'pending')}</p>
+                <p class="qr-note">Status: ${escapeHtml(getDisplayStatus(invoice))}</p>
                 ${items.map(item => `
                     <div class="qr-list-row">
                         <strong>${escapeHtml(item.name)}</strong>

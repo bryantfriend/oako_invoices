@@ -3,6 +3,7 @@ import {
   updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { deviceIdService } from "../../../../services/deviceIdService.js";
+import { orderService } from "../../../../services/orderService.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 import {
   getItemAdjustedTotal,
@@ -84,6 +85,10 @@ async function processRecordInvoiceReturn(intent) {
 
   await updateDoc(intent.context.invoiceRef, updatePayload);
 
+  if (invoice.orderId) {
+    await mirrorInvoiceReturnToOrder(invoice.orderId, invoice, returnItems.updatedInvoiceItems, updatePayload.returnSummary, returnRecord);
+  }
+
   var updatedIntent = resultHelpers.addContextValue(intent, "returnResult", {
     invoiceId: intent.payload.invoiceId,
     returnId: returnRecord.returnId,
@@ -92,6 +97,49 @@ async function processRecordInvoiceReturn(intent) {
   });
 
   return resultHelpers.success(updatedIntent);
+}
+
+async function mirrorInvoiceReturnToOrder(orderId, invoice, updatedInvoiceItems, returnSummary, returnRecord) {
+  try {
+    var order = await orderService.getOrderById(orderId);
+    if (!order) {
+      return;
+    }
+
+    var orderItems = (order.items || []).map(function(orderItem, index) {
+      var productId = orderItem.productId || orderItem.id || String(index);
+      var lineItemId = orderItem.lineItemId || "";
+      var matchingInvoiceItem = (updatedInvoiceItems || []).find(function(invoiceItem) {
+        return (lineItemId && invoiceItem.lineItemId === lineItemId)
+          || (productId && (invoiceItem.productId === productId || invoiceItem.id === productId));
+      });
+
+      return Object.assign({}, orderItem, {
+        returnedQuantity: matchingInvoiceItem ? safeNumber(matchingInvoiceItem.returnedQuantity, 0) : safeNumber(orderItem.returnedQuantity || orderItem.returnQuantity, 0),
+        returnQuantity: matchingInvoiceItem ? safeNumber(matchingInvoiceItem.returnedQuantity, 0) : safeNumber(orderItem.returnQuantity || orderItem.returnedQuantity, 0)
+      });
+    });
+
+    await orderService.updateOrder(orderId, {
+      returnRequested: true,
+      returnItems: (updatedInvoiceItems || [])
+        .filter(function(item) { return safeNumber(item.returnedQuantity, 0) > 0; })
+        .map(function(item) {
+          return {
+            lineItemId: item.lineItemId || "",
+            productId: item.productId || "",
+            quantity: safeNumber(item.returnedQuantity, 0)
+          };
+        }),
+      returnSummary: returnSummary,
+      returns: (Array.isArray(order.returns) ? order.returns : []).concat([returnRecord]),
+      returnedAt: new Date(),
+      items: orderItems,
+      linkedReturnInvoiceId: invoice.id || invoice.invoiceId || ""
+    });
+  } catch (error) {
+    console.warn("Could not mirror invoice return to order.", error);
+  }
 }
 
 function buildReturnItems(invoiceItems, requestedItems) {

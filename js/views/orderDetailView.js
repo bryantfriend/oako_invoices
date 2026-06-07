@@ -1,5 +1,6 @@
 import { layoutView } from "./layoutView.js";
 import { orderDetailController } from "../controllers/orderDetailController.js";
+import { productService } from "../services/productService.js";
 import { createCard } from "../components/card.js";
 import { createStatusBadge } from "../components/statusBadge.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
@@ -8,6 +9,29 @@ import { t } from "../core/i18n.js";
 import { ORDER_STATUS, ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { router } from "../router.js";
+import { getDisplayStatus, getReturnState } from "../core/returnStatus.js";
+
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function toPositiveInteger(value, fallback = 1) {
+    const number = parseInt(value, 10);
+    return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function getItemName(item = {}) {
+    return item.name || item.productName || item.name_en || item.title || item.title_en || 'Product';
+}
+
+function makeLineItemId(productId = 'item') {
+    return `line-${productId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export const renderOrderDetail = async ({ id }) => {
     layoutView.render();
@@ -22,7 +46,67 @@ export const renderOrderDetail = async ({ id }) => {
         return;
     }
 
-    const isEditable = order.status === ORDER_STATUS.DRAFT || order.status === ORDER_STATUS.PENDING;
+    const isEditable = [ORDER_STATUS.DRAFT, ORDER_STATUS.PENDING, ORDER_STATUS.CONFIRMED].includes(order.status);
+    let productCatalog = null;
+    let itemChangesDirty = false;
+    let orderItems = (order.items || []).map((item, index) => {
+        const quantity = toPositiveInteger(item.quantity, 1);
+        const adjustedQuantity = toPositiveInteger(item.adjustedQuantity !== undefined ? item.adjustedQuantity : quantity, quantity);
+        const price = Number(item.price) || 0;
+
+        return {
+            ...item,
+            lineItemId: item.lineItemId || item.productId || `line-${index}`,
+            name: getItemName(item),
+            quantity,
+            adjustedQuantity,
+            price,
+            total: price * adjustedQuantity
+        };
+    });
+
+    const recalculateOrderTotal = () => orderItems.reduce((sum, item) => {
+        const adjustedQuantity = toPositiveInteger(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity, 1);
+        return sum + ((Number(item.price) || 0) * adjustedQuantity);
+    }, 0);
+
+    const buildProductLineItem = (product, quantity) => {
+        const safeQuantity = toPositiveInteger(quantity, 1);
+        const productName = product.displayName || product.name || product.name_en || product.title || 'Product';
+        const price = Number(product.price) || 0;
+
+        return {
+            productId: product.id,
+            lineItemId: makeLineItemId(product.id),
+            name: productName,
+            name_en: product.name_en || product.name || productName,
+            name_ru: product.name_ru || '',
+            name_kg: product.name_kg || '',
+            categoryId: product.categoryId || product.category_id || product.category || '',
+            categoryName: product.categoryName || product.category_name || product.category || '',
+            price,
+            quantity: safeQuantity,
+            adjustedQuantity: safeQuantity,
+            total: price * safeQuantity,
+            imageUrl: product.imageUrl || '',
+            weight: product.weight || ''
+        };
+    };
+
+    const markItemChangesDirty = () => {
+        itemChangesDirty = true;
+    };
+
+    const validateOrderHasItems = () => {
+        const hasItems = orderItems.some(item => toPositiveInteger(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity, 0) > 0);
+        if (!hasItems) {
+            alert('Order must have at least one product before saving or finalizing.');
+            return false;
+        }
+        return true;
+    };
+
+    const getOrderItemReturnedQuantity = (item = {}) => Math.max(0, Number(item.returnedQuantity || item.returnQuantity || 0) || 0);
 
     // Helper to render items table
     const renderItems = () => `
@@ -32,55 +116,57 @@ export const renderOrderDetail = async ({ id }) => {
                     <th style="text-align: left; padding: 12px;">Item</th>
                     <th style="text-align: right; padding: 12px; width: 100px;">Price</th>
                     <th style="text-align: center; padding: 12px; width: 120px;">Requested</th>
-                    <th style="text-align: center; padding: 12px; width: 120px;">Adjusted</th>
+                    <th style="text-align: center; padding: 12px; width: 120px;">Current Qty</th>
                     <th style="text-align: right; padding: 12px; width: 120px;">Total</th>
                 </tr>
             </thead>
             <tbody>
-                ${order.items.map((item, index) => {
-        const requested = item.quantity; // Original requested
+                ${orderItems.length ? orderItems.map((item, index) => {
+        const requested = item.quantity;
         const adjusted = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-        const finalQty = adjusted;
-        const total = finalQty * item.price;
+        const finalQty = toPositiveInteger(adjusted, 1);
+        const price = Number(item.price) || 0;
+        const total = finalQty * price;
 
         return `
                         <tr style="border-bottom: 1px solid var(--color-gray-100);">
-                            <td style="padding: 12px;">${item.name}</td>
-                            <td style="padding: 12px; text-align: right;">${formatCurrency(item.price)}</td>
+                            <td style="padding: 12px;">${escapeHtml(getItemName(item))}</td>
+                            <td style="padding: 12px; text-align: right;">${formatCurrency(price)}</td>
                             <td style="padding: 12px; text-align: center; color: var(--color-gray-500);">${requested}</td>
                             <td style="padding: 12px; text-align: center;">
-                                ${isEditable ? `
-                                    <input type="number" 
-                                        class="adjust-qty-input" 
-                                        data-index="${index}" 
-                                        value="${finalQty}" 
-                                        min="0" 
-                                        style="width: 80px; text-align: center; border-color: var(--color-primary-300);"
-                                    >
-                                ` : `<strong>${finalQty}</strong>`}
+                                <strong>${finalQty}</strong>
+                                ${getOrderItemReturnedQuantity(item) > 0 ? `<div style="font-size: 11px; color: #991b1b; margin-top: 2px; font-weight: 800;">Returned: ${getOrderItemReturnedQuantity(item)}</div>` : ''}
                             </td>
-                            <td style="padding: 12px; text-align: right; font-weight: 500;">
+                            <td class="line-total-cell" style="padding: 12px; text-align: right; font-weight: 500;">
                                 ${formatCurrency(total)}
                             </td>
                         </tr>
                     `;
-    }).join('')}
+    }).join('') : `
+                    <tr>
+                        <td colspan="5" style="padding: 28px; text-align: center; color: var(--color-gray-500);">
+                            No products in this order.
+                        </td>
+                    </tr>
+                `}
             </tbody>
             <tfoot>
                  <tr>
                     <td colspan="4" style="padding: 12px; text-align: right; font-weight: 600;">Total Amount:</td>
-                    <td style="padding: 12px; text-align: right; font-weight: 700; font-size: var(--text-lg);">
-                        ${formatCurrency(order.items.reduce((s, i) => s + ((i.adjustedQuantity ?? i.quantity) * i.price), 0))}
+                    <td id="order-items-total" style="padding: 12px; text-align: right; font-weight: 700; font-size: var(--text-lg);">
+                        ${formatCurrency(recalculateOrderTotal())}
                     </td>
                 </tr>
             </tfoot>
         </table>
-        ${isEditable ? `
-            <div style="margin-top: var(--space-4); text-align: right;">
-                <button id="save-quantities" class="btn btn-secondary btn-sm" disabled>Save Adjusted Quantities</button>
-            </div>
-        ` : ''}
     `;
+
+    const refreshItemsEditor = () => {
+        const mount = document.getElementById('order-items-editor');
+        if (!mount) return;
+        mount.innerHTML = renderItems();
+        bindItemEditor();
+    };
 
     container.innerHTML = `
         <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">
@@ -88,7 +174,8 @@ export const renderOrderDetail = async ({ id }) => {
             <div style="display: flex; flex-direction: column; gap: var(--space-6);">
                 ${createCard({
         title: 'Order Items',
-        content: renderItems()
+        actions: isEditable ? `<button id="edit-order-items" class="btn btn-secondary btn-sm" style="font-size: 12px;">Edit Items</button>` : '',
+        content: `<div id="order-items-editor">${renderItems()}</div>`
     })}
                 
                 ${createCard({
@@ -117,7 +204,7 @@ export const renderOrderDetail = async ({ id }) => {
                         <div style="display: flex; flex-direction: column; gap: var(--space-4);">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <span style="font-size: var(--text-sm); color: var(--color-gray-500);">Current Status</span>
-                                ${createStatusBadge(order.status)}
+                                ${createStatusBadge(order)}
                             </div>
                             
                             <hr style="border: 0; border-top: 1px solid var(--color-gray-200);">
@@ -135,8 +222,8 @@ export const renderOrderDetail = async ({ id }) => {
                                         ${['fulfilled', 'fullfilled', 'paid'].includes(order.status) ? '🔒' : '🔓'}
                                     </div>
                                     <select id="manual-status-selector" class="input" style="flex: 1; font-size: 13px; height: 32px; padding: 0 8px; ${['fulfilled', 'fullfilled', 'paid'].includes(order.status) ? 'pointer-events: none; opacity: 0.6;' : ''}">
-                                        ${Object.entries(ORDER_STATUS).map(([key, val]) => `
-                                            <option value="${val}" ${order.status === val ? 'selected' : ''}>${val === 'fulfilled' ? 'Fulfilled' : val.charAt(0).toUpperCase() + val.slice(1)}</option>
+                                        ${Object.entries(ORDER_STATUS).filter(([key]) => key !== 'FULLY_RETURNED').map(([key, val]) => `
+                                            <option value="${val}" ${(val === 'partially_returned' && getReturnState(order) === 'partial') || (val === 'returned' && getReturnState(order) === 'full') || (order.status === val && getReturnState(order) === 'none') ? 'selected' : ''}>${getDisplayStatus(val)}</option>
                                         `).join('')}
                                         ${order.status === 'fullfilled' ? '<option value="fullfilled" selected>Fulfilled</option>' : ''}
                                     </select>
@@ -174,31 +261,229 @@ export const renderOrderDetail = async ({ id }) => {
         </div>
     `;
 
-    // Bind Quantity Adjustments
-    const saveBtn = document.getElementById('save-quantities');
-    if (saveBtn) {
-        document.querySelectorAll('.adjust-qty-input').forEach(input => {
-            input.addEventListener('input', () => {
-                saveBtn.disabled = false;
-                saveBtn.textContent = "Save Changes";
-                saveBtn.classList.remove('btn-secondary');
-                saveBtn.classList.add('btn-primary');
-            });
+    const recalculateDraftItems = items => items.map(item => {
+        const adjustedQuantity = toPositiveInteger(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity, 1);
+        const price = Number(item.price) || 0;
+        return {
+            ...item,
+            adjustedQuantity,
+            total: price * adjustedQuantity
+        };
+    });
+
+    const calculateDraftTotal = items => recalculateDraftItems(items).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+
+    const renderOrderItemsModal = (draftItems, productSearchTerm = '') => {
+        const term = productSearchTerm.trim().toLowerCase();
+        const filteredProducts = (productCatalog || []).filter(product => {
+            if (!term) return true;
+            return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg, product.title]
+                .some(value => String(value || '').toLowerCase().includes(term));
         });
+        const productOptions = filteredProducts.map(product => {
+            const name = product.displayName || product.name || product.name_en || product.title || 'Product';
+            return `<option value="${escapeHtml(product.id)}">${escapeHtml(name)} - ${formatCurrency(Number(product.price) || 0)}</option>`;
+        }).join('');
 
-        saveBtn.addEventListener('click', async () => {
-            const newItems = [...order.items];
-            document.querySelectorAll('.adjust-qty-input').forEach(input => {
-                const idx = parseInt(input.dataset.index);
-                newItems[idx].adjustedQuantity = parseInt(input.value) || 0;
-            });
+        return `
+            <div style="display: grid; gap: 16px;">
+                <div style="display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.4fr) 90px auto; gap: 10px; align-items: end; padding: 12px; background: var(--color-gray-50); border: 1px solid var(--color-gray-200); border-radius: 8px;">
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Search products</span>
+                        <input id="order-edit-product-search" class="input" type="search" value="${escapeHtml(productSearchTerm)}" placeholder="Search products..." style="height: 36px;">
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Product</span>
+                        <select id="order-edit-product-select" class="input" style="height: 36px;" ${filteredProducts.length ? '' : 'disabled'}>
+                            ${productOptions || '<option value="">No products found</option>'}
+                        </select>
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Qty</span>
+                        <input id="order-edit-product-quantity" class="input" type="number" min="1" step="1" value="1" style="height: 36px; text-align: center;">
+                    </label>
+                    <button type="button" id="btn-order-edit-add-product" class="btn btn-primary btn-sm" style="height: 36px;">Add Product</button>
+                </div>
 
-            const success = await orderDetailController.updateQuantities(id, newItems);
-            if (success) {
-                renderOrderDetail({ id }); // Re-render
+                <div style="overflow-x: auto; border: 1px solid var(--color-gray-200); border-radius: 8px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
+                            <tr>
+                                <th style="text-align: left; padding: 10px;">Product</th>
+                                <th style="text-align: right; padding: 10px; width: 120px;">Unit price</th>
+                                <th style="text-align: center; padding: 10px; width: 120px;">Requested</th>
+                                <th style="text-align: center; padding: 10px; width: 130px;">Current Qty</th>
+                                <th style="text-align: right; padding: 10px; width: 130px;">Line total</th>
+                                <th style="text-align: right; padding: 10px; width: 90px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${draftItems.length ? draftItems.map((item, index) => {
+                                const returnedQuantity = getOrderItemReturnedQuantity(item);
+                                const minQuantity = Math.max(1, returnedQuantity);
+                                const adjusted = toPositiveInteger(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity, minQuantity);
+                                return `
+                                    <tr style="border-bottom: 1px solid var(--color-gray-100);">
+                                        <td style="padding: 10px;">
+                                            <div style="font-weight: 800; color: var(--color-gray-900);">${escapeHtml(getItemName(item))}</div>
+                                            ${item.weight ? `<div style="font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">${escapeHtml(item.weight)}</div>` : ''}
+                                            ${returnedQuantity > 0 ? `<div style="font-size: 11px; color: #991b1b; margin-top: 2px; font-weight: 800;">Returned: ${returnedQuantity}</div>` : ''}
+                                        </td>
+                                        <td style="padding: 10px; text-align: right;">${formatCurrency(Number(item.price) || 0)}</td>
+                                        <td style="padding: 10px; text-align: center; color: var(--color-gray-500);">${item.quantity || 0}</td>
+                                        <td style="padding: 10px; text-align: center;">
+                                            <input class="order-edit-item-qty input" type="number" min="${minQuantity}" step="1" value="${adjusted}" data-index="${index}" style="width: 88px; height: 32px; text-align: center;">
+                                        </td>
+                                        <td style="padding: 10px; text-align: right; font-weight: 900;">${formatCurrency((Number(item.price) || 0) * adjusted)}</td>
+                                        <td style="padding: 10px; text-align: right;">
+                                            <button type="button" class="btn btn-secondary btn-sm order-edit-remove-item" data-index="${index}">Remove</button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('') : `
+                                <tr>
+                                    <td colspan="6" style="padding: 18px; text-align: center; color: var(--color-gray-500);">No products in this order.</td>
+                                </tr>
+                            `}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="4" style="padding: 10px; text-align: right; color: var(--color-gray-500); font-weight: 800;">Total</td>
+                                <td colspan="2" style="padding: 10px; text-align: right; font-weight: 900; color: var(--color-primary-700);">${formatCurrency(calculateDraftTotal(draftItems))}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        `;
+    };
+
+    const openEditOrderItemsModal = async () => {
+        if (!productCatalog) {
+            productCatalog = await productService.getAllProducts();
+        }
+
+        let productSearchTerm = '';
+        let draftItems = recalculateDraftItems(orderItems.map(item => ({ ...item })));
+
+        const modal = new Modal({
+            title: 'Edit Order Items',
+            size: 'xlarge',
+            confirmText: 'Save Items',
+            content: renderOrderItemsModal(draftItems, productSearchTerm),
+            onConfirm: async () => {
+                const normalizedDraft = recalculateDraftItems(draftItems);
+                if (!normalizedDraft.length || !normalizedDraft.some(item => toPositiveInteger(item.adjustedQuantity, 0) > 0)) {
+                    alert('Order must have at least one product.');
+                    return false;
+                }
+                const success = await orderDetailController.updateOrderItems(id, normalizedDraft);
+                if (success) {
+                    renderOrderDetail({ id });
+                }
+                return success;
             }
         });
-    }
+
+        const refreshProductOptions = () => {
+            const search = document.getElementById('order-edit-product-search');
+            const select = document.getElementById('order-edit-product-select');
+            if (!search || !select) return;
+            productSearchTerm = search.value || '';
+            const term = productSearchTerm.trim().toLowerCase();
+            const filteredProducts = productCatalog.filter(product => {
+                if (!term) return true;
+                return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg, product.title]
+                    .some(value => String(value || '').toLowerCase().includes(term));
+            });
+            select.disabled = filteredProducts.length === 0;
+            select.innerHTML = filteredProducts.length
+                ? filteredProducts.map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.displayName || product.name || product.name_en || product.title || 'Product')} - ${formatCurrency(Number(product.price) || 0)}</option>`).join('')
+                : '<option value="">No products found</option>';
+        };
+
+        const refreshModal = () => {
+            const body = modal.modalEl?.querySelector('.modal-body');
+            if (!body) return;
+            draftItems = recalculateDraftItems(draftItems);
+            body.innerHTML = renderOrderItemsModal(draftItems, productSearchTerm);
+            attachModalListeners();
+        };
+
+        const attachModalListeners = () => {
+            document.getElementById('order-edit-product-search')?.addEventListener('input', refreshProductOptions);
+
+            document.getElementById('btn-order-edit-add-product')?.addEventListener('click', () => {
+                const select = document.getElementById('order-edit-product-select');
+                const quantityInput = document.getElementById('order-edit-product-quantity');
+                const product = productCatalog.find(entry => entry.id === select?.value);
+                const quantity = toPositiveInteger(quantityInput?.value, 1);
+                if (!product) {
+                    alert('Select a product to add.');
+                    return;
+                }
+
+                const existingIndex = draftItems.findIndex(item => item.productId && item.productId === product.id);
+                if (existingIndex >= 0) {
+                    const currentQuantity = toPositiveInteger(draftItems[existingIndex].quantity, 1);
+                    const currentAdjusted = toPositiveInteger(draftItems[existingIndex].adjustedQuantity, currentQuantity);
+                    draftItems[existingIndex] = {
+                        ...draftItems[existingIndex],
+                        quantity: currentQuantity + quantity,
+                        adjustedQuantity: currentAdjusted + quantity
+                    };
+                } else {
+                    draftItems.push(buildProductLineItem(product, quantity));
+                }
+                refreshModal();
+            });
+
+            document.querySelectorAll('.order-edit-item-qty').forEach(input => {
+                input.addEventListener('change', () => {
+                    const idx = parseInt(input.dataset.index, 10);
+                    const item = draftItems[idx];
+                    if (!item) return;
+                    const minQuantity = Math.max(1, getOrderItemReturnedQuantity(item));
+                    const quantity = toPositiveInteger(input.value, minQuantity);
+                    if (quantity < minQuantity) {
+                        alert('Quantity cannot be less than the returned quantity.');
+                        input.value = String(minQuantity);
+                        return;
+                    }
+                    draftItems[idx] = {
+                        ...item,
+                        adjustedQuantity: quantity,
+                        total: (Number(item.price) || 0) * quantity
+                    };
+                    refreshModal();
+                });
+            });
+
+            document.querySelectorAll('.order-edit-remove-item').forEach(button => {
+                button.addEventListener('click', () => {
+                    const idx = parseInt(button.dataset.index, 10);
+                    const item = draftItems[idx];
+                    if (!item) return;
+                    if (getOrderItemReturnedQuantity(item) > 0) {
+                        alert('Returned items cannot be removed from the order.');
+                        return;
+                    }
+                    if (!confirm('Remove this product from the order?')) return;
+                    draftItems.splice(idx, 1);
+                    refreshModal();
+                });
+            });
+        };
+
+        modal.open();
+        attachModalListeners();
+    };
+
+    const bindItemEditor = () => {
+        document.getElementById('edit-order-items')?.addEventListener('click', openEditOrderItemsModal);
+    };
+
+    bindItemEditor();
 
     // Bind Status Actions
     const actionBtns = container.querySelectorAll('.status-action-btn');
@@ -206,6 +491,15 @@ export const renderOrderDetail = async ({ id }) => {
         btn.addEventListener('click', async () => {
             const action = btn.dataset.action;
             const newStatus = btn.dataset.status;
+
+            if ((action === 'invoice' || newStatus === ORDER_STATUS.CONFIRMED || newStatus === ORDER_STATUS.PENDING) && itemChangesDirty) {
+                alert('Save item changes before continuing.');
+                return;
+            }
+
+            if (action === 'invoice' || newStatus === ORDER_STATUS.CONFIRMED || newStatus === ORDER_STATUS.PENDING) {
+                if (!validateOrderHasItems()) return;
+            }
 
             if (action === 'invoice') {
                 const { invoiceService } = await import("../services/invoiceService.js");
@@ -343,9 +637,25 @@ export const renderOrderDetail = async ({ id }) => {
 
         applyBtn.addEventListener('click', async () => {
             const newStatus = statusSelect.value;
-            if (newStatus === order.status) return;
+            const returnState = getReturnState(order);
+            const derivedStatus = returnState === 'partial' ? 'partially_returned' : (returnState === 'full' ? 'returned' : order.status);
+            if (newStatus === derivedStatus) return;
 
-            if (confirm(t('confirm_change_status') + newStatus + '?')) {
+            if ((['returned', 'fully_returned'].includes(newStatus) && returnState !== 'full')
+                || (['partially_returned', 'partial_return'].includes(newStatus) && returnState !== 'partial')) {
+                alert('Record returned quantities on the invoice before setting a returned status.');
+                statusSelect.value = derivedStatus;
+                return;
+            }
+
+            if (confirm(t('confirm_change_status') + getDisplayStatus(newStatus) + '?')) {
+                if ((newStatus === ORDER_STATUS.CONFIRMED || newStatus === ORDER_STATUS.PENDING) && itemChangesDirty) {
+                    alert('Save item changes before continuing.');
+                    return;
+                }
+                if (newStatus === ORDER_STATUS.CONFIRMED || newStatus === ORDER_STATUS.PENDING) {
+                    if (!validateOrderHasItems()) return;
+                }
                 await orderDetailController.updateStatus(id, newStatus);
                 renderOrderDetail({ id });
             }
