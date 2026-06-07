@@ -1,10 +1,10 @@
-const CACHE_NAME = 'oako-invoices-v1.89';
+const CACHE_NAME = 'oako-invoices-v1.90';
 const ASSETS_TO_CACHE = [
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js?v=1.89',
+    './js/main.js?v=1.90',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',

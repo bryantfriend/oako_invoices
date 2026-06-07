@@ -79,7 +79,7 @@ function renderQrActivityTimeline(activities = []) {
     }).join('');
 
     return `
-        <div class="card qr-activity-timeline" style="padding: 18px; margin: 0 auto 28px; width: min(920px, calc(100% - 32px));">
+        <div class="card qr-activity-timeline no-print" style="padding: 18px; margin: 0 auto 28px; width: min(920px, calc(100% - 32px));">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px;">
                 <div>
                     <h3 style="font-size: 15px; font-weight: 900; margin: 0;">QR Activity Timeline</h3>
@@ -110,7 +110,7 @@ function renderConflictReview(conflict) {
     }
 
     return `
-        <section id="invoice-conflict-review" class="card" style="margin: 16px auto; width: min(1100px, calc(100% - 32px)); border-color: #fecaca; background: #fff7f7;">
+        <section id="invoice-conflict-review" class="card no-print" style="margin: 16px auto; width: min(1100px, calc(100% - 32px)); border-color: #fecaca; background: #fff7f7;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px;">
                 <div>
                     <h2 style="font-size: 16px; font-weight: 900; color: #991b1b; margin: 0;">Sync Conflict</h2>
@@ -150,7 +150,7 @@ function renderApprovalResponseBanner(approvalLink) {
     const title = isAccepted ? 'Customer Accepted Order' : 'Customer Requested Changes';
 
     return `
-        <section class="card" style="margin: 16px auto; width: min(1100px, calc(100% - 32px)); border-color: ${borderColor}; background: ${backgroundColor};">
+        <section class="card no-print" style="margin: 16px auto; width: min(1100px, calc(100% - 32px)); border-color: ${borderColor}; background: ${backgroundColor};">
             <h2 style="font-size: 16px; font-weight: 900; color: ${textColor}; margin: 0 0 6px;">${title}</h2>
             <div style="font-size: 12px; color: ${textColor}; font-weight: 700;">Response date: ${escapeHtml(toDisplayDate(approvalLink.responseSubmittedAt))}</div>
             ${changes.notes ? `<p style="font-size: 13px; color: ${textColor}; margin: 10px 0 0;"><strong>Notes:</strong> ${escapeHtml(changes.notes)}</p>` : ''}
@@ -177,7 +177,7 @@ function renderCustomerApprovalSection(approvalLink) {
     const responseStatus = approvalLink && approvalLink.responseType ? approvalLink.responseType : 'No response';
 
     return `
-        <section id="customer-approval-panel" class="card" style="padding: 18px; margin: 0 auto 28px; width: min(920px, calc(100% - 32px));">
+        <section id="customer-approval-panel" class="card customer-approval-panel customer-approval-card approval-link-panel no-print" style="padding: 18px; margin: 0 auto 28px; width: min(920px, calc(100% - 32px));">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
                 <div>
                     <h3 style="font-size: 15px; font-weight: 900; margin: 0;">Customer Approval</h3>
@@ -845,7 +845,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         }));
 
         return `
-            <section id="draft-item-editor" class="card" style="padding: 18px; margin: 16px auto; width: min(1100px, calc(100% - 32px));">
+            <section id="draft-item-editor" class="card no-print" style="padding: 18px; margin: 16px auto; width: min(1100px, calc(100% - 32px));">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
                     <div>
                         <h3 style="font-size: 15px; font-weight: 900; margin: 0;">Draft Invoice Items</h3>
@@ -1346,7 +1346,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         }
 
         container.innerHTML = `
-            <div style="display: flex; gap: 15px; justify-content: center; padding: 15px; border-bottom: 1px solid var(--color-gray-200); background: #f7fafc; position: sticky; top: 0; z-index: 100;">
+            <div class="invoice-toolbar invoice-preview-controls no-print" style="display: flex; gap: 15px; justify-content: center; padding: 15px; border-bottom: 1px solid var(--color-gray-200); background: #f7fafc; position: sticky; top: 0; z-index: 100;">
                 <button id="lang-en" class="btn ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'} btn-sm">🇬🇧 EN</button>
                 <button id="lang-ru" class="btn ${currentLang === 'ru' ? 'btn-primary' : 'btn-secondary'} btn-sm">🇷🇺 RU</button>
                 
@@ -1382,8 +1382,8 @@ export const renderInvoiceDetail = async ({ id }) => {
             ${renderApprovalResponseBanner(approvalLink)}
             ${renderDraftItemEditor()}
 
-            <div id="invoice-doc-container" class="animate-fade-in ${is2UpMode ? 'printing-2up-portrait' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
-                <div class="print-wrapper" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+            <div id="invoice-doc-container" class="invoice-print-container animate-fade-in ${is2UpMode ? 'printing-2up-portrait' : ''}" style="background: var(--color-gray-100); padding: 40px 0; overflow: auto; height: calc(100vh - 150px); display: flex; flex-direction: column; align-items: center; width: 100%;">
+                <div class="print-wrapper invoice-document" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
                     ${finalHtml}
                 </div>
             </div>
@@ -1480,9 +1480,18 @@ export const renderInvoiceDetail = async ({ id }) => {
                     }
 
                     /* Hide all UI elements */
-                    header, nav, #sidebar, #top-bar, .btn, .loading-screen, #toast-container, #modal-container,
-                    div[style*="position: sticky"], div[style*="z-index: 100"], .period-btn, #zoom-slider, input[type="range"], .qr-activity-timeline {
+                    header, nav, #sidebar, #top-bar, .app-sidebar, .btn, .loading-screen, #toast-container, #modal-container,
+                    div[style*="position: sticky"], div[style*="z-index: 100"], .period-btn, #zoom-slider, input[type="range"],
+                    .invoice-toolbar, .invoice-preview-controls, .customer-approval-panel, .customer-approval-card,
+                    .approval-link-panel, .qr-activity-timeline, .no-print {
                         display: none !important;
+                    }
+
+                    .invoice-preview-page,
+                    .invoice-document,
+                    .invoice-print-container {
+                        margin: 0 !important;
+                        box-shadow: none !important;
                     }
                     
                     ::-webkit-scrollbar { display: none !important; }
