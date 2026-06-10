@@ -467,12 +467,12 @@ export const invoiceService = {
             const user = auth.currentUser;
             const storeId = getStoreId(settings);
             const isOffline = !offlineStatusService.isOnline();
-            const invoiceId = isOffline ? await deviceIdService.createOfflineEntityId(storeId) : '';
+            const offlineInvoiceId = isOffline ? await deviceIdService.createOfflineEntityId(storeId) : '';
             const invoiceNumber = isOffline ? await deviceIdService.nextOfflineInvoiceNumber() : 'INV-' + Date.now().toString().substr(-6);
             const localUpdatedAt = new Date().toISOString();
 
             const payload = buildInvoicePayload(order, settings, customer, orderId, adjustments, invoiceNumber, qrService.generateSecureToken(), {
-                id: invoiceId,
+                id: offlineInvoiceId,
                 storeId: storeId,
                 companyId: storeId,
                 updatedAt: isOffline ? new Date() : serverTimestamp(),
@@ -484,7 +484,7 @@ export const invoiceService = {
             });
 
             if (isOffline) {
-                await offlineQueueService.enqueue('createInvoice', 'invoice', invoiceId, {
+                await offlineQueueService.enqueue('createInvoice', 'invoice', offlineInvoiceId, {
                     invoice: payload,
                     localInvoiceSnapshot: payload,
                     baseUpdatedAtMillis: 0,
@@ -492,7 +492,7 @@ export const invoiceService = {
                 }, {
                     storeId: storeId
                 });
-                return invoiceId;
+                return offlineInvoiceId;
             }
 
             delete payload.id;
