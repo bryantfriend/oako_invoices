@@ -21,10 +21,12 @@ export function createCollectionTimeoutError(collectionName, timeoutMs) {
 }
 
 export function logCollectionError(collectionName, error, action = 'fetch') {
-    console.error(`Error ${action} ${collectionName}:`, {
+    const details = {
         collection: collectionName,
         code: error?.code || '',
         message: error?.message || '',
         authState: error?.authState || getFirestoreAuthState()
-    });
+    };
+    const summary = details.message || details.code || 'unknown Firestore error';
+    console.error(`Error ${action} ${collectionName}: ${summary}`, details);
 }

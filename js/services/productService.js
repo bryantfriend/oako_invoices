@@ -23,7 +23,7 @@ export const productService = {
 
             // Added timeout wrapper to prevent hanging offline
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 15000)), 15000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
 
@@ -52,7 +52,7 @@ export const productService = {
         try {
             const q = collection(db, CATEGORIES_COLLECTION);
             const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(CATEGORIES_COLLECTION, 15000)), 15000);
+                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(CATEGORIES_COLLECTION, 30000)), 30000);
             });
             const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
             return snapshot.docs.map(doc => {

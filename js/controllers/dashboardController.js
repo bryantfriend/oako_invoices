@@ -77,18 +77,34 @@ function resolveProductCategory(item = {}, product = {}, categoryLookup = {}) {
     return { id: 'uncategorized', name: 'Uncategorized' };
 }
 
+async function loadDashboardCollection(label, loader, fallback) {
+    try {
+        return await loader();
+    } catch (error) {
+        console.warn("Dashboard collection unavailable:", label, error);
+        return fallback;
+    }
+}
+
 export const dashboardController = {
     async loadDashboard() {
         try {
             const [orders, customers, products, productCategories, returnInvoices] = await Promise.all([
-                orderService.getAllOrders(),
-                customerService.getAllCustomers(),
-                productService.getAllProducts(),
-                productService.getAllCategories(),
-                invoiceService.getReturnedInvoicesForAnalytics().catch(function(error) {
-                    console.warn("Could not load returned invoice analytics.", error);
-                    return [];
-                })
+                loadDashboardCollection('orders', function() {
+                    return orderService.getAllOrders();
+                }, []),
+                loadDashboardCollection('customers', function() {
+                    return customerService.getAllCustomers();
+                }, []),
+                loadDashboardCollection('products', function() {
+                    return productService.getAllProducts();
+                }, []),
+                loadDashboardCollection('categories', function() {
+                    return productService.getAllCategories();
+                }, []),
+                loadDashboardCollection('returned invoices', function() {
+                    return invoiceService.getReturnedInvoicesForAnalytics();
+                }, [])
             ]);
 
             // Create a lookup map for customer categories
