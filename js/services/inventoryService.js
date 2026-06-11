@@ -3,16 +3,16 @@ import {
     collection,
     doc,
     getDoc,
-    getDocs,
     setDoc,
     query,
     where,
-    orderBy,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getDocsWithCache, readCachedRows, writeCachedRows } from "../core/firestoreRead.js";
 
 const COLLECTION = 'inventory';
 const SETTINGS_DOC = 'inventory_settings';
+const INVENTORY_SETTINGS_CACHE_KEY = 'inventory:settings';
 
 export const inventoryService = {
     /**
@@ -21,10 +21,15 @@ export const inventoryService = {
     async getDailyInventory(date) {
         try {
             const q = query(collection(db, COLLECTION), where('date', '==', date));
-            const snapshot = await getDocs(q);
+            const rows = await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: `inventory:daily:${date}`,
+                timeoutMs: 45000,
+                attempts: 2
+            });
             const results = {};
-            snapshot.forEach(doc => {
-                results[doc.data().productId] = { id: doc.id, ...doc.data() };
+            rows.forEach(row => {
+                results[row.productId] = row;
             });
             return results;
         } catch (error) {
@@ -70,10 +75,12 @@ export const inventoryService = {
         try {
             const docRef = doc(db, 'settings', SETTINGS_DOC);
             const snap = await getDoc(docRef);
-            return snap.exists() ? snap.data() : { enabledCategories: [] };
+            const settings = snap.exists() ? snap.data() : { enabledCategories: [] };
+            writeCachedRows(INVENTORY_SETTINGS_CACHE_KEY, [settings]);
+            return settings;
         } catch (error) {
             console.error("Error fetching inventory settings:", error);
-            return { enabledCategories: [] };
+            return readCachedRows(INVENTORY_SETTINGS_CACHE_KEY)[0] || { enabledCategories: [] };
         }
     },
 
@@ -87,6 +94,7 @@ export const inventoryService = {
                 ...settings,
                 updatedAt: serverTimestamp()
             }, { merge: true });
+            writeCachedRows(INVENTORY_SETTINGS_CACHE_KEY, [settings]);
             return true;
         } catch (error) {
             console.error("Error updating inventory settings:", error);

@@ -2,7 +2,6 @@ import { db } from "../core/firebase.js";
 import {
     collection,
     addDoc,
-    getDocs,
     getDoc,
     doc,
     updateDoc,
@@ -17,6 +16,7 @@ import { ORDER_STATUS } from "../core/constants.js";
 import { googleSheetsService } from "./googleSheetsService.js";
 import { dataIntegrityService } from "./dataIntegrityService.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
+import { getDocsWithCache } from "../core/firestoreRead.js";
 
 const COLLECTION = 'orders';
 
@@ -31,19 +31,17 @@ function buildOrderAuditDetails(order) {
 
 export const orderService = {
     async getAllOrders() {
-        let timeoutId;
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
-            const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
+            return await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: 'orders:all:createdAt_desc',
+                timeoutMs: 45000,
+                attempts: 2
             });
-            const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (error) {
             logCollectionError(COLLECTION, error);
             throw error;
-        } finally {
-            clearTimeout(timeoutId);
         }
     },
 
@@ -74,9 +72,13 @@ export const orderService = {
                 collection(db, COLLECTION),
                 where('customerName', '==', customerName)
             );
-            const snapshot = await getDocs(q);
-            if (!snapshot.empty) {
-                const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            const docs = await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: `orders:last:${customerName}`,
+                timeoutMs: 45000,
+                attempts: 2
+            });
+            if (docs.length) {
                 // Sort by createdAt descending in memory to avoid needing a composite index
                 docs.sort((a, b) => {
                     const dateA = a.createdAt?.seconds || 0;
@@ -99,8 +101,12 @@ export const orderService = {
                 collection(db, COLLECTION),
                 where('customerName', '==', customerName)
             );
-            const snapshot = await getDocs(q);
-            const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            const docs = await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: `orders:customer:${customerName}`,
+                timeoutMs: 45000,
+                attempts: 2
+            });
 
             // Sort in memory to avoid index requirements for now
             return docs.sort((a, b) => {

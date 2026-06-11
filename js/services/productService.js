@@ -1,19 +1,15 @@
 import { db } from "../core/firebase.js";
 import {
-    collection,
-    getDocs,
-    query,
-    where,
-    orderBy
+    collection
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
+import { logCollectionError } from "../core/firestoreDiagnostics.js";
+import { getDocsWithCache } from "../core/firestoreRead.js";
 
 const COLLECTION = 'products';
 const CATEGORIES_COLLECTION = 'categories';
 
 export const productService = {
     async getAllProducts() {
-        let timeoutId;
         try {
             // Try to filter by active first, if index exists
             // If not, we might need to fetch all and filter client side or handle the index error
@@ -21,18 +17,19 @@ export const productService = {
             // and filter client side if the list isn't huge.
             const q = collection(db, COLLECTION);
 
-            // Added timeout wrapper to prevent hanging offline
-            const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
+            const rows = await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: 'products:all',
+                timeoutMs: 45000,
+                attempts: 2
             });
-            const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
 
-            return snapshot.docs.map(doc => {
-                const data = doc.data();
+            return rows.map(row => {
+                const data = row || {};
                 // heuristics to find the name
                 const name = data.name || data.name_en || data.title || data.title_en || 'Unknown Product';
                 return {
-                    id: doc.id,
+                    id: data.id,
                     ...data,
                     displayName: name,
                     price: data.price || 0 // Assuming there is a price field, otherwise default to 0
@@ -42,23 +39,22 @@ export const productService = {
             logCollectionError(COLLECTION, error);
             // Fallback for UI if permission denied or other error
             return [];
-        } finally {
-            clearTimeout(timeoutId);
         }
     },
 
     async getAllCategories() {
-        let timeoutId;
         try {
             const q = collection(db, CATEGORIES_COLLECTION);
-            const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(CATEGORIES_COLLECTION, 30000)), 30000);
+            const rows = await getDocsWithCache(q, {
+                collectionName: CATEGORIES_COLLECTION,
+                cacheKey: 'categories:all',
+                timeoutMs: 45000,
+                attempts: 2
             });
-            const snapshot = await Promise.race([getDocs(q), timeoutPromise]);
-            return snapshot.docs.map(doc => {
-                const data = doc.data();
+            return rows.map(row => {
+                const data = row || {};
                 return {
-                    id: doc.id,
+                    id: data.id,
                     ...data,
                     name: data.name || data.name_en || 'Unknown Category'
                 };
@@ -66,8 +62,6 @@ export const productService = {
         } catch (error) {
             logCollectionError(CATEGORIES_COLLECTION, error);
             return [];
-        } finally {
-            clearTimeout(timeoutId);
         }
     }
 };

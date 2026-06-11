@@ -22,6 +22,7 @@ import { deviceIdService } from "./deviceIdService.js";
 import { conflictService } from "./conflictService.js";
 import { dataIntegrityService } from "./dataIntegrityService.js";
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
+import { getDocsWithCache } from "../core/firestoreRead.js";
 import {
     canEditInvoiceDate,
     canEditInvoiceItems,
@@ -160,12 +161,6 @@ function mergeById(target, invoices) {
             target[invoice.id] = Object.assign({}, target[invoice.id] || {}, invoice);
         }
     }
-}
-
-function mapSnapshot(snapshot) {
-    return snapshot.docs.map(function(documentSnapshot) {
-        return Object.assign({ id: documentSnapshot.id }, documentSnapshot.data());
-    });
 }
 
 function sortInvoicesByNewest(a, b) {
@@ -569,15 +564,30 @@ export const invoiceService = {
         );
 
         const groups = await Promise.all([
-            getDocs(openQuery).then(mapSnapshot).catch(function(error) {
+            getDocsWithCache(openQuery, {
+                collectionName: COLLECTION,
+                cacheKey: 'invoices:working:open',
+                timeoutMs: 45000,
+                attempts: 2
+            }).catch(function(error) {
                 logCollectionError(COLLECTION, error, 'fetch open invoices from');
                 return [];
             }),
-            getDocs(todayQuery).then(mapSnapshot).catch(function(error) {
+            getDocsWithCache(todayQuery, {
+                collectionName: COLLECTION,
+                cacheKey: 'invoices:working:today',
+                timeoutMs: 45000,
+                attempts: 2
+            }).catch(function(error) {
                 logCollectionError(COLLECTION, error, 'fetch today invoices from');
                 return [];
             }),
-            getDocs(recentQuery).then(mapSnapshot).catch(function(error) {
+            getDocsWithCache(recentQuery, {
+                collectionName: COLLECTION,
+                cacheKey: 'invoices:working:recent',
+                timeoutMs: 45000,
+                attempts: 2
+            }).catch(function(error) {
                 logCollectionError(COLLECTION, error, 'fetch recent invoices from');
                 return [];
             })
@@ -602,8 +612,13 @@ export const invoiceService = {
             orderBy('createdAt', 'desc'),
             limit(safeLimit)
         );
-        const snapshot = await getDocs(historyQuery);
-        return applyLocalInvoiceOverlays(mapSnapshot(snapshot).filter(isActiveInvoice)).then(function(invoices) {
+        const rows = await getDocsWithCache(historyQuery, {
+            collectionName: COLLECTION,
+            cacheKey: `invoices:history:${safeLimit}`,
+            timeoutMs: 45000,
+            attempts: 2
+        });
+        return applyLocalInvoiceOverlays(rows.filter(isActiveInvoice)).then(function(invoices) {
             return invoices.filter(isActiveInvoice);
         });
     },
@@ -626,11 +641,15 @@ export const invoiceService = {
                 where('customerName', '==', customerName),
                 limit(150)
             );
-            const snapshot = await getDocs(customerQuery).catch(function(error) {
+            const invoices = await getDocsWithCache(customerQuery, {
+                collectionName: COLLECTION,
+                cacheKey: `invoices:customer:${customerName}`,
+                timeoutMs: 45000,
+                attempts: 2
+            }).catch(function(error) {
                 logCollectionError(COLLECTION, error, 'fetch customer invoices from');
-                return { docs: [] };
+                return [];
             });
-            const invoices = mapSnapshot(snapshot);
             for (let invoiceIndex = 0; invoiceIndex < invoices.length; invoiceIndex += 1) {
                 const invoice = invoices[invoiceIndex];
                 byId[invoice.id] = invoice;
@@ -648,8 +667,13 @@ export const invoiceService = {
             where('status', '==', 'archived'),
             limit(ARCHIVED_INVOICE_LIMIT)
         );
-        const snapshot = await getDocs(archivedQuery);
-        return mapSnapshot(snapshot).filter(isArchivedInvoice).sort(function(a, b) {
+        const rows = await getDocsWithCache(archivedQuery, {
+            collectionName: COLLECTION,
+            cacheKey: 'invoices:archived',
+            timeoutMs: 45000,
+            attempts: 2
+        });
+        return rows.filter(isArchivedInvoice).sort(function(a, b) {
             return getMillis(b.archivedAt || b.updatedAt || b.createdAt) - getMillis(a.archivedAt || a.updatedAt || a.createdAt);
         });
     },
@@ -865,8 +889,13 @@ export const invoiceService = {
             orderBy('updatedAt', 'desc'),
             limit(RETURN_ANALYTICS_LIMIT)
         );
-        const snapshot = await getDocs(recentQuery);
-        return mapSnapshot(snapshot).filter(function(invoice) {
+        const rows = await getDocsWithCache(recentQuery, {
+            collectionName: COLLECTION,
+            cacheKey: 'invoices:returns:analytics',
+            timeoutMs: 45000,
+            attempts: 2
+        });
+        return rows.filter(function(invoice) {
             if (Array.isArray(invoice.returns) && invoice.returns.length > 0) {
                 return true;
             }
@@ -993,8 +1022,13 @@ export const invoiceService = {
     async getInvoiceByOrderId(orderId) {
         try {
             const q = query(collection(db, COLLECTION), where('orderId', '==', orderId));
-            const snap = await getDocs(q);
-            if (snap.empty) {
+            const rows = await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: `invoices:order:${orderId}`,
+                timeoutMs: 45000,
+                attempts: 2
+            });
+            if (!rows.length) {
                 const localInvoices = await offlineQueueService.getLocalInvoiceSnapshots();
                 const localIds = Object.keys(localInvoices);
                 for (let index = 0; index < localIds.length; index += 1) {
@@ -1005,8 +1039,7 @@ export const invoiceService = {
                 }
                 return null;
             }
-            const first = snap.docs[0];
-            return Object.assign({ id: first.id }, first.data());
+            return rows[0];
         } catch (error) {
             console.error("Error fetching invoice by order ID:", error);
             throw error;

@@ -4,6 +4,7 @@ import {
     getDoc,
     setDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { readCachedRows, writeCachedRows } from "../core/firestoreRead.js";
 import {
     getStorage,
     ref,
@@ -14,6 +15,7 @@ import {
 const storage = getStorage();
 const COLLECTION = 'settings';
 const DOCUMENT_ID = 'invoice_config';
+const SETTINGS_CACHE_KEY = `${COLLECTION}:${DOCUMENT_ID}`;
 let invoiceSettingsCache = null;
 
 export const DEFAULT_INVOICE_SETTINGS = {
@@ -87,8 +89,14 @@ export const settingsService = {
             invoiceSettingsCache = snap.exists()
                 ? { ...DEFAULT_INVOICE_SETTINGS, ...snap.data(), __fromFallback: false }
                 : { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: false };
+            writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
             return invoiceSettingsCache;
         } catch (error) {
+            const cachedSettings = readCachedRows(SETTINGS_CACHE_KEY)[0];
+            if (cachedSettings) {
+                invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true };
+                return invoiceSettingsCache;
+            }
             console.warn("Failed to fetch settings, using defaults.", error);
             return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
         } finally {
@@ -101,6 +109,7 @@ export const settingsService = {
         const normalized = normalizeInvoiceSettings(data);
         await setDoc(docRef, { ...normalized, updatedAt: new Date() }, { merge: true });
         invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...normalized, __fromFallback: false };
+        writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
         return true;
     },
 

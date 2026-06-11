@@ -2,7 +2,6 @@ import { db } from "../core/firebase.js";
 import {
     collection,
     addDoc,
-    getDocs,
     getDoc,
     doc,
     updateDoc,
@@ -14,6 +13,7 @@ import {
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
+import { getDocsWithCache } from "../core/firestoreRead.js";
 
 const COLLECTION = 'customers';
 
@@ -37,15 +37,15 @@ export const customerService = {
     generateCustomerPin,
 
     async getAllCustomers() {
-        let timeoutId;
         try {
             // Simplified query to avoid index requirements for now
             // We can add filtering/ordering back once index is created in Firebase
-            const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
+            let docs = await getDocsWithCache(collection(db, COLLECTION), {
+                collectionName: COLLECTION,
+                cacheKey: 'customers:all',
+                timeoutMs: 45000,
+                attempts: 2
             });
-            const snapshot = await Promise.race([getDocs(collection(db, COLLECTION)), timeoutPromise]);
-            let docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             const customersNeedingPins = docs.filter(customer => !isCustomerPin(customer.pinCode));
             await Promise.all(customersNeedingPins.map(async (customer) => {
                 const pinCode = normalizeCustomerPin(customer.pinCode);
@@ -70,8 +70,6 @@ export const customerService = {
                 throw error;
             }
             return [];
-        } finally {
-            clearTimeout(timeoutId);
         }
     },
 
@@ -157,8 +155,12 @@ export const customerService = {
                 where('name', '<=', searchTerm + '\uf8ff'),
                 limit(10)
             );
-            const snapshot = await getDocs(q);
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            return await getDocsWithCache(q, {
+                collectionName: COLLECTION,
+                cacheKey: `customers:search:${searchTerm}`,
+                timeoutMs: 30000,
+                attempts: 1
+            });
         } catch (error) {
             // Fallback: If index missing or composite query fails, assume empty
             console.warn("Search failed", error);
