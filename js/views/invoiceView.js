@@ -1948,8 +1948,8 @@ export const renderInvoiceDetail = async ({ id }) => {
             });
 
             // Event Listeners
-            document.getElementById('lang-en').addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
-            document.getElementById('lang-ru').addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
+            document.getElementById('lang-en')?.addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
+            document.getElementById('lang-ru')?.addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
 
             document.getElementById('invoice-date-picker')?.addEventListener('change', async (e) => {
                 if (!canEditInvoiceDate(invoice)) {
@@ -1997,17 +1997,19 @@ export const renderInvoiceDetail = async ({ id }) => {
                 notificationService.success('Approval link copied.');
             });
 
-            document.getElementById('prev-page').addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
-            document.getElementById('next-page').addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
+            document.getElementById('prev-page')?.addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
+            document.getElementById('next-page')?.addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
 
-            document.getElementById('zoom-slider').addEventListener('input', (e) => {
+            document.getElementById('zoom-slider')?.addEventListener('input', (e) => {
                 invoiceScale = parseFloat(e.target.value);
                 const activePage = container.querySelector('.invoice-page.active-page');
                 if (activePage) activePage.style.transform = `scale(${invoiceScale})`;
-                e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
+                if (e.target.nextElementSibling) {
+                    e.target.nextElementSibling.textContent = `${Math.round(invoiceScale * 100)}%`;
+                }
             });
 
-            document.getElementById('btn-copy-qr').addEventListener('click', async () => {
+            document.getElementById('btn-copy-qr')?.addEventListener('click', async () => {
                 const { Modal } = await import("../components/modal.js");
                 const links = [
                     { id: 'customer', label: 'Customer link', url: qrService.buildMobileUrl(invoice, 'customer') },
@@ -2204,22 +2206,33 @@ export const renderInvoiceDetail = async ({ id }) => {
 
             const printWithAfterprint = (afterPrint) => {
                 let handled = false;
+                let fallbackTimer = null;
                 const finish = () => {
                     if (handled) return;
                     handled = true;
+                    if (fallbackTimer) {
+                        clearTimeout(fallbackTimer);
+                    }
                     window.removeEventListener('afterprint', finish);
                     afterPrint();
                 };
                 window.addEventListener('afterprint', finish, { once: true });
-                window.print();
+                try {
+                    window.print();
+                    fallbackTimer = setTimeout(finish, 1500);
+                } catch (error) {
+                    window.removeEventListener('afterprint', finish);
+                    console.error('Could not open print dialog.', error);
+                    notificationService.error('Could not open the print dialog. Try allowing pop-ups/printing for this site.');
+                }
             };
 
-            document.getElementById('btn-print-portrait').addEventListener('click', () => {
+            document.getElementById('btn-print-portrait')?.addEventListener('click', () => {
                 document.body.classList.remove('printing-2up-portrait');
                 printWithAfterprint(handlePrintSuccess);
             });
 
-            document.getElementById('btn-print-landscape').addEventListener('click', () => {
+            document.getElementById('btn-print-landscape')?.addEventListener('click', () => {
                 is2UpMode = true;
                 refreshBody(); // Render duplicate pages in DOM
 
