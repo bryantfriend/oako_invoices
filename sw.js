@@ -1,10 +1,10 @@
-const CACHE_NAME = 'oako-invoices-v1.94';
+const CACHE_NAME = 'oako-invoices-v1.95';
 const ASSETS_TO_CACHE = [
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js?v=1.94',
+    './js/main.js?v=1.95',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',
@@ -16,6 +16,7 @@ const ASSETS_TO_CACHE = [
     './js/core/logger.js',
     './js/core/store.js',
     './js/core/validators.js',
+    './js/core/invoiceWorkflow.js',
     './js/components/card.js',
     './js/components/dataTable.js',
     './js/components/formRepeater.js',
@@ -47,6 +48,7 @@ const ASSETS_TO_CACHE = [
     './js/services/productService.js',
     './js/services/orderService.js',
     './js/services/invoiceService.js',
+    './js/services/dataIntegrityService.js',
     './js/services/pinService.js',
     './js/services/qrService.js',
     './js/services/qrActivityService.js',
@@ -147,8 +149,9 @@ self.addEventListener('fetch', (event) => {
                         // Clone response
                         const responseToCache = response.clone();
 
-                        // Cache new dynamic resources if needed (e.g. Firebase SDKs if not precached perfectly)
-                        if (url.origin === location.origin || url.origin === 'https://www.gstatic.com') {
+                        const cacheableSameOrigin = url.origin === location.origin && response.type === 'basic';
+                        const cacheableFirebaseSdk = url.origin === 'https://www.gstatic.com' && ['basic', 'cors'].includes(response.type);
+                        if (cacheableSameOrigin || cacheableFirebaseSdk) {
                             caches.open(CACHE_NAME)
                                 .then((cache) => {
                                     cache.put(event.request, responseToCache);

@@ -12,6 +12,21 @@ import {
 import { store } from "./store.js";
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
+const ADMIN_PROFILE_TIMEOUT_MS = 12000;
+const ADMIN_PROFILE_CACHE_KEY = 'kyrgyz-organics-admin-profile';
+
+function withTimeout(promise, timeoutMs, label) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            const error = new Error(`${label} timeout after ${timeoutMs}ms`);
+            error.code = 'timeout';
+            reject(error);
+        }, timeoutMs);
+    });
+
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
 
 class AuthService {
     constructor() {
@@ -128,6 +143,39 @@ class AuthService {
         return !!profile && ADMIN_ROLES.includes(profile.role);
     }
 
+    getCachedAdminProfile(uid) {
+        try {
+            const raw = window.localStorage.getItem(ADMIN_PROFILE_CACHE_KEY);
+            if (!raw) {
+                return null;
+            }
+            const cached = JSON.parse(raw);
+            if (!cached || cached.id !== uid || !this.isValidAdminProfile(cached)) {
+                return null;
+            }
+            return cached;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    setCachedAdminProfile(profile) {
+        if (!this.isValidAdminProfile(profile)) {
+            return;
+        }
+        try {
+            window.localStorage.setItem(ADMIN_PROFILE_CACHE_KEY, JSON.stringify({
+                id: profile.id,
+                role: profile.role,
+                name: profile.name || '',
+                email: profile.email || '',
+                cachedAt: new Date().toISOString()
+            }));
+        } catch (error) {
+            console.warn('[auth] Could not cache admin profile.', error);
+        }
+    }
+
     async verifyAdminProfile(user, source = 'auth') {
         if (!user) {
             return null;
@@ -135,7 +183,7 @@ class AuthService {
 
         try {
             const profileRef = doc(db, 'users', user.uid);
-            const snapshot = await getDoc(profileRef);
+            const snapshot = await withTimeout(getDoc(profileRef), ADMIN_PROFILE_TIMEOUT_MS, 'Admin profile fetch');
             const profile = snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
             const role = profile ? profile.role || null : null;
 
@@ -156,15 +204,18 @@ class AuthService {
                 });
             }
 
+            this.setCachedAdminProfile(profile);
             return profile;
         } catch (error) {
+            const cachedProfile = this.getCachedAdminProfile(user.uid);
             console.warn('[auth] Could not read admin profile for signed-in user.', {
                 source,
                 uid: user.uid,
                 code: error.code || '',
-                message: error.message || ''
+                message: error.message || '',
+                usingCachedAdminProfile: !!cachedProfile
             });
-            return null;
+            return cachedProfile;
         }
     }
 }
