@@ -1,10 +1,11 @@
-const CACHE_NAME = 'oako-invoices-v1.97';
+const CACHE_NAME = 'oako-invoices-v1.98';
 const ASSETS_TO_CACHE = [
+    './index.html',
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js?v=1.97',
+    './js/main.js?v=1.98',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',
@@ -111,15 +112,16 @@ self.addEventListener('fetch', (event) => {
             fetch(new Request(event.request, { cache: 'no-store' }))
                 .then((response) => {
                     if (response && response.status === 200 && response.type === 'basic') {
-                        const responseToCache = response.clone();
                         caches.open(CACHE_NAME).then((cache) => {
-                            cache.put('./index.html', responseToCache);
+                            cache.put('./index.html', response.clone());
+                            cache.put(event.request, response.clone());
                         });
                     }
                     return response;
                 })
                 .catch(async () => {
-                    const cachedIndex = await caches.match('./index.html');
+                    const cachedIndex = await caches.match(event.request)
+                        || await caches.match('./index.html');
                     return cachedIndex || new Response('App shell is unavailable offline.', {
                         status: 503,
                         headers: { 'Content-Type': 'text/plain' }

@@ -4,6 +4,8 @@ import { createCollectionTimeoutError, logCollectionError } from "./firestoreDia
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_ATTEMPTS = 2;
 const CACHE_PREFIX = 'kyrgyz-organics-read-cache:';
+const MAX_LOCAL_CACHE_ENTRY_BYTES = 180000;
+const MAX_LOCAL_CACHE_TOTAL_BYTES = 900000;
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -11,6 +13,50 @@ function sleep(ms) {
 
 function getCacheKey(key) {
     return CACHE_PREFIX + String(key || '').trim();
+}
+
+function getStorageEntries() {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return [];
+    }
+
+    const entries = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index);
+        if (!key || !key.startsWith(CACHE_PREFIX)) {
+            continue;
+        }
+
+        const value = window.localStorage.getItem(key) || '';
+        let cachedAt = '';
+        try {
+            cachedAt = JSON.parse(value).cachedAt || '';
+        } catch (_) {
+            cachedAt = '';
+        }
+        entries.push({
+            key,
+            bytes: key.length + value.length,
+            cachedAt
+        });
+    }
+    return entries;
+}
+
+function pruneCacheStorage(targetBytes = MAX_LOCAL_CACHE_TOTAL_BYTES) {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+    }
+
+    const entries = getStorageEntries().sort((a, b) => {
+        return String(a.cachedAt || '').localeCompare(String(b.cachedAt || ''));
+    });
+    let totalBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+
+    for (let index = 0; index < entries.length && totalBytes > targetBytes; index += 1) {
+        window.localStorage.removeItem(entries[index].key);
+        totalBytes -= entries[index].bytes;
+    }
 }
 
 function normalizeCachedRows(rows) {
@@ -40,13 +86,32 @@ function writeCachedRows(cacheKey, rows) {
         return;
     }
 
+    const storageKey = getCacheKey(cacheKey);
+    const serialized = JSON.stringify({
+        rows,
+        cachedAt: new Date().toISOString()
+    });
+
+    if (serialized.length > MAX_LOCAL_CACHE_ENTRY_BYTES) {
+        window.localStorage.removeItem(storageKey);
+        pruneCacheStorage();
+        return;
+    }
+
     try {
-        window.localStorage.setItem(getCacheKey(cacheKey), JSON.stringify({
-            rows,
-            cachedAt: new Date().toISOString()
-        }));
+        pruneCacheStorage(MAX_LOCAL_CACHE_TOTAL_BYTES - serialized.length);
+        window.localStorage.setItem(storageKey, serialized);
     } catch (error) {
-        console.warn('[firestore-read] Could not write cache.', { cacheKey, error });
+        if (error && (error.name === 'QuotaExceededError' || error.code === 22)) {
+            pruneCacheStorage(Math.floor(MAX_LOCAL_CACHE_TOTAL_BYTES / 2));
+            try {
+                window.localStorage.setItem(storageKey, serialized);
+            } catch (_) {
+                window.localStorage.removeItem(storageKey);
+            }
+            return;
+        }
+        console.debug('[firestore-read] Skipped local fallback cache write.', { cacheKey, message: error?.message || '' });
     }
 }
 
