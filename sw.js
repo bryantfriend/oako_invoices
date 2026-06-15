@@ -1,11 +1,11 @@
-const CACHE_NAME = 'oako-invoices-v1.98';
+const CACHE_NAME = 'oako-invoices-v1.99';
 const ASSETS_TO_CACHE = [
     './index.html',
     './manifest.json',
     './css/variables.css',
     './css/animations.css',
     './css/styles.css',
-    './js/main.js?v=1.98',
+    './js/main.js?v=1.99',
     './js/router.js',
     './js/config.js',
     './js/core/constants.js',
@@ -112,10 +112,16 @@ self.addEventListener('fetch', (event) => {
             fetch(new Request(event.request, { cache: 'no-store' }))
                 .then((response) => {
                     if (response && response.status === 200 && response.type === 'basic') {
-                        caches.open(CACHE_NAME).then((cache) => {
-                            cache.put('./index.html', response.clone());
-                            cache.put(event.request, response.clone());
-                        });
+                        const indexResponse = response.clone();
+                        const requestResponse = response.clone();
+                        caches.open(CACHE_NAME)
+                            .then((cache) => Promise.all([
+                                cache.put('./index.html', indexResponse),
+                                cache.put(event.request, requestResponse)
+                            ]))
+                            .catch((error) => {
+                                console.warn('[sw] Navigation cache update failed.', error);
+                            });
                     }
                     return response;
                 })
