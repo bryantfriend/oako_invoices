@@ -7,10 +7,10 @@ const STATUS_CONFIG = {
     [ORDER_STATUS.PENDING]: { color: 'var(--color-warning)', bg: 'var(--color-warning-bg)' },
     approved: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
     [ORDER_STATUS.CONFIRMED]: { color: 'var(--color-info)', bg: 'var(--color-info-bg)' },
-    [ORDER_STATUS.RETURNED]: { color: '#b45309', bg: '#fffbeb' },
-    partially_returned: { color: '#92400e', bg: '#fef3c7' },
-    partial_return: { color: '#92400e', bg: '#fef3c7' },
-    fully_returned: { color: '#b45309', bg: '#fffbeb' },
+    [ORDER_STATUS.RETURNED]: { color: '#8a541b', bg: 'var(--color-brand-earth-bg)' },
+    partially_returned: { color: '#8a541b', bg: 'var(--color-brand-earth-bg)' },
+    partial_return: { color: '#8a541b', bg: 'var(--color-brand-earth-bg)' },
+    fully_returned: { color: '#8a541b', bg: 'var(--color-brand-earth-bg)' },
     [ORDER_STATUS.FULFILLED]: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     fullfilled: { color: 'var(--color-success)', bg: 'var(--color-success-bg)' },
     [ORDER_STATUS.CANCELLED]: { color: 'var(--color-error)', bg: 'var(--color-error-bg)' },
@@ -36,7 +36,7 @@ export const createStatusBadge = (statusOrRecord) => {
             font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0;
             line-height: 1;
         ">
             ${label}

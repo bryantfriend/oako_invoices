@@ -1,5 +1,5 @@
 export class DataTable {
-    constructor({ columns, data, onRowClick, actions, onSort, sortKey, sortOrder, sortHandlerName = 'handleTableSort' }) {
+    constructor({ columns, data, onRowClick, actions, onSort, sortKey, sortOrder, sortHandlerName = 'handleTableSort', mobileCard }) {
         this.columns = columns; // [{ key, label, render, sortable }]
         this.data = data || [];
         this.onRowClick = onRowClick;
@@ -8,11 +8,12 @@ export class DataTable {
         this.sortKey = sortKey;
         this.sortOrder = sortOrder; // 'asc' | 'desc'
         this.sortHandlerName = sortHandlerName;
+        this.mobileCard = mobileCard; // optional function(row) -> html for narrow screens
     }
 
     render() {
         return `
-            <div style="overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); -webkit-overflow-scrolling: touch;">
+            <div class="data-table-scroll ${this.mobileCard ? 'has-mobile-cards' : ''}" style="overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); -webkit-overflow-scrolling: touch;">
                 <table style="width: 100%; min-width: 800px; border-collapse: collapse; background: white; font-size: var(--text-sm);">
                     <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
                         <tr>
@@ -48,6 +49,11 @@ export class DataTable {
                     </tbody>
                 </table>
             </div>
+            ${this.mobileCard ? `
+                <div class="data-card-list">
+                    ${this.data.length === 0 ? this.renderMobileEmptyState() : this.renderMobileCards()}
+                </div>
+            ` : ''}
         `;
     }
 
@@ -85,6 +91,26 @@ export class DataTable {
                     No data available
                 </td>
             </tr>
+        `;
+    }
+
+    renderMobileCards() {
+        return this.data.map(row => `
+            <div
+                class="data-row data-card"
+                data-id="${row.id}"
+                style="cursor: ${this.onRowClick ? 'pointer' : 'default'};"
+            >
+                ${this.mobileCard(row)}
+            </div>
+        `).join('');
+    }
+
+    renderMobileEmptyState() {
+        return `
+            <div class="data-card-empty">
+                No data available
+            </div>
         `;
     }
 

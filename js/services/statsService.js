@@ -708,6 +708,7 @@ export const statsService = {
         return {
             labels: sorted.map(([name]) => name.length > 18 ? name.slice(0, 16) + '...' : name),
             data: sorted.map(([, stats]) => stats.units),
+            revenue: sorted.map(([, stats]) => stats.revenue),
             ids: sorted.map(([, stats]) => stats.id),
             fullLabels: sorted.map(([name]) => name)
         };
@@ -742,6 +743,7 @@ export const statsService = {
         return {
             labels: sorted.map(([, stats]) => stats.name.length > 18 ? stats.name.slice(0, 16) + '...' : stats.name),
             data: sorted.map(([, stats]) => stats.units),
+            revenue: sorted.map(([, stats]) => stats.revenue),
             ids: sorted.map(([id]) => id),
             fullLabels: sorted.map(([, stats]) => stats.name)
         };

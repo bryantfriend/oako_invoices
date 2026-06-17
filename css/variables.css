@@ -2,41 +2,45 @@
     /* -- Colors -- */
     /* Brand - Organic Greens */
     /* HSL: 150 deg (green), 30-50% sat */
-    --color-primary-50: #effef6;
-    --color-primary-100: #d6fce7;
-    --color-primary-200: #aef8d1;
-    --color-primary-300: #76f0b5;
-    --color-primary-400: #3ce295;
-    --color-primary-500: #14c677;
+    --color-primary-50: #eef8ef;
+    --color-primary-100: #d8efdc;
+    --color-primary-200: #b7ddb9;
+    --color-primary-300: #86c891;
+    --color-primary-400: #58ad69;
+    --color-primary-500: #2f8f4a;
     /* Main Brand */
-    --color-primary-600: #0a9f5d;
-    --color-primary-700: #0d7f4c;
-    --color-primary-800: #10643f;
-    --color-primary-900: #125236;
+    --color-primary-600: #1f7a3d;
+    --color-primary-700: #195f33;
+    --color-primary-800: #184d2d;
+    --color-primary-900: #143f28;
+    --color-brand-cream: #fffaf0;
+    --color-brand-mint: #e7f4e8;
+    --color-brand-earth: #b7793d;
+    --color-brand-earth-bg: #fff4df;
 
     /* Neutrals - Warm Grays */
     --color-gray-0: #ffffff;
-    --color-gray-50: #f9fafb;
-    --color-gray-100: #f3f4f6;
-    --color-gray-200: #e5e7eb;
-    --color-gray-300: #d1d5db;
-    --color-gray-400: #9ca3af;
-    --color-gray-500: #6b7280;
-    --color-gray-600: #4b5563;
-    --color-gray-700: #374151;
+    --color-gray-50: #fbfaf7;
+    --color-gray-100: #f1eee7;
+    --color-gray-200: #e5dfd3;
+    --color-gray-300: #d4cab8;
+    --color-gray-400: #9d927f;
+    --color-gray-500: #746b5c;
+    --color-gray-600: #565044;
+    --color-gray-700: #3f3b33;
     /* Main Text */
-    --color-gray-800: #1f2937;
-    --color-gray-900: #111827;
+    --color-gray-800: #27251f;
+    --color-gray-900: #171610;
 
     /* Semantic */
-    --color-success: #14c677;
-    --color-success-bg: #effef6;
-    --color-warning: #f59e0b;
-    --color-warning-bg: #fffbeb;
-    --color-error: #ef4444;
-    --color-error-bg: #fef2f2;
-    --color-info: #3b82f6;
-    --color-info-bg: #eff6ff;
+    --color-success: #2f8f4a;
+    --color-success-bg: #eef8ef;
+    --color-warning: #b7793d;
+    --color-warning-bg: #fff4df;
+    --color-error: #c24132;
+    --color-error-bg: #fff1ed;
+    --color-info: #27667b;
+    --color-info-bg: #edf7f9;
 
     /* -- Typography -- */
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
@@ -70,7 +74,7 @@
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-card: 0 12px 28px rgba(43, 37, 24, 0.07), 0 2px 8px rgba(43, 37, 24, 0.04);
 
     /* -- Radius -- */
     --radius-sm: 0.375rem;

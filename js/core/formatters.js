@@ -1,9 +1,18 @@
 export const formatCurrency = (amount, currency = 'KGS') => {
+    const value = Number(amount) || 0;
+
+    if (currency === 'KGS') {
+        return `${new Intl.NumberFormat('ru-KG', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(value)} сом`;
+    }
+
     return new Intl.NumberFormat('ru-KG', {
         style: 'currency',
         currency: currency,
         minimumFractionDigits: 0
-    }).format(amount);
+    }).format(value);
 };
 
 export const formatDate = (val) => {
