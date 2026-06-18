@@ -450,6 +450,27 @@ export const renderInvoices = async () => {
             sortKey: sort.key,
             sortOrder: sort.order,
             onRowClick: true,
+            mobileCard: (row) => `
+                <div style="display: grid; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; gap: 10px; align-items: flex-start;">
+                        <span style="min-width: 0;">
+                            <strong style="display: block; color: var(--color-gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(row.customerName || 'Customer')}</strong>
+                            <small style="color: var(--color-gray-500); font-family: monospace;">${escapeHtml(row.invoiceNumber || row.id || '-')}</small>
+                        </span>
+                        ${createStatusBadge(row)}
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: 12px;">
+                        <div><span style="display: block; color: var(--color-gray-500);">Amount</span><strong>${formatCurrency(row.totalAmount || 0)}</strong></div>
+                        <div><span style="display: block; color: var(--color-gray-500);">Date</span><strong>${formatDate((row.createdAt && row.createdAt.toDate) ? row.createdAt.toDate() : row.createdAt)}</strong></div>
+                        <div><span style="display: block; color: var(--color-gray-500);">Print</span><strong>${row.isPrinted ? 'Printed' : 'Needed'}</strong></div>
+                    </div>
+                    <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                        ${renderInvoiceSyncPill(row)}
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.viewInvoice('${row.id}')">${t('btn_view') || 'View'}</button>
+                        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.archiveInvoice('${row.id}')">Archive</button>
+                    </div>
+                </div>
+            `,
             actions: (row) => `
                 <div style="display: flex; gap: 4px;">
                     <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.playClickAnimation(event, 'print'); window.viewInvoice('${row.id}')">
@@ -917,6 +938,55 @@ export const renderInvoiceDetail = async ({ id }) => {
                     `).join('')}
                 </select>
             </div>
+        `;
+    }
+
+    function renderInvoiceLifecycle() {
+        const currentStatus = getCanonicalInvoiceStatus(invoice.status || 'draft');
+        const returnState = getReturnState(invoice);
+        const hasApprovalResponse = approvalLink && ['accepted', 'modified'].includes(approvalLink.status);
+        const isPrinted = Boolean(invoice.isPrinted || invoice.printedAt || invoice.printed === true);
+        const isReturned = returnState === 'partial' || returnState === 'full' || ['returned', 'partially_returned', 'fully_returned'].includes(currentStatus);
+        const isFulfilled = ['fulfilled', 'fullfilled'].includes(currentStatus) || isReturned;
+        const isApproved = ['approved', 'fulfilled', 'fullfilled', 'returned', 'partially_returned', 'fully_returned'].includes(currentStatus) || hasApprovalResponse;
+        const isSubmitted = currentStatus !== 'draft' || Boolean(approvalLink);
+
+        const steps = [
+            { key: 'draft', label: 'Draft', hint: 'Invoice created', done: true },
+            { key: 'submitted', label: 'Submitted', hint: approvalLink ? 'Review link ready' : 'Ready to send', done: isSubmitted },
+            { key: 'approved', label: 'Approved', hint: hasApprovalResponse ? 'Customer responded' : 'Awaiting approval', done: isApproved },
+            { key: 'printed', label: 'Printed', hint: isPrinted ? 'Copy printed' : 'Print when ready', done: isPrinted },
+            { key: 'fulfilled', label: 'Fulfilled', hint: isFulfilled ? 'Delivery complete' : 'Waiting delivery', done: isFulfilled },
+            { key: 'closed', label: 'Closed', hint: isReturned ? 'Return recorded' : 'Paid or archived', done: isReturned || currentStatus === 'paid' }
+        ];
+
+        const firstOpenIndex = steps.findIndex(step => !step.done);
+        const currentIndex = firstOpenIndex === -1 ? steps.length - 1 : firstOpenIndex;
+        const nextAction = firstOpenIndex === -1
+            ? 'Invoice is ready for cleanup or archive.'
+            : steps[firstOpenIndex].hint;
+
+        return `
+            <section class="invoice-lifecycle no-print">
+                <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div>
+                        <div style="font-size: 12px; font-weight: 900; color: var(--color-gray-900);">Invoice Lifecycle</div>
+                        <div style="font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">Next: ${escapeHtml(nextAction)}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        ${approvalLink ? `<span style="font-size: 11px; font-weight: 900; color: var(--color-primary-700); background: var(--color-primary-50); border: 1px solid var(--color-primary-100); border-radius: 999px; padding: 5px 9px;">Approval: ${escapeHtml(invoiceController.getApprovalDisplayStatus(approvalLink))}</span>` : ''}
+                        ${isReturned ? `<span style="font-size: 11px; font-weight: 900; color: #991b1b; background: #fee2e2; border-radius: 999px; padding: 5px 9px;">Return active</span>` : ''}
+                    </div>
+                </div>
+                <div class="invoice-lifecycle-track">
+                    ${steps.map((step, index) => `
+                        <div class="invoice-lifecycle-step ${step.done ? 'done' : ''} ${index === currentIndex ? 'current' : ''}">
+                            <span class="invoice-lifecycle-label">${step.done ? '✓ ' : ''}${escapeHtml(step.label)}</span>
+                            <span class="invoice-lifecycle-hint">${escapeHtml(step.hint)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </section>
         `;
     }
 
@@ -1719,6 +1789,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     <button id="btn-print-landscape" class="btn btn-secondary btn-sm" title="2 Invoices stacked on Portrait A4">📄 2-up Portrait</button>
                 </div>
             </div>
+            ${renderInvoiceLifecycle()}
             ${getInvoiceWorkflowLockMessage(invoice) ? `<div class="no-print" style="padding: 8px 16px; background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; font-size: 12px; font-weight: 800; text-align: center;">${escapeHtml(getInvoiceWorkflowLockMessage(invoice))}</div>` : ''}
             ${renderConflictReview(openConflict)}
             ${renderApprovalResponseBanner(approvalLink)}

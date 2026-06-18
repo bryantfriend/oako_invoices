@@ -67,6 +67,7 @@ export const renderDashboard = async () => {
 
     // Internal State
     let allOrders = [];
+    let activeOrders = [];
     let returnOrders = [];
     let returnInvoices = [];
     let filteredOrders = [];
@@ -81,6 +82,7 @@ export const renderDashboard = async () => {
     let invoiceRefreshTimer = null;
     const pendingCheckmarkUpdates = new Set();
     const updatedCheckmarkUpdates = new Set();
+    const getActiveOrders = (orders = []) => orders.filter(order => order.archived !== true);
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
@@ -88,10 +90,11 @@ export const renderDashboard = async () => {
         dashboardController.loadDashboard(),
         inventoryController.loadInventoryData(today)
     ]);
-    allOrders = orders.filter(order => order.archived !== true);
+    allOrders = orders;
+    activeOrders = getActiveOrders(allOrders);
     returnOrders = loadedReturnOrders;
     returnInvoices = loadedReturnInvoices;
-    filteredOrders = [...allOrders];
+    filteredOrders = [...activeOrders];
     inventoryCategories = inventoryData;
 
     const getScrollPosition = () => container.scrollTop || 0;
@@ -109,7 +112,8 @@ export const renderDashboard = async () => {
             inventoryController.loadInventoryData(today)
         ]);
 
-        allOrders = refreshedOrders.filter(order => order.archived !== true);
+        allOrders = refreshedOrders;
+        activeOrders = getActiveOrders(allOrders);
         returnOrders = refreshedReturnOrders;
         returnInvoices = refreshedReturnInvoices;
         inventoryCategories = refreshedInventoryData;
@@ -148,6 +152,7 @@ export const renderDashboard = async () => {
         };
 
         allOrders.forEach(applyUpdate);
+        activeOrders.forEach(applyUpdate);
         filteredOrders.forEach(applyUpdate);
     };
 
@@ -497,42 +502,42 @@ export const renderDashboard = async () => {
                 title: 'Needs Invoice',
                 action: 'Confirm or generate',
                 tone: '#eff6ff',
-                count: allOrders.filter(order => ['draft', 'pending'].includes(order.status)).length
+                count: activeOrders.filter(order => ['draft', 'pending'].includes(order.status)).length
             },
             {
                 id: 'needs_printing',
                 title: 'Needs Printing',
                 action: 'Print customer copy',
                 tone: '#fff7ed',
-                count: allOrders.filter(order => payableStatuses.includes(order.status) && !order.isPrinted).length
+                count: activeOrders.filter(order => payableStatuses.includes(order.status) && !order.isPrinted).length
             },
             {
                 id: 'due-today',
                 title: 'Due Today',
                 action: 'Collect or fulfill',
                 tone: '#fefce8',
-                count: allOrders.filter(order => order.agingDays === 0 && payableStatuses.includes(order.status)).length
+                count: activeOrders.filter(order => order.agingDays === 0 && payableStatuses.includes(order.status)).length
             },
             {
                 id: 'overdue',
                 title: 'Overdue',
                 action: 'Follow up',
                 tone: '#fef2f2',
-                count: allOrders.filter(order => order.agingDays >= 1 && payableStatuses.includes(order.status)).length
+                count: activeOrders.filter(order => order.agingDays >= 1 && payableStatuses.includes(order.status)).length
             },
             {
                 id: 'any_return',
                 title: 'Returns Pending',
                 action: 'Review returned items',
                 tone: '#fff7ed',
-                count: allOrders.filter(order => isReturnFilterMatch(order, 'any_return') || order.returnRequested).length
+                count: activeOrders.filter(order => isReturnFilterMatch(order, 'any_return') || order.returnRequested).length
             },
             {
                 id: 'ready_archive',
                 title: 'Ready to Archive',
                 action: 'Clean active list',
                 tone: '#f0fdf4',
-                count: allOrders.filter(order => ['paid', 'returned', 'fully_returned'].includes(order.status) || isReturnFilterMatch(order, 'returned')).length
+                count: activeOrders.filter(order => ['paid', 'returned', 'fully_returned'].includes(order.status) || isReturnFilterMatch(order, 'returned')).length
             }
         ];
 
@@ -885,7 +890,7 @@ export const renderDashboard = async () => {
     };
 
     const applyFilters = () => {
-        filteredOrders = allOrders.filter(o => {
+        filteredOrders = activeOrders.filter(o => {
             const matchesStatus = filters.status === 'all' ? true :
                 filters.status === 'needs_invoice' ? ['draft', 'pending'].includes(o.status) :
                 filters.status === 'needs_printing' ? (!o.isPrinted && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
@@ -1227,9 +1232,14 @@ export const renderDashboard = async () => {
             const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.archiveOrders(ids);
             await gamificationService.awardAction('ordersArchived', ids.length);
-            allOrders = allOrders.filter(order => !selectedOrderIds.has(order.id));
+            allOrders.forEach(order => {
+                if (selectedOrderIds.has(order.id)) {
+                    order.archived = true;
+                }
+            });
+            activeOrders = activeOrders.filter(order => !selectedOrderIds.has(order.id));
             selectedOrderIds.clear();
-            applyFilters();
+            renderUI();
         });
 
         const alertStrip = document.getElementById('risk-alert');

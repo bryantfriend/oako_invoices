@@ -12,5 +12,5 @@ export const APP_CONFIG = {
     ITEM_LIMIT: 50,
     CURRENCY: 'KGS',
     LOCALE: 'ru-KG',
-    VERSION: '2.00'
+    VERSION: '2.01'
 };

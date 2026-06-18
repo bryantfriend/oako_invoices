@@ -197,6 +197,42 @@ function mobileShell(content) {
                 .qr-button.warning { background: linear-gradient(135deg, #b45309, #f59e0b); box-shadow: 0 14px 28px rgba(180, 83, 9, 0.22); }
                 .qr-button.ghost { color: #24522d; background: #ecfdf3; box-shadow: none; border: 1px solid #bbf7d0; }
                 .qr-actions { display: grid; gap: 12px; }
+                .qr-task-grid { display: grid; gap: 12px; }
+                .qr-task-card {
+                    width: 100%;
+                    border: 1px solid #dbe8d8;
+                    border-radius: 22px;
+                    padding: 16px;
+                    background: #fff;
+                    text-align: left;
+                    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+                    cursor: pointer;
+                }
+                .qr-task-card.primary {
+                    border-color: #86efac;
+                    background: linear-gradient(135deg, #f0fdf4, #fff);
+                }
+                .qr-task-kicker {
+                    display: inline-flex;
+                    border-radius: 999px;
+                    padding: 4px 8px;
+                    margin-bottom: 9px;
+                    background: #dcfce7;
+                    color: #166534;
+                    font-size: 11px;
+                    font-weight: 950;
+                }
+                .qr-task-title { display: block; color: #172554; font-size: 18px; font-weight: 950; }
+                .qr-task-copy { display: block; color: #64748b; font-size: 13px; line-height: 1.4; margin-top: 4px; }
+                .qr-sticky-actions {
+                    position: sticky;
+                    bottom: 0;
+                    display: grid;
+                    gap: 10px;
+                    padding-top: 12px;
+                    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,0.98) 22%, rgba(255,255,255,0.98));
+                    backdrop-filter: blur(10px);
+                }
                 .qr-field {
                     width: 100%;
                     box-sizing: border-box;
@@ -412,10 +448,28 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
             : (isCustomer ? 'View invoice, request returns, or prepare a re-order.' : `${invoice.customerName || 'Customer'} · ${formatDate(invoice.createdAt)}`);
         app.innerHTML = mobileShell(`
             ${renderHero(title, subtitle)}
-            <section class="qr-card qr-actions">
-                <button class="qr-button secondary" id="qr-view-invoice">View invoice</button>
-                <button class="qr-button warning" id="qr-request-return">Request Return</button>
-                ${!isCourier ? `<button class="qr-button" id="qr-new-order">New Order</button>` : ''}
+            <section class="qr-card">
+                <h2 class="qr-section-title">${isCourier ? 'Delivery tasks' : 'Invoice tasks'}</h2>
+                <p class="qr-note">${isCourier ? 'Start with returns if anything came back from the customer.' : 'Choose the action you need. Re-order keeps the same basket ready to adjust.'}</p>
+                <div class="qr-task-grid">
+                    <button class="qr-task-card ${isCourier ? 'primary' : ''}" id="qr-request-return" type="button">
+                        <span class="qr-task-kicker">${isCourier ? 'Recommended' : 'Return'}</span>
+                        <span class="qr-task-title">Request return</span>
+                        <span class="qr-task-copy">${isCourier ? 'Save returned items with optional photo proof.' : 'Prepare a WhatsApp return request for selected products.'}</span>
+                    </button>
+                    ${!isCourier ? `
+                        <button class="qr-task-card primary" id="qr-new-order" type="button">
+                            <span class="qr-task-kicker">Fast reorder</span>
+                            <span class="qr-task-title">New order</span>
+                            <span class="qr-task-copy">Start from this invoice basket and adjust quantities.</span>
+                        </button>
+                    ` : ''}
+                    <button class="qr-task-card" id="qr-view-invoice" type="button">
+                        <span class="qr-task-kicker">Details</span>
+                        <span class="qr-task-title">View invoice</span>
+                        <span class="qr-task-copy">Check products, quantities, status, and total amount.</span>
+                    </button>
+                </div>
             </section>
         `);
 
@@ -443,7 +497,9 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                     <strong>Total</strong>
                     <strong>${formatCurrency(invoice.totalAmount || 0)}</strong>
                 </div>
-                <button class="qr-button ghost" id="qr-back">Back to actions</button>
+                <div class="qr-sticky-actions">
+                    <button class="qr-button ghost" id="qr-back">Back to actions</button>
+                </div>
             </section>
         `);
         document.getElementById('qr-back').addEventListener('click', renderMenu);
@@ -504,8 +560,10 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                 </div>
             ` : ''}
             <div class="qr-error" id="${formId}-error"></div>
-            <button class="qr-button" type="submit">${escapeHtml(buttonText)}</button>
-            <button class="qr-button ghost" id="${formId}-back" type="button" style="margin-top: 10px;">Back to actions</button>
+            <div class="qr-sticky-actions">
+                <button class="qr-button" type="submit">${escapeHtml(buttonText)}</button>
+                <button class="qr-button ghost" id="${formId}-back" type="button">Back to actions</button>
+            </div>
         </form>
     `;
 
@@ -515,8 +573,10 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
             <section class="qr-card">
                 <h2 class="qr-section-title">Ready to send</h2>
                 <pre style="white-space: pre-wrap; font-family: inherit; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px; color: #334155;">${escapeHtml(message)}</pre>
-                <button class="qr-button" id="qr-send-whatsapp">Open WhatsApp</button>
-                <button class="qr-button ghost" id="qr-preview-back" style="margin-top: 10px;">Back to actions</button>
+                <div class="qr-sticky-actions">
+                    <button class="qr-button" id="qr-send-whatsapp">Open WhatsApp</button>
+                    <button class="qr-button ghost" id="qr-preview-back">Back to actions</button>
+                </div>
             </section>
         `);
         document.getElementById('qr-send-whatsapp').addEventListener('click', () => {

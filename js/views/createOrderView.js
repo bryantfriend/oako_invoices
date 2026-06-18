@@ -91,6 +91,7 @@ export const renderCreateOrder = async () => {
                             <label for="notes">Notes</label>
                             <textarea id="notes" name="notes" rows="2" placeholder="Special instructions...">${escapeHtml(repeatOrderDraft?.notes || '')}</textarea>
                         </div>
+                        <div id="smart-basket-panel" class="smart-basket-panel"></div>
                     `
     })}
 
@@ -193,6 +194,83 @@ export const renderCreateOrder = async () => {
         if (el) {
             el.textContent = formatCurrency(total);
         }
+    };
+
+    const normalizeOrderItems = (items = []) => items.map(item => ({
+        productId: item.productId || '',
+        name: item.name || item.productName || item.name_en || 'Product',
+        name_en: item.name_en || item.name || item.productName || 'Product',
+        name_ru: item.name_ru || '',
+        name_kg: item.name_kg || '',
+        categoryId: item.categoryId || item.category_id || item.category || '',
+        categoryName: item.categoryName || item.category_name || item.category || '',
+        price: Number(item.price) || 0,
+        quantity: Number(item.quantity) || 1,
+        imageUrl: item.imageUrl || '',
+        weight: item.weight || ''
+    }));
+
+    const renderSmartBasketPanel = (customerName, lastItems = []) => {
+        const panel = document.getElementById('smart-basket-panel');
+        if (!panel) return;
+
+        if (!lastItems.length) {
+            panel.classList.remove('active');
+            panel.innerHTML = '';
+            return;
+        }
+
+        const normalizedItems = normalizeOrderItems(lastItems);
+        const total = normalizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        panel.classList.add('active');
+        panel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 12px; font-weight: 900; color: var(--color-primary-800); text-transform: uppercase;">Usual Basket Found</div>
+                    <div style="font-size: 13px; color: var(--color-gray-700); margin-top: 2px;">
+                        ${escapeHtml(customerName)} last ordered ${normalizedItems.length} item${normalizedItems.length === 1 ? '' : 's'} · ${formatCurrency(total)}
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" id="apply-usual-basket" class="btn btn-primary btn-sm">Use Basket</button>
+                    <button type="button" id="add-usual-basket" class="btn btn-secondary btn-sm">Add Missing</button>
+                    <button type="button" id="dismiss-usual-basket" class="btn btn-secondary btn-sm">Ignore</button>
+                </div>
+            </div>
+            <div class="smart-basket-items">
+                ${normalizedItems.slice(0, 6).map(item => `
+                    <div class="smart-basket-item">
+                        <strong style="display: block; font-size: 12px; color: var(--color-gray-900);">${escapeHtml(item.name)}</strong>
+                        <span style="display: block; font-size: 11px; color: var(--color-gray-500); margin-top: 2px;">Qty ${item.quantity} · ${formatCurrency(item.price)}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        document.getElementById('apply-usual-basket')?.addEventListener('click', () => {
+            selectedItems = normalizedItems;
+            renderItems();
+            panel.classList.remove('active');
+            notificationService.success(`Usual basket loaded for ${customerName}.`);
+        });
+
+        document.getElementById('add-usual-basket')?.addEventListener('click', () => {
+            normalizedItems.forEach(item => {
+                const existing = selectedItems.find(entry => entry.productId && entry.productId === item.productId);
+                if (existing) {
+                    existing.quantity = Number(existing.quantity || 0) + Number(item.quantity || 1);
+                    return;
+                }
+                selectedItems.push(item);
+            });
+            renderItems();
+            panel.classList.remove('active');
+            notificationService.success(`Usual basket merged for ${customerName}.`);
+        });
+
+        document.getElementById('dismiss-usual-basket')?.addEventListener('click', () => {
+            panel.classList.remove('active');
+        });
     };
 
     // Modal Product Picker
@@ -406,28 +484,17 @@ export const renderCreateOrder = async () => {
         const val = e.target.value;
         if (!val) return;
 
-        // Check for last order
+        const hint = document.getElementById('auto-fill-hint');
+        if (hint) hint.textContent = 'Looking for this customer\u2019s usual basket...';
         const lastItems = await createOrderController.getLastOrderItems(val);
         if (lastItems && lastItems.length > 0) {
-            // Confirm with user
-            if (confirm(t('confirm_autofill_order'))) {
-                selectedItems = lastItems.map(item => ({
-                    productId: item.productId || '',
-                    name: item.name,
-                    name_en: item.name_en || item.name,
-                    name_ru: item.name_ru || '',
-                    name_kg: item.name_kg || '',
-                    categoryId: item.categoryId || item.category_id || item.category || '',
-                    categoryName: item.categoryName || item.category_name || item.category || '',
-                    price: item.price,
-                    quantity: item.quantity,
-                    imageUrl: item.imageUrl || '',
-                    weight: item.weight || ''
-                }));
-                renderItems();
-                notificationService.success(t('msg_update_success'));
-            }
+            renderSmartBasketPanel(val, lastItems);
+            if (hint) hint.textContent = 'Usual basket ready. Review it below before adding products.';
+            return;
         }
+
+        renderSmartBasketPanel(val, []);
+        if (hint) hint.textContent = 'No previous basket found. Build this order from the catalog.';
     });
 
     // Customer Picker Modal
