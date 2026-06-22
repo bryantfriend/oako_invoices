@@ -352,6 +352,8 @@ function buildInvoicePayload(order, settings, customer, orderId, adjustments, in
 
     const totalAmount = subtotal + taxAmount - discountAmount;
     const date = new Date();
+    const defaultInvoiceDateOffsetDays = parseInt(settings.defaultInvoiceDateOffsetDays, 10) || 0;
+    date.setDate(date.getDate() + defaultInvoiceDateOffsetDays);
     const invoiceDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
 
     return {

@@ -27,6 +27,7 @@ export const DEFAULT_INVOICE_SETTINGS = {
     qrText: 'https://kyrgyz-organics.com/pay',
     paymentQrImageUrl: '',
     defaultTaxRate: 0,
+    defaultInvoiceDateOffsetDays: 0,
     invoiceItemsPerPage: 7,
     logoUrl: '',
     footerText: 'Thanks for supporting sustainable agriculture!',
@@ -60,10 +61,12 @@ export function buildGoogleSheetUrl(sheetId = '') {
 function normalizeInvoiceSettings(data = {}) {
     const invoiceItemsPerPage = Math.min(30, Math.max(1, parseInt(data.invoiceItemsPerPage, 10) || DEFAULT_INVOICE_SETTINGS.invoiceItemsPerPage));
     const approvalLinkExpirationHours = Math.min(720, Math.max(1, parseInt(data.approvalLinkExpirationHours, 10) || DEFAULT_INVOICE_SETTINGS.approvalLinkExpirationHours));
+    const defaultInvoiceDateOffsetDays = Math.min(365, Math.max(-365, parseInt(data.defaultInvoiceDateOffsetDays, 10) || 0));
 
     return {
         ...data,
         invoiceItemsPerPage,
+        defaultInvoiceDateOffsetDays,
         approvalLinkExpirationHours,
         googleSheetId: getGoogleSheetId(data.googleSheetId),
         googleSheetsWebhookUrl: String(data.googleSheetsWebhookUrl || '').trim()
