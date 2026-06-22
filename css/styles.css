@@ -80,6 +80,14 @@ button {
     transition: transform var(--transition-normal);
 }
 
+@media print {
+    .no-print,
+    .sync-status-badge,
+    .oako-update-banner {
+        display: none !important;
+    }
+}
+
 .sidebar-header {
     display: flex;
     align-items: center;

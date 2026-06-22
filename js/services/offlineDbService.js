@@ -1,61 +1,7 @@
-const DATABASE_NAME = 'kyrgyz-organics-offline-v1';
-const DATABASE_VERSION = 1;
+import { openOfflineDexieDatabase } from "./offlineDexieDb.js";
 
-let databasePromise = null;
-
-function createStoreIfMissing(database, name, options) {
-    if (!database.objectStoreNames.contains(name)) {
-        return database.createObjectStore(name, options);
-    }
-    return null;
-}
-
-function createIndexIfMissing(store, name, keyPath) {
-    if (store && !store.indexNames.contains(name)) {
-        store.createIndex(name, keyPath, { unique: false });
-    }
-}
-
-function upgradeDatabase(database) {
-    const queueStore = createStoreIfMissing(database, 'queue', { keyPath: 'id' });
-    createIndexIfMissing(queueStore, 'status', 'status');
-    createIndexIfMissing(queueStore, 'createdAtLocal', 'createdAtLocal');
-    createIndexIfMissing(queueStore, 'entityId', 'entityId');
-
-    createStoreIfMissing(database, 'metadata', { keyPath: 'key' });
-
-    const conflictStore = createStoreIfMissing(database, 'conflicts', { keyPath: 'id' });
-    createIndexIfMissing(conflictStore, 'entityId', 'entityId');
-    createIndexIfMissing(conflictStore, 'status', 'status');
-}
-
-export function openOfflineDatabase() {
-    if (databasePromise) {
-        return databasePromise;
-    }
-
-    databasePromise = new Promise(function(resolve, reject) {
-        if (!window.indexedDB) {
-            reject(new Error('IndexedDB is not available in this browser.'));
-            return;
-        }
-
-        const request = window.indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-
-        request.onupgradeneeded = function(event) {
-            upgradeDatabase(event.target.result);
-        };
-
-        request.onsuccess = function(event) {
-            resolve(event.target.result);
-        };
-
-        request.onerror = function(event) {
-            reject(event.target.error || new Error('Could not open offline database.'));
-        };
-    });
-
-    return databasePromise;
+export async function openOfflineDatabase() {
+    return openOfflineDexieDatabase();
 }
 
 export function requestToPromise(request) {
@@ -70,28 +16,35 @@ export function requestToPromise(request) {
 }
 
 export async function getAllFromStore(storeName) {
-    const database = await openOfflineDatabase();
-    const transaction = database.transaction(storeName, 'readonly');
-    return requestToPromise(transaction.objectStore(storeName).getAll());
+    var database = await openOfflineDexieDatabase();
+    if (!database[storeName]) {
+        return [];
+    }
+    return database[storeName].toArray();
 }
 
 export async function getRecord(storeName, key) {
-    const database = await openOfflineDatabase();
-    const transaction = database.transaction(storeName, 'readonly');
-    return requestToPromise(transaction.objectStore(storeName).get(key));
+    var database = await openOfflineDexieDatabase();
+    if (!database[storeName]) {
+        return null;
+    }
+    return database[storeName].get(key);
 }
 
 export async function putRecord(storeName, record) {
-    const database = await openOfflineDatabase();
-    const transaction = database.transaction(storeName, 'readwrite');
-    const store = transaction.objectStore(storeName);
-    await requestToPromise(store.put(record));
+    var database = await openOfflineDexieDatabase();
+    if (!database[storeName]) {
+        throw new Error('Offline store is not available: ' + storeName);
+    }
+    await database[storeName].put(record);
     return record;
 }
 
 export async function deleteRecord(storeName, key) {
-    const database = await openOfflineDatabase();
-    const transaction = database.transaction(storeName, 'readwrite');
-    await requestToPromise(transaction.objectStore(storeName).delete(key));
+    var database = await openOfflineDexieDatabase();
+    if (!database[storeName]) {
+        return true;
+    }
+    await database[storeName].delete(key);
     return true;
 }

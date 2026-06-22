@@ -27,6 +27,13 @@ function getBadgeStyle(tone) {
             border: '#fecaca'
         };
     }
+    if (tone === 'update') {
+        return {
+            background: '#eef2ff',
+            color: '#3730a3',
+            border: '#c7d2fe'
+        };
+    }
     return {
         background: '#f0fdf4',
         color: '#166534',
@@ -39,7 +46,7 @@ export function renderSyncStatusBadge(snapshot) {
     const style = getBadgeStyle(safeSnapshot.tone || 'online');
     const detail = safeSnapshot.pendingCount > 0
         ? ' · ' + safeSnapshot.pendingCount + ' pending'
-        : (safeSnapshot.failedCount > 0 ? ' · ' + safeSnapshot.failedCount + ' failed' : '');
+        : (safeSnapshot.conflictCount > 0 ? ' · ' + safeSnapshot.conflictCount + ' conflict' : (safeSnapshot.failedCount > 0 ? ' · ' + safeSnapshot.failedCount + ' failed' : ''));
 
     return `
         <div class="sync-status-badge" style="
@@ -56,6 +63,12 @@ export function renderSyncStatusBadge(snapshot) {
             white-space: nowrap;
         ">
             <span>${safeSnapshot.label || 'Online'}${detail}</span>
+            <button id="sync-details-btn" type="button" class="btn btn-secondary btn-sm" style="
+                font-size: 10px;
+                padding: 3px 8px;
+                border-radius: 999px;
+                background: white;
+            ">Details</button>
             <button id="sync-now-btn" type="button" class="btn btn-secondary btn-sm" style="
                 font-size: 10px;
                 padding: 3px 8px;
@@ -73,7 +86,8 @@ export function renderInvoiceSyncPill(invoice) {
         pending_sync: 'pending sync',
         offline_created: 'offline created',
         sync_failed: 'sync failed',
-        sync_conflict: 'conflict'
+        sync_conflict: 'conflict',
+        saved_local: 'saved on device'
     };
     const tones = {
         synced: getBadgeStyle('online'),

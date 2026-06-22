@@ -9,6 +9,17 @@ import { notificationService } from "../core/notificationService.js";
 import { renderSyncStatusBadge } from "../components/syncStatusBadge.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
 import { syncService } from "../services/syncService.js";
+import { syncDiagnosticsService } from "../services/syncDiagnosticsService.js";
+import { Modal } from "../components/modal.js";
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
 class LayoutView {
     constructor() {
@@ -186,11 +197,8 @@ class LayoutView {
         mount.innerHTML = renderSyncStatusBadge(offlineStatusService.getSnapshot());
 
         const button = document.getElementById('sync-now-btn');
-        if (!button) {
-            return;
-        }
-
-        button.addEventListener('click', async function() {
+        if (button) {
+            button.addEventListener('click', async function() {
             try {
                 const result = await syncService.processQueue();
                 if (result.message === 'Offline') {
@@ -202,7 +210,34 @@ class LayoutView {
                 console.error('Manual sync failed.', error);
                 notificationService.error('Sync failed. Pending changes were kept.');
             }
-        });
+            });
+        }
+
+        const detailsButton = document.getElementById('sync-details-btn');
+        if (detailsButton) {
+            detailsButton.addEventListener('click', async function() {
+                const diagnostics = await syncDiagnosticsService.getDiagnostics();
+                const modal = new Modal({
+                    title: 'Synchronization Details',
+                    size: 'large',
+                    footer: false,
+                    content: `
+                        <div class="no-print" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                            <div><strong>App</strong><br>${escapeHtml(diagnostics.appVersion)}</div>
+                            <div><strong>Service Worker</strong><br>${escapeHtml(diagnostics.serviceWorkerVersion)}</div>
+                            <div><strong>Dexie Schema</strong><br>${escapeHtml(diagnostics.dexieSchemaVersion)}</div>
+                            <div><strong>User</strong><br>${escapeHtml(diagnostics.authenticatedUser)}</div>
+                            <div><strong>Pending</strong><br>${escapeHtml(diagnostics.pendingIntentCount)}</div>
+                            <div><strong>Conflicts</strong><br>${escapeHtml(diagnostics.conflictCount)}</div>
+                            <div><strong>Failed</strong><br>${escapeHtml(diagnostics.failedIntentCount)}</div>
+                            <div><strong>Last Sync</strong><br>${escapeHtml(diagnostics.lastSuccessfulSynchronization || 'Not synced yet')}</div>
+                        </div>
+                        <pre class="no-print" style="white-space: pre-wrap; background: var(--color-gray-100); border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 12px; font-size: 11px; max-height: 320px; overflow: auto;">${escapeHtml(JSON.stringify(diagnostics.queue.summary, null, 2))}</pre>
+                    `
+                });
+                modal.open();
+            });
+        }
     }
 }
 

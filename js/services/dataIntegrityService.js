@@ -9,6 +9,7 @@ import {
 const AUDIT_COLLECTION = 'audit_logs';
 const INVENTORY_COLLECTION = 'inventory';
 const INVOICE_COLLECTION = 'invoices';
+const PROCESSED_INTENT_COLLECTION = 'processed_invoice_intents';
 const INVENTORY_VERSION = 1;
 
 function safeNumber(value, fallback) {
@@ -491,6 +492,44 @@ function addAuditEntriesInTransaction(transaction, entries) {
     }
 }
 
+function getProcessedIntentRef(options) {
+    var safeOptions = options || {};
+    if (!safeOptions.intentId) {
+        return null;
+    }
+    return doc(db, PROCESSED_INTENT_COLLECTION, safeOptions.intentId);
+}
+
+async function getProcessedIntentSnapshot(transaction, options) {
+    var intentRef = getProcessedIntentRef(options);
+    if (!intentRef) {
+        return null;
+    }
+    return transaction.get(intentRef);
+}
+
+function writeProcessedIntentInTransaction(transaction, options, result) {
+    var intentRef = getProcessedIntentRef(options);
+    if (!intentRef) {
+        return;
+    }
+
+    var safeOptions = options || {};
+    var actor = getActor(safeOptions);
+    transaction.set(intentRef, {
+        intentId: safeOptions.intentId,
+        intentType: safeOptions.intentType || '',
+        aggregateType: 'invoice',
+        aggregateId: result && result.invoiceId ? result.invoiceId : '',
+        actorId: actor.id || '',
+        actorRole: actor.role || '',
+        result: result || {},
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        retentionPolicy: 'retain_for_financial_idempotency'
+    });
+}
+
 async function createInvoiceWithIntegrity(invoicePayload, options) {
     var safeOptions = options || {};
     var invoiceRef = safeOptions.invoiceRef || doc(collection(db, INVOICE_COLLECTION));
@@ -499,15 +538,29 @@ async function createInvoiceWithIntegrity(invoicePayload, options) {
     var deltas = buildInventoryDeltas(null, invoiceWithId, 'create');
     var auditEntries = buildInvoiceAuditEntries(null, invoiceWithId, 'create', safeOptions);
 
-    await runTransaction(db, async function(transaction) {
+    var transactionResult = await runTransaction(db, async function(transaction) {
+        var processedSnapshot = await getProcessedIntentSnapshot(transaction, safeOptions);
+        if (processedSnapshot && processedSnapshot.exists()) {
+            return processedSnapshot.data().result || { invoiceId: invoiceRef.id, alreadyProcessed: true };
+        }
+
         await applyInventoryDeltasInTransaction(transaction, deltas, {
             action: 'invoice_create'
         });
         transaction.set(invoiceRef, payload);
         addAuditEntriesInTransaction(transaction, auditEntries);
+        writeProcessedIntentInTransaction(transaction, safeOptions, {
+            invoiceId: invoiceRef.id,
+            alreadyProcessed: false
+        });
+
+        return {
+            invoiceId: invoiceRef.id,
+            alreadyProcessed: false
+        };
     });
 
-    return invoiceRef.id;
+    return transactionResult && transactionResult.invoiceId ? transactionResult.invoiceId : invoiceRef.id;
 }
 
 async function setInvoiceWithIntegrity(invoiceRef, invoicePayload, options) {
@@ -517,15 +570,29 @@ async function setInvoiceWithIntegrity(invoiceRef, invoicePayload, options) {
     var deltas = buildInventoryDeltas(null, invoiceWithId, 'create');
     var auditEntries = buildInvoiceAuditEntries(null, invoiceWithId, 'create', safeOptions);
 
-    await runTransaction(db, async function(transaction) {
+    var transactionResult = await runTransaction(db, async function(transaction) {
+        var processedSnapshot = await getProcessedIntentSnapshot(transaction, safeOptions);
+        if (processedSnapshot && processedSnapshot.exists()) {
+            return processedSnapshot.data().result || { invoiceId: invoiceRef.id, alreadyProcessed: true };
+        }
+
         await applyInventoryDeltasInTransaction(transaction, deltas, {
             action: 'invoice_create'
         });
         transaction.set(invoiceRef, payload, { merge: true });
         addAuditEntriesInTransaction(transaction, auditEntries);
+        writeProcessedIntentInTransaction(transaction, safeOptions, {
+            invoiceId: invoiceRef.id,
+            alreadyProcessed: false
+        });
+
+        return {
+            invoiceId: invoiceRef.id,
+            alreadyProcessed: false
+        };
     });
 
-    return invoiceRef.id;
+    return transactionResult && transactionResult.invoiceId ? transactionResult.invoiceId : invoiceRef.id;
 }
 
 async function updateInvoiceWithIntegrity(invoiceRef, previousInvoice, updatePayload, options) {
@@ -538,15 +605,31 @@ async function updateInvoiceWithIntegrity(invoiceRef, previousInvoice, updatePay
     var deltas = buildInventoryDeltas(previousInvoice, nextInvoice, action);
     var auditEntries = buildInvoiceAuditEntries(previousInvoice, nextInvoice, action, safeOptions);
 
-    await runTransaction(db, async function(transaction) {
+    var transactionResult = await runTransaction(db, async function(transaction) {
+        var processedSnapshot = await getProcessedIntentSnapshot(transaction, safeOptions);
+        if (processedSnapshot && processedSnapshot.exists()) {
+            return processedSnapshot.data().result || { updated: true, alreadyProcessed: true };
+        }
+
         await applyInventoryDeltasInTransaction(transaction, deltas, {
             action: 'invoice_' + action
         });
         transaction.update(invoiceRef, payload);
         addAuditEntriesInTransaction(transaction, auditEntries);
+        writeProcessedIntentInTransaction(transaction, safeOptions, {
+            invoiceId: invoiceRef.id,
+            updated: true,
+            alreadyProcessed: false
+        });
+
+        return {
+            invoiceId: invoiceRef.id,
+            updated: true,
+            alreadyProcessed: false
+        };
     });
 
-    return true;
+    return transactionResult || { updated: true };
 }
 
 async function recordAuditLog(entry, options) {

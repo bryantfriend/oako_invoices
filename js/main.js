@@ -7,20 +7,27 @@ import { APP_CONFIG } from "./config.js";
 import * as firebaseCore from "./core/firebase.js";
 import { offlineStatusService } from "./services/offlineStatusService.js";
 import { syncService } from "./services/syncService.js";
+import { appUpdateService } from "./services/appUpdateService.js";
 
 const offlinePersistenceState = firebaseCore.offlinePersistenceState || { warning: '' };
 
 window.clearAppCacheAndReload = async function clearAppCacheAndReload() {
     if ("serviceWorker" in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map(function(registration) {
-            return registration.unregister();
-        }));
+        for (let index = 0; index < registrations.length; index += 1) {
+            const registration = registrations[index];
+            if (registration && registration.active && registration.active.scriptURL.indexOf('/sw.js') !== -1) {
+                await registration.unregister();
+            }
+        }
     }
 
     if ("caches" in window) {
         const cacheNames = await caches.keys();
-        await Promise.all(cacheNames.map(function(cacheName) {
+        const knownOakoStaticCaches = cacheNames.filter(function(cacheName) {
+            return cacheName.indexOf('oako-') === 0 || cacheName.indexOf('oako-invoices-') === 0 || cacheName.indexOf('workbox-precache') === 0;
+        });
+        await Promise.all(knownOakoStaticCaches.map(function(cacheName) {
             return caches.delete(cacheName);
         }));
     }
@@ -180,36 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.info(`Kyrgyz Organics invoice app v${APP_CONFIG.VERSION}`);
     initApp();
 
-    // Register Service Worker
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistration().then(function(registration) {
-            if (registration) {
-                registration.update().catch(function(err) {
-                    console.warn('ServiceWorker startup update skipped:', err);
-                });
-            }
-        });
-
-        let refreshedForNewWorker = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (refreshedForNewWorker) return;
-            refreshedForNewWorker = true;
-            window.location.reload();
-        });
-
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js')
-                .then(function(registration) {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    registration.update().catch(function(err) {
-                        console.warn('ServiceWorker update skipped:', err);
-                    });
-                })
-                .catch(function(err) {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-        });
-    }
+    appUpdateService.register();
 
     // Offline / Online indicators
     window.addEventListener('online', () => {

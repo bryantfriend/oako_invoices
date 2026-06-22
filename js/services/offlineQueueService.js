@@ -1,21 +1,81 @@
 import { auth } from "../core/firebase.js";
+import { APP_CONFIG } from "../config.js";
 import { deviceIdService } from "./deviceIdService.js";
-import { getAllFromStore, getRecord, putRecord } from "./offlineDbService.js";
+import {
+    acquireSyncLease,
+    getNextSequenceNumber,
+    openOfflineDexieDatabase,
+    releaseSyncLease,
+    requestPersistentStorage,
+    resetStaleSyncingIntents,
+    saveIntentAndProjection,
+    updateSyncMetadata
+} from "./offlineDexieDb.js";
+import {
+    SYNC_RETRY_STATUSES,
+    classifySyncError,
+    getNextRetryIsoString
+} from "./syncRetryPolicy.js";
 
-const ACTIVE_LOCAL_STATUSES = ['pending', 'syncing', 'failed'];
+const ACTIVE_LOCAL_STATUSES = [
+    SYNC_RETRY_STATUSES.PENDING,
+    SYNC_RETRY_STATUSES.SYNCING,
+    SYNC_RETRY_STATUSES.RETRY_WAIT,
+    SYNC_RETRY_STATUSES.BLOCKED_AUTHENTICATION,
+    SYNC_RETRY_STATUSES.CONFLICT,
+    SYNC_RETRY_STATUSES.FAILED_TERMINAL
+];
+
 const subscribers = [];
-
-function createQueueId() {
-    const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase();
-    return 'queue-' + Date.now() + '-' + randomPart;
-}
+let legacyMigrationPromise = null;
 
 function cloneData(value) {
     return JSON.parse(JSON.stringify(value || {}));
 }
 
-function sortByCreatedAtLocal(a, b) {
-    return String(a.createdAtLocal || '').localeCompare(String(b.createdAtLocal || ''));
+function getIsoNow() {
+    return new Date().toISOString();
+}
+
+function createRandomHex(bytesLength) {
+    var bytes = new Uint8Array(bytesLength);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(bytes);
+    } else {
+        for (var index = 0; index < bytesLength; index += 1) {
+            bytes[index] = Math.floor(Math.random() * 256);
+        }
+    }
+
+    var output = '';
+    for (var byteIndex = 0; byteIndex < bytes.length; byteIndex += 1) {
+        output += bytes[byteIndex].toString(16).padStart(2, '0');
+    }
+    return output;
+}
+
+function createIntentId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return 'intent-' + crypto.randomUUID();
+    }
+    return 'intent-' + Date.now() + '-' + createRandomHex(16);
+}
+
+function getCurrentActorId() {
+    var user = auth.currentUser;
+    if (!user) {
+        return '';
+    }
+    return user.uid || user.email || '';
+}
+
+function sortBySequenceNumber(a, b) {
+    var sequenceA = Number(a.sequenceNumber || 0);
+    var sequenceB = Number(b.sequenceNumber || 0);
+    if (sequenceA !== sequenceB) {
+        return sequenceA - sequenceB;
+    }
+    return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
 }
 
 function isActiveLocalStatus(status) {
@@ -23,7 +83,7 @@ function isActiveLocalStatus(status) {
 }
 
 function notifySubscribers() {
-    for (let index = 0; index < subscribers.length; index += 1) {
+    for (var index = 0; index < subscribers.length; index += 1) {
         try {
             subscribers[index]();
         } catch (error) {
@@ -32,67 +92,240 @@ function notifySubscribers() {
     }
 }
 
-async function getAllQueueItems() {
-    const items = await getAllFromStore('queue').catch(function(error) {
-        console.warn('Could not read offline queue.', error);
+function mapLegacyStatus(status, lastError) {
+    if (status === 'synced') {
+        return SYNC_RETRY_STATUSES.ACKNOWLEDGED;
+    }
+    if (status === 'syncing') {
+        return SYNC_RETRY_STATUSES.PENDING;
+    }
+    if (String(lastError || '').indexOf('sync_conflict') !== -1) {
+        return SYNC_RETRY_STATUSES.CONFLICT;
+    }
+    if (status === 'failed') {
+        return SYNC_RETRY_STATUSES.RETRY_WAIT;
+    }
+    return SYNC_RETRY_STATUSES.PENDING;
+}
+
+function buildIntentRecord(args) {
+    var payload = cloneData(args.payload);
+    var invoiceSnapshot = payload.localInvoiceSnapshot || payload.invoice || null;
+    var now = getIsoNow();
+
+    return {
+        intentId: args.intentId,
+        id: args.intentId,
+        intentType: args.actionType,
+        actionType: args.actionType,
+        aggregateType: args.entityType,
+        entityType: args.entityType,
+        aggregateId: args.entityId,
+        entityId: args.entityId,
+        actorId: args.actorId || '',
+        userId: args.actorId || '',
+        locationId: args.storeId || args.companyId || '',
+        storeId: args.storeId || args.companyId || 'KORG',
+        companyId: args.companyId || args.storeId || 'KORG',
+        sequenceNumber: args.sequenceNumber,
+        baseRevision: payload.baseRevision || payload.baseUpdatedAtMillis || 0,
+        payload: payload,
+        schemaVersion: APP_CONFIG.DEXIE_SCHEMA_VERSION,
+        appVersion: APP_CONFIG.VERSION,
+        status: args.status || SYNC_RETRY_STATUSES.PENDING,
+        attemptCount: Number(args.attemptCount || 0),
+        retryCount: Number(args.attemptCount || 0),
+        nextAttemptAt: args.nextAttemptAt || now,
+        createdAt: args.createdAt || now,
+        createdAtLocal: args.createdAt || now,
+        updatedAt: now,
+        lastAttemptAt: args.lastAttemptAt || '',
+        acknowledgedAt: args.acknowledgedAt || '',
+        lastErrorCode: args.lastErrorCode || '',
+        lastErrorMessage: args.lastErrorMessage || '',
+        lastError: args.lastErrorMessage || '',
+        serverResult: args.serverResult || null,
+        temporaryAggregateId: invoiceSnapshot && invoiceSnapshot.offlineCreated ? args.entityId : '',
+        canonicalAggregateId: args.canonicalAggregateId || '',
+        deviceId: args.deviceId || ''
+    };
+}
+
+function buildInvoiceProjection(intentRecord) {
+    var payload = intentRecord.payload || {};
+    var invoice = payload.localInvoiceSnapshot || payload.invoice;
+    if (!invoice || intentRecord.aggregateType !== 'invoice') {
+        return null;
+    }
+
+    return {
+        invoiceId: intentRecord.aggregateId,
+        canonicalInvoiceId: intentRecord.canonicalAggregateId || intentRecord.aggregateId,
+        actorId: intentRecord.actorId || '',
+        serverRevision: intentRecord.baseRevision || 0,
+        localRevision: intentRecord.sequenceNumber || 0,
+        syncState: invoice.syncState || 'pending_sync',
+        updatedAt: intentRecord.updatedAt,
+        hasUnacknowledgedChanges: intentRecord.status !== SYNC_RETRY_STATUSES.ACKNOWLEDGED,
+        invoice: cloneData(invoice)
+    };
+}
+
+function mapIntentForCompatibility(record) {
+    if (!record) {
+        return null;
+    }
+    return Object.assign({}, record, {
+        id: record.intentId || record.id,
+        actionType: record.actionType || record.intentType,
+        entityType: record.entityType || record.aggregateType,
+        entityId: record.entityId || record.aggregateId,
+        userId: record.userId || record.actorId || '',
+        retryCount: Number(record.retryCount || record.attemptCount || 0),
+        lastError: record.lastError || record.lastErrorMessage || '',
+        createdAtLocal: record.createdAtLocal || record.createdAt || ''
+    });
+}
+
+async function migrateLegacyQueueIfNeeded() {
+    if (legacyMigrationPromise) {
+        return legacyMigrationPromise;
+    }
+
+    legacyMigrationPromise = (async function() {
+        var database = await openOfflineDexieDatabase();
+        var legacyRows = await database.queue.toArray().catch(function() {
+            return [];
+        });
+
+        for (var index = 0; index < legacyRows.length; index += 1) {
+            var row = legacyRows[index];
+            if (!row || row.migratedToDexieIntent === true) {
+                continue;
+            }
+
+            var existing = await database.offlineIntents.get(row.id);
+            if (!existing) {
+                var sequenceNumber = await getNextSequenceNumber();
+                var migratedIntent = buildIntentRecord({
+                    intentId: row.id,
+                    actionType: row.actionType,
+                    entityType: row.entityType,
+                    entityId: row.entityId,
+                    actorId: row.userId || '',
+                    storeId: row.storeId || '',
+                    companyId: row.companyId || '',
+                    sequenceNumber: sequenceNumber,
+                    payload: row.payload || {},
+                    status: mapLegacyStatus(row.status, row.lastError),
+                    attemptCount: row.retryCount || 0,
+                    createdAt: row.createdAtLocal || getIsoNow(),
+                    lastErrorMessage: row.lastError || '',
+                    deviceId: row.deviceId || ''
+                });
+                await saveIntentAndProjection(migratedIntent, buildInvoiceProjection(migratedIntent));
+            }
+
+            row.migratedToDexieIntent = true;
+            row.status = 'migrated_to_dexie';
+            row.migratedAt = getIsoNow();
+            await database.queue.put(row);
+        }
+    }());
+
+    return legacyMigrationPromise;
+}
+
+async function getAllIntentRecords() {
+    await migrateLegacyQueueIfNeeded();
+    var database = await openOfflineDexieDatabase();
+    var items = await database.offlineIntents.toArray().catch(function(error) {
+        console.warn('Could not read offline intents.', error);
         return [];
     });
-    return items.sort(sortByCreatedAtLocal);
+    return items.map(mapIntentForCompatibility).sort(sortBySequenceNumber);
 }
 
 export const offlineQueueService = {
-    async enqueue(actionType, entityType, entityId, payload, options) {
-        const createdAtLocal = new Date().toISOString();
-        const deviceId = await deviceIdService.getDeviceId();
-        const user = auth.currentUser;
-        const safeOptions = options || {};
+    async init() {
+        await openOfflineDexieDatabase();
+        await requestPersistentStorage();
+        await migrateLegacyQueueIfNeeded();
+        await resetStaleSyncingIntents();
+        await updateSyncMetadata('schema', {
+            databaseName: 'kyrgyz-organics-offline-v1',
+            schemaVersion: APP_CONFIG.DEXIE_SCHEMA_VERSION,
+            appVersion: APP_CONFIG.VERSION
+        });
+    },
 
-        const item = {
-            id: createQueueId(),
+    async enqueue(actionType, entityType, entityId, payload, options) {
+        var createdAtLocal = getIsoNow();
+        var deviceId = await deviceIdService.getDeviceId();
+        var safeOptions = options || {};
+        var actorId = getCurrentActorId();
+        var sequenceNumber = await getNextSequenceNumber();
+        var intentRecord = buildIntentRecord({
+            intentId: safeOptions.intentId || createIntentId(),
             actionType: actionType,
             entityType: entityType,
             entityId: entityId,
-            payload: cloneData(payload),
-            createdAtLocal: createdAtLocal,
-            deviceId: deviceId,
-            userId: user ? user.uid : '',
+            actorId: actorId,
             storeId: safeOptions.storeId || safeOptions.companyId || payload.storeId || payload.companyId || 'KORG',
             companyId: safeOptions.companyId || payload.companyId || safeOptions.storeId || payload.storeId || 'KORG',
-            status: 'pending',
-            retryCount: 0,
-            lastError: ''
-        };
+            sequenceNumber: sequenceNumber,
+            payload: payload,
+            createdAt: createdAtLocal,
+            deviceId: deviceId
+        });
 
-        await putRecord('queue', item);
+        await saveIntentAndProjection(intentRecord, buildInvoiceProjection(intentRecord));
         notifySubscribers();
-        return item;
+        return mapIntentForCompatibility(intentRecord);
     },
 
     async getQueueItem(id) {
-        return getRecord('queue', id);
+        await migrateLegacyQueueIfNeeded();
+        var database = await openOfflineDexieDatabase();
+        return mapIntentForCompatibility(await database.offlineIntents.get(id));
     },
 
     async updateQueueItem(id, updates) {
-        const existing = await this.getQueueItem(id);
+        var existing = await this.getQueueItem(id);
         if (!existing) {
             return null;
         }
 
-        const next = Object.assign({}, existing, updates || {});
-        await putRecord('queue', next);
+        var database = await openOfflineDexieDatabase();
+        var next = Object.assign({}, existing, updates || {}, {
+            intentId: existing.intentId || existing.id,
+            updatedAt: getIsoNow()
+        });
+        if (next.payload && next.aggregateType === 'invoice' || next.payload && next.entityType === 'invoice') {
+            await saveIntentAndProjection(next, buildInvoiceProjection(next));
+        } else {
+            await database.offlineIntents.put(next);
+        }
         notifySubscribers();
-        return next;
+        return mapIntentForCompatibility(next);
     },
 
-    async listProcessableItems() {
-        const items = await getAllQueueItems();
+    async listProcessableItems(actorId) {
+        var items = await getAllIntentRecords();
+        var now = getIsoNow();
+        var safeActorId = actorId || getCurrentActorId();
+
         return items.filter(function(item) {
-            return item.status === 'pending' || item.status === 'failed';
+            var status = item.status || SYNC_RETRY_STATUSES.PENDING;
+            var statusIsProcessable = status === SYNC_RETRY_STATUSES.PENDING || status === SYNC_RETRY_STATUSES.RETRY_WAIT;
+            var retryReady = !item.nextAttemptAt || item.nextAttemptAt <= now;
+            var actorMatches = !item.userId || item.userId === safeActorId;
+            return statusIsProcessable && retryReady && actorMatches;
         });
     },
 
     async listActiveItems() {
-        const items = await getAllQueueItems();
+        var items = await getAllIntentRecords();
         return items.filter(function(item) {
             return isActiveLocalStatus(item.status);
         });
@@ -100,47 +333,82 @@ export const offlineQueueService = {
 
     async markSyncing(id) {
         return this.updateQueueItem(id, {
-            status: 'syncing',
-            lastError: ''
+            status: SYNC_RETRY_STATUSES.SYNCING,
+            lastAttemptAt: getIsoNow(),
+            lastError: '',
+            lastErrorCode: '',
+            lastErrorMessage: ''
         });
     },
 
-    async markSynced(id) {
+    async markSynced(id, serverResult) {
         return this.updateQueueItem(id, {
-            status: 'synced',
-            syncedAt: new Date().toISOString(),
-            lastError: ''
+            status: SYNC_RETRY_STATUSES.ACKNOWLEDGED,
+            acknowledgedAt: getIsoNow(),
+            syncedAt: getIsoNow(),
+            serverResult: serverResult || null,
+            lastError: '',
+            lastErrorCode: '',
+            lastErrorMessage: ''
         });
     },
 
     async markFailed(id, error) {
-        const existing = await this.getQueueItem(id);
+        var existing = await this.getQueueItem(id);
         if (!existing) {
             return null;
         }
 
+        var nextAttemptCount = Number(existing.attemptCount || existing.retryCount || 0) + 1;
+        var classification = classifySyncError(error);
+        var nextAttemptAt = classification.retryable
+            ? getNextRetryIsoString(nextAttemptCount)
+            : existing.nextAttemptAt || getIsoNow();
+
         return this.updateQueueItem(id, {
-            status: 'failed',
-            retryCount: Number(existing.retryCount || 0) + 1,
-            lastError: error && error.message ? error.message : String(error || 'Sync failed'),
-            failedAt: new Date().toISOString()
+            status: classification.status,
+            attemptCount: nextAttemptCount,
+            retryCount: nextAttemptCount,
+            nextAttemptAt: nextAttemptAt,
+            lastError: classification.message,
+            lastErrorCode: classification.code,
+            lastErrorMessage: classification.message,
+            failedAt: getIsoNow()
+        });
+    },
+
+    async markBlockedForAuthentication(id) {
+        return this.updateQueueItem(id, {
+            status: SYNC_RETRY_STATUSES.BLOCKED_AUTHENTICATION,
+            updatedAt: getIsoNow()
         });
     },
 
     async getSummary() {
-        const items = await getAllQueueItems();
-        const summary = {
+        var items = await getAllIntentRecords();
+        var summary = {
             pending: 0,
             syncing: 0,
             synced: 0,
             failed: 0,
+            retry_wait: 0,
+            blocked_authentication: 0,
+            conflict: 0,
+            failed_terminal: 0,
+            acknowledged: 0,
             total: items.length
         };
 
-        for (let index = 0; index < items.length; index += 1) {
-            const status = items[index].status || 'pending';
+        for (var index = 0; index < items.length; index += 1) {
+            var status = items[index].status || SYNC_RETRY_STATUSES.PENDING;
+            if (status === SYNC_RETRY_STATUSES.ACKNOWLEDGED) {
+                summary.synced += 1;
+            }
             if (summary[status] !== undefined) {
                 summary[status] += 1;
+            }
+            if (status === SYNC_RETRY_STATUSES.FAILED_TERMINAL) {
+                summary.failed += 1;
             }
         }
 
@@ -148,55 +416,67 @@ export const offlineQueueService = {
     },
 
     async getLocalInvoiceSnapshot(entityId) {
-        const items = await this.listActiveItems();
-        let snapshot = null;
-
-        for (let index = 0; index < items.length; index += 1) {
-            const item = items[index];
-            if (item.entityType !== 'invoice' || item.entityId !== entityId) {
-                continue;
-            }
-            if (item.payload && item.payload.localInvoiceSnapshot) {
-                snapshot = cloneData(item.payload.localInvoiceSnapshot);
-                if (item.status === 'failed' && snapshot.syncState !== 'sync_conflict') {
-                    snapshot.syncState = 'sync_failed';
-                }
-                if (item.status === 'syncing') {
-                    snapshot.syncState = 'pending_sync';
-                }
-            }
+        var database = await openOfflineDexieDatabase();
+        var projection = await database.invoiceProjections.get(entityId);
+        if (!projection || !projection.invoice) {
+            return null;
         }
-
-        return snapshot;
+        return cloneData(projection.invoice);
     },
 
     async getLocalInvoiceSnapshots() {
-        const items = await this.listActiveItems();
-        const snapshots = {};
+        var database = await openOfflineDexieDatabase();
+        var projections = await database.invoiceProjections.toArray().catch(function() {
+            return [];
+        });
+        var snapshots = {};
 
-        for (let index = 0; index < items.length; index += 1) {
-            const item = items[index];
-            if (item.entityType !== 'invoice') {
-                continue;
-            }
-            if (item.payload && item.payload.localInvoiceSnapshot) {
-                snapshots[item.entityId] = cloneData(item.payload.localInvoiceSnapshot);
-                if (item.status === 'failed' && snapshots[item.entityId].syncState !== 'sync_conflict') {
-                    snapshots[item.entityId].syncState = 'sync_failed';
-                }
-                if (item.status === 'syncing') {
-                    snapshots[item.entityId].syncState = 'pending_sync';
-                }
+        for (var index = 0; index < projections.length; index += 1) {
+            var projection = projections[index];
+            if (projection && projection.invoiceId && projection.invoice) {
+                snapshots[projection.invoiceId] = cloneData(projection.invoice);
             }
         }
 
         return snapshots;
     },
 
+    async acquireSyncLease(ownerId) {
+        return acquireSyncLease(ownerId || 'tab-' + createRandomHex(8));
+    },
+
+    async releaseSyncLease(ownerId) {
+        return releaseSyncLease(ownerId);
+    },
+
+    async recoverStaleSyncingItems() {
+        await resetStaleSyncingIntents();
+        notifySubscribers();
+    },
+
+    async getDiagnostics() {
+        var database = await openOfflineDexieDatabase();
+        var summary = await this.getSummary();
+        var metadataRows = await database.syncMetadata.toArray().catch(function() {
+            return [];
+        });
+        var lockRows = await database.syncLocks.toArray().catch(function() {
+            return [];
+        });
+        return {
+            appVersion: APP_CONFIG.VERSION,
+            dexieSchemaVersion: APP_CONFIG.DEXIE_SCHEMA_VERSION,
+            online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+            summary: summary,
+            metadata: metadataRows,
+            locks: lockRows
+        };
+    },
+
     subscribe(callback) {
         subscribers.push(callback);
         return function unsubscribe() {
-            const index = subscribers.indexOf(callback);
+            var index = subscribers.indexOf(callback);
             if (index !== -1) {
                 subscribers.splice(index, 1);
             }

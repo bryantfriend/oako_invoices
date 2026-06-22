@@ -1,4 +1,4 @@
-import { db } from "../core/firebase.js";
+import { auth, db } from "../core/firebase.js";
 import {
     doc,
     getDoc,
@@ -155,7 +155,9 @@ async function writeInvoiceCreate(queueItem) {
         actor: getQueueActor(queueItem),
         source: 'offline-sync',
         storeId: queueItem.storeId || '',
-        companyId: queueItem.companyId || ''
+        companyId: queueItem.companyId || '',
+        intentId: queueItem.intentId || queueItem.id || '',
+        intentType: queueItem.actionType || ''
     });
 }
 
@@ -189,7 +191,9 @@ async function writeInvoiceUpdate(queueItem) {
             action: getIntegrityAction(queueItem, patch),
             actor: getQueueActor(queueItem),
             source: 'offline-sync',
-            returnItems: patch.returnItems || []
+            returnItems: patch.returnItems || [],
+            intentId: queueItem.intentId || queueItem.id || '',
+            intentType: queueItem.actionType || ''
         }
     );
 }
@@ -238,7 +242,31 @@ export const syncService = {
             };
         }
 
-        const items = await offlineQueueService.listProcessableItems();
+        const currentUser = auth.currentUser;
+        if (!currentUser) {
+            await offlineStatusService.refresh();
+            return {
+                processed: 0,
+                synced: 0,
+                failed: 0,
+                message: 'Authentication required'
+            };
+        }
+
+        const ownerId = 'sync-' + (currentUser.uid || 'anonymous') + '-' + Date.now();
+        const leaseAcquired = await offlineQueueService.acquireSyncLease(ownerId);
+        if (!leaseAcquired) {
+            return {
+                processed: 0,
+                synced: 0,
+                failed: 0,
+                message: 'Another tab is synchronizing'
+            };
+        }
+
+        await offlineQueueService.recoverStaleSyncingItems();
+
+        const items = await offlineQueueService.listProcessableItems(currentUser.uid || '');
         const result = {
             processed: items.length,
             synced: 0,
@@ -248,29 +276,45 @@ export const syncService = {
 
         if (items.length === 0) {
             await offlineStatusService.refresh();
+            await offlineQueueService.releaseSyncLease(ownerId);
             return result;
         }
 
         offlineStatusService.setSyncing(true);
 
-        for (let index = 0; index < items.length; index += 1) {
-            const item = items[index];
-            try {
-                await offlineQueueService.markSyncing(item.id);
-                await processQueueItem(item);
-                await offlineQueueService.markSynced(item.id);
-                result.synced += 1;
-            } catch (error) {
-                await offlineQueueService.markFailed(item.id, error);
-                if (String(error && error.message ? error.message : error).indexOf('sync_conflict') !== -1) {
-                    result.conflicts += 1;
+        try {
+            for (let index = 0; index < items.length; index += 1) {
+                const item = items[index];
+                try {
+                    if (item.userId && item.userId !== (currentUser.uid || '')) {
+                        await offlineQueueService.markBlockedForAuthentication(item.id);
+                        result.failed += 1;
+                        continue;
+                    }
+
+                    await offlineQueueService.markSyncing(item.id);
+                    await processQueueItem(item);
+                    await offlineQueueService.markSynced(item.id, {
+                        processedAt: new Date().toISOString()
+                    });
+                    result.synced += 1;
+                } catch (error) {
+                    await offlineQueueService.markFailed(item.id, error);
+                    if (String(error && error.message ? error.message : error).indexOf('sync_conflict') !== -1) {
+                        result.conflicts += 1;
+                    }
+                    result.failed += 1;
                 }
-                result.failed += 1;
             }
+        } finally {
+            offlineStatusService.setSyncing(false);
+            await offlineQueueService.releaseSyncLease(ownerId);
         }
 
-        offlineStatusService.setSyncing(false);
         offlineStatusService.setSyncError(result.failed > 0);
+        if (result.failed === 0) {
+            offlineStatusService.setLastSuccessfulSyncAt(new Date().toISOString());
+        }
         await offlineStatusService.refresh();
         return result;
     },

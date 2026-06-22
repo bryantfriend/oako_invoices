@@ -10,6 +10,10 @@ const state = {
     syncError: false,
     pendingCount: 0,
     failedCount: 0,
+    conflictCount: 0,
+    authenticationBlockedCount: 0,
+    lastSuccessfulSyncAt: '',
+    updateAvailable: false,
     warning: offlinePersistenceState.warning || ''
 };
 
@@ -26,9 +30,14 @@ function notifySubscribers() {
 }
 
 async function refreshQueueStatus() {
+    await offlineQueueService.init().catch(function(error) {
+        state.warning = error && error.message ? error.message : 'Offline storage is unavailable.';
+    });
     const summary = await offlineQueueService.getSummary();
-    state.pendingCount = summary.pending + summary.syncing;
-    state.failedCount = summary.failed;
+    state.pendingCount = summary.pending + summary.syncing + summary.retry_wait;
+    state.failedCount = summary.failed + summary.failed_terminal;
+    state.conflictCount = summary.conflict;
+    state.authenticationBlockedCount = summary.blocked_authentication;
     if (state.failedCount === 0) {
         state.syncError = false;
     }
@@ -80,6 +89,16 @@ export const offlineStatusService = {
         notifySubscribers();
     },
 
+    setUpdateAvailable(value) {
+        state.updateAvailable = value === true;
+        notifySubscribers();
+    },
+
+    setLastSuccessfulSyncAt(value) {
+        state.lastSuccessfulSyncAt = value || new Date().toISOString();
+        notifySubscribers();
+    },
+
     async refresh() {
         await refreshQueueStatus();
     },
@@ -91,6 +110,15 @@ export const offlineStatusService = {
         if (state.syncing) {
             label = 'Syncing';
             tone = 'syncing';
+        } else if (state.updateAvailable) {
+            label = 'Update Available';
+            tone = 'update';
+        } else if (state.conflictCount > 0) {
+            label = 'Conflict Requires Review';
+            tone = 'error';
+        } else if (state.authenticationBlockedCount > 0) {
+            label = 'Authentication Required';
+            tone = 'error';
         } else if (state.syncError || state.failedCount > 0) {
             label = 'Sync Error';
             tone = 'error';
@@ -108,6 +136,10 @@ export const offlineStatusService = {
             syncError: state.syncError,
             pendingCount: state.pendingCount,
             failedCount: state.failedCount,
+            conflictCount: state.conflictCount,
+            authenticationBlockedCount: state.authenticationBlockedCount,
+            lastSuccessfulSyncAt: state.lastSuccessfulSyncAt,
+            updateAvailable: state.updateAvailable,
             warning: state.warning,
             label: label,
             tone: tone
