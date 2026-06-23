@@ -9,8 +9,7 @@ import {
     orderBy,
     where,
     limit,
-    serverTimestamp,
-    deleteDoc
+    serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { googleSheetsService } from "./googleSheetsService.js";
@@ -215,7 +214,7 @@ export const orderService = {
 
     async archiveOrders(ids) {
         try {
-            await Promise.all(ids.map(id => this.updateOrder(id, { archived: true })));
+            await Promise.all(ids.map(id => this.archiveOrder(id)));
             return true;
         } catch (error) {
             console.error("Error archiving orders:", error);
@@ -223,15 +222,17 @@ export const orderService = {
         }
     },
 
-    async deleteOrder(id) {
+    async archiveOrder(id) {
         try {
             const existingOrder = await this.getOrderById(id).catch(function() {
                 return null;
             });
-            const docRef = doc(db, COLLECTION, id);
-            await deleteDoc(docRef);
+            await this.updateOrder(id, {
+                archived: true,
+                archivedAt: serverTimestamp()
+            });
             await dataIntegrityService.recordAuditLogSafely({
-                type: 'ORDER_DELETED',
+                type: 'ORDER_ARCHIVED',
                 entityType: 'order',
                 entityId: id,
                 orderId: id,
@@ -243,8 +244,12 @@ export const orderService = {
             });
             return true;
         } catch (error) {
-            console.error("Error deleting order:", error);
+            console.error("Error archiving order:", error);
             throw error;
         }
+    },
+
+    async deleteOrder(id) {
+        return this.archiveOrder(id);
     }
 };

@@ -1034,7 +1034,7 @@ export const renderDashboard = async () => {
                      <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">
                          ${icon('view', 'button-icon')}
                     </button>
-                    ${row.status === 'draft' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteOrder('${row.id}')" title="Delete Draft">${icon('trash', 'button-icon')}</button>` : ''}
+                    ${row.status === 'draft' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteOrder('${row.id}')" title="Archive Draft">${icon('trash', 'button-icon')}</button>` : ''}
                 </div>
             `
         });
@@ -1321,7 +1321,7 @@ export const renderDashboard = async () => {
         };
 
         window.deleteOrder = async (id) => {
-            if (confirm(t('confirm_delete_draft'))) {
+            if (confirm('Archive this draft order? It will be hidden from the active Orders list, but the record will be kept.')) {
                 const { orderService } = await import("../services/orderService.js");
                 await orderService.deleteOrder(id);
                 renderDashboard();

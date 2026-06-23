@@ -178,33 +178,39 @@ service cloud.firestore {
     // ===============================
     match /pages/{id} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /products/{id} {
       allow read: if true;
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin();
       allow update: if isAdmin() || isPublicProductQuantityUpdate();
+      allow delete: if false;
     }
 
     match /categories/{id} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /banners/{id} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /campaigns/{campaignId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /campaigns/{campaignId}/{document=**} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /campaign_events/{eventId} {
@@ -215,7 +221,8 @@ service cloud.firestore {
         request.resource.data.actionType is string;
 
       allow read: if true;
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -223,12 +230,14 @@ service cloud.firestore {
     // ===============================
     match /storefront_configs/{companyId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /product_collections/{collectionId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /storefront_events/{eventId} {
@@ -238,7 +247,8 @@ service cloud.firestore {
         request.resource.data.sessionId is string &&
         request.resource.data.timestamp != null;
 
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -247,7 +257,7 @@ service cloud.firestore {
     match /inventory/{dateId} {
       allow read: if isAdmin();
       allow create, update: if isAdmin() && isInventoryRecord();
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -255,7 +265,8 @@ service cloud.firestore {
     // ===============================
     match /inventory_templates/{templateId} {
       allow read: if isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -263,7 +274,8 @@ service cloud.firestore {
     // ===============================
     match /payment_methods/{methodId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -280,7 +292,7 @@ service cloud.firestore {
     // ===============================
     match /orders/{orderId} {
       allow read: if isAdmin();
-      allow delete: if isAdmin();
+      allow delete: if false;
 
       allow create, update: if isAdmin();
 
@@ -301,7 +313,8 @@ service cloud.firestore {
     // ORDER ARCHIVE
     // ===============================
     match /orders_archive/{orderId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -355,7 +368,7 @@ service cloud.firestore {
           && request.resource.data.status in ['pending', 'return_pending']
         );
 
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
     match /processed_invoice_intents/{intentId} {
@@ -374,7 +387,8 @@ service cloud.firestore {
         request.resource.data.action is string &&
         request.resource.data.createdAt is timestamp;
 
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -389,7 +403,7 @@ service cloud.firestore {
         && request.resource.data.invoiceNumber is string
         && request.resource.data.items is list;
 
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -437,14 +451,15 @@ service cloud.firestore {
           && request.resource.data.responseSubmittedAt is timestamp
         );
 
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
     // NOTIFICATIONS
     // ===============================
     match /notifications/{notificationId} {
-      allow read, update, delete: if isAdmin();
+      allow read, update: if isAdmin();
+      allow delete: if false;
       allow create: if isAdmin()
         ||
         (
@@ -467,19 +482,22 @@ service cloud.firestore {
     // ===============================
     match /settings/{id} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     match /shop_settings/{id} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
     // CUSTOMERS / CRM
     // ===============================
     match /customers/{customerId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -487,7 +505,8 @@ service cloud.firestore {
     // ===============================
     match /companies/{companyId} {
       allow read: if isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -497,7 +516,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow create: if isAdmin() || isOwnProfileCreate(userId);
       allow update: if isAdmin() || isOwnProfileUpdate(userId);
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================
@@ -515,7 +534,7 @@ service cloud.firestore {
         && request.resource.data.contentType is string
         && request.resource.data.size is number;
 
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
     // ===============================

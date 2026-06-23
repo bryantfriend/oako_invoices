@@ -138,7 +138,6 @@ export const renderCustomers = async () => {
                 <div style="display: flex; gap: var(--space-2); align-items: center; justify-content: flex-end;">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.editCustomer('${row.id}')">Edit</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); window.archiveCustomer('${row.id}')">Archive</button>
-                    <button type="button" class="btn btn-destructive btn-sm" style="padding: 2px 6px;" onclick="event.stopPropagation(); window.deleteCustomer('${row.id}')" title="Delete Permanently">🗑️</button>
                 </div>
             `
         });
@@ -394,8 +393,8 @@ window.archiveCustomer = (id) => {
 
 window.deleteCustomer = (id) => {
     Modal.confirm(
-        t('modal_delete_cust_title'),
-        t('modal_delete_cust_msg'),
+        'Archive Customer?',
+        'This will hide the customer from the active list. The customer record will be kept for history.',
         async () => {
             const success = await customerController.handleDeleteCustomer(id);
             if (success) renderCustomers();

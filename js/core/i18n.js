@@ -138,7 +138,7 @@ const DICTIONARY = {
         modal_archive_cust_title: "Archive Customer",
         modal_archive_cust_msg: "This customer will be hidden but not deleted.",
         modal_delete_cust_title: "Delete Customer Permanently",
-        modal_delete_cust_msg: "Are you sure? This will permanently remove the customer from the database. This action cannot be undone.",
+        modal_delete_cust_msg: "This will hide the customer from the active list. The customer record will be kept for history.",
         modal_confirm_order_msg: "Are you sure you want to confirm this order? This will generate the official invoice.",
         modal_fin_adjust: "Financial Adjustments",
         modal_add_vat: "Add VAT (Tax)",

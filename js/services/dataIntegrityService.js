@@ -395,7 +395,7 @@ function buildInvoiceAuditEntries(previousInvoice, nextInvoice, action, options)
         addAuditEntry(entries, createEntry);
         addItemChangeAudits(entries, null, nextInvoice, options);
     } else if (action === 'archive') {
-        var archiveEntry = buildBaseAuditEntry('INVOICE_DELETED', 'invoice', invoiceId, Object.assign({}, options || {}, scope));
+        var archiveEntry = buildBaseAuditEntry('INVOICE_ARCHIVED', 'invoice', invoiceId, Object.assign({}, options || {}, scope));
         archiveEntry.invoiceId = invoiceId;
         archiveEntry.previousStatus = previousInvoice ? previousInvoice.status || '' : '';
         archiveEntry.details = {

@@ -5,7 +5,6 @@ import {
     getDoc,
     doc,
     updateDoc,
-    deleteDoc,
     query,
     orderBy,
     where,
@@ -169,13 +168,9 @@ export const customerService = {
     },
 
     async deleteCustomer(id) {
-        try {
-            const docRef = doc(db, COLLECTION, id);
-            await deleteDoc(docRef);
-            return true;
-        } catch (error) {
-            console.error("Error deleting customer:", error);
-            throw error;
-        }
+        return this.updateCustomer(id, {
+            archived: true,
+            archivedAt: serverTimestamp()
+        });
     }
 };
