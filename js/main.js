@@ -114,13 +114,13 @@ async function initApp() {
                     return;
                 }
 
+                const { dashboardController } = await import("./controllers/dashboardController.js");
+                const { invoiceController } = await import("./controllers/invoiceController.js");
                 const { customerService } = await import("./services/customerService.js");
-                const { orderService } = await import("./services/orderService.js");
-                const { invoiceService } = await import("./services/invoiceService.js");
 
                 customerService.getAllCustomers().catch(logPreloadError('customers'));
-                orderService.getAllOrders().catch(logPreloadError('orders'));
-                invoiceService.getWorkingInvoices().catch(logPreloadError('invoices'));
+                dashboardController.loadDashboard({ source: 'startup-preload' }).catch(logPreloadError('orders'));
+                invoiceController.loadInvoiceList({ source: 'startup-preload' }).catch(logPreloadError('invoices'));
             } catch (e) {
                 console.warn("Failed to preload offline data:", e);
             }

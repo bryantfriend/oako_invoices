@@ -226,29 +226,25 @@ export const renderInvoices = async () => {
     layoutView.render();
     layoutView.updateTitle(t('invoice_title'));
     const container = document.getElementById('page-container');
-    container.innerHTML = LoadingSkeleton();
+    const cachedInvoiceList = invoiceController.getCachedInvoiceList();
+    const hasCachedInvoiceList = cachedInvoiceList && cachedInvoiceList.meta && cachedInvoiceList.meta.cacheHit === true;
+    if (!hasCachedInvoiceList) {
+        container.innerHTML = LoadingSkeleton();
+    }
 
     // Load Data
-    let [allInvoices, allOrders, invoiceSettings] = await Promise.all([
-        invoiceController.loadAllInvoices(),
-        import("../services/orderService.js")
-            .then(m => m.orderService.getAllOrders())
-            .catch(error => {
-                console.warn("Could not load orders for invoice print status.", error);
-                return [];
-            }),
-        settingsService.getInvoiceSettings().catch(error => {
-            console.warn("Could not load invoice settings for invoice list.", error);
-            return {};
-        })
-    ]);
-    const googleSheetUrl = buildGoogleSheetUrl(invoiceSettings.googleSheetId);
+    let invoiceListData = cachedInvoiceList;
+    if (hasCachedInvoiceList) {
+        console.info('[PERF] Invoices first visible render: memory cache path selected');
+    } else {
+        invoiceListData = await invoiceController.loadInvoiceList({ source: 'invoices-view' });
+    }
 
-    const orderMap = {};
-    allOrders.forEach(o => orderMap[o.id] = o);
-    allInvoices.forEach(inv => {
-        inv.isPrinted = (orderMap[inv.orderId] && orderMap[inv.orderId].isPrinted) || false;
-    });
+    let allInvoices = invoiceListData && invoiceListData.invoices ? invoiceListData.invoices : [];
+    let allOrders = invoiceListData && invoiceListData.orders ? invoiceListData.orders : [];
+    let invoiceSettings = invoiceListData && invoiceListData.invoiceSettings ? invoiceListData.invoiceSettings : {};
+    let googleSheetUrl = buildGoogleSheetUrl(invoiceSettings.googleSheetId);
+    let shouldRunBackgroundRefresh = invoiceListData && invoiceListData.meta && invoiceListData.meta.shouldRefresh === true;
 
     let customers = [...new Set(allInvoices.map(i => i.customerName).filter(Boolean))].sort();
 
@@ -333,6 +329,32 @@ export const renderInvoices = async () => {
         applyInvoicesFilters();
     };
 
+    function applyInvoiceListData(nextData) {
+        if (!nextData || nextData.meta && nextData.meta.error) {
+            return false;
+        }
+
+        allInvoices = nextData.invoices || [];
+        allOrders = nextData.orders || [];
+        invoiceSettings = nextData.invoiceSettings || {};
+        googleSheetUrl = buildGoogleSheetUrl(invoiceSettings.googleSheetId);
+        customers = [...new Set(allInvoices.map(function(invoiceRow) {
+            return invoiceRow.customerName;
+        }).filter(Boolean))].sort();
+        return true;
+    }
+
+    async function refreshInvoiceListPreservingState() {
+        const scrollTop = container.scrollTop || 0;
+        const refreshedData = await invoiceController.refreshInvoiceList({ source: 'invoices-background-refresh' });
+        const didApply = applyInvoiceListData(refreshedData);
+        if (didApply && activeInvoiceTab === 'active') {
+            applyInvoicesFilters();
+            requestAnimationFrame(function() {
+                container.scrollTop = scrollTop;
+            });
+        }
+    }
     async function loadArchivedInvoices(forceRefresh) {
         if (!forceRefresh && archivedLoaded) {
             return archivedInvoices;
@@ -601,7 +623,15 @@ export const renderInvoices = async () => {
     };
 
     // Initial Render
+    const visibleRenderStartedAt = performance.now();
     applyInvoicesFilters();
+    console.info('[PERF] Invoices first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');
+
+    if (shouldRunBackgroundRefresh) {
+        refreshInvoiceListPreservingState().catch(function(error) {
+            console.warn('Invoices background refresh failed.', error);
+        });
+    }
 
     // Global Action Helper
     window.viewInvoice = (id) => router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', id));

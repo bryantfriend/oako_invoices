@@ -1,199 +1,95 @@
-import { orderService } from "../services/orderService.js";
-import { customerService } from "../services/customerService.js";
-import { productService } from "../services/productService.js";
-import { invoiceService } from "../services/invoiceService.js";
+import sessionDataStore from "../services/sessionDataStore.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
 
-function categoryKey(value = '') {
-    return String(value || '').trim().toLowerCase();
-}
+function buildDashboardResult(loadResult) {
+    var result = loadResult || {};
+    var extras = result.extras || {};
+    var orders = result.records || [];
 
-function categoryIdFromName(value = '') {
-    const normalized = categoryKey(value)
-        .replace(/[^\p{L}\p{N}]+/gu, '-')
-        .replace(/^-+|-+$/g, '');
-    return normalized || 'uncategorized';
-}
-
-function firstValue(...values) {
-    return values.find(value => String(value || '').trim());
-}
-
-function buildProductCategoryLookup(categories = []) {
-    const lookup = {};
-    const register = (key, category) => {
-        const normalized = categoryKey(key);
-        if (normalized) lookup[normalized] = category;
+    return {
+        orders: orders,
+        returnOrders: extras.returnOrders || orders,
+        returnInvoices: extras.returnInvoices || [],
+        metrics: dashboardController.calculateMetrics(orders),
+        meta: result.meta || {}
     };
-
-    categories.forEach(category => {
-        const name = category.name || category.name_en || category.title || 'Uncategorized';
-        const entry = { id: category.id || categoryIdFromName(name), name };
-        [
-            category.id,
-            category.name,
-            category.name_en,
-            category.name_ru,
-            category.name_kg,
-            category.slug,
-            category.handle,
-            category.value
-        ].forEach(key => register(key, entry));
-    });
-
-    return lookup;
-}
-
-function resolveProductCategory(item = {}, product = {}, categoryLookup = {}) {
-    const candidates = [
-        item.categoryId,
-        item.category_id,
-        item.categoryID,
-        item.categorySlug,
-        item.category,
-        item.categoryName,
-        item.category_name,
-        product.categoryId,
-        product.category_id,
-        product.categoryID,
-        product.categorySlug,
-        product.category,
-        product.categoryName,
-        product.category_name
-    ];
-
-    for (const candidate of candidates) {
-        const matched = categoryLookup[categoryKey(candidate)];
-        if (matched) return matched;
-    }
-
-    const fallbackName = firstValue(item.categoryName, item.category_name, item.category, product.categoryName, product.category_name, product.category);
-    if (fallbackName) {
-        return { id: categoryIdFromName(fallbackName), name: fallbackName };
-    }
-
-    return { id: 'uncategorized', name: 'Uncategorized' };
-}
-
-async function loadDashboardCollection(label, loader, fallback) {
-    try {
-        return await loader();
-    } catch (error) {
-        console.warn("Dashboard collection unavailable:", label, error);
-        return fallback;
-    }
 }
 
 export const dashboardController = {
-    async loadDashboard() {
+    getCachedDashboard: function() {
+        var snapshot = sessionDataStore.getOrdersSnapshot();
+        if (!snapshot) {
+            return null;
+        }
+
+        return buildDashboardResult({
+            records: snapshot.records || [],
+            extras: snapshot.extras || {},
+            meta: {
+                source: snapshot.source || 'memory',
+                cacheHit: true,
+                shouldRefresh: snapshot.shouldRefresh === true,
+                revision: snapshot.revision || 0,
+                loadedAt: snapshot.loadedAt || null,
+                readCount: 0
+            }
+        });
+    },
+
+    shouldRefreshDashboard: function() {
+        var snapshot = sessionDataStore.getOrdersSnapshot();
+        if (!snapshot) {
+            return true;
+        }
+
+        return snapshot.shouldRefresh === true;
+    },
+
+    async loadDashboard(options) {
         try {
-            const [orders, customers, products, productCategories, returnInvoices] = await Promise.all([
-                loadDashboardCollection('orders', function() {
-                    return orderService.getAllOrders();
-                }, []),
-                loadDashboardCollection('customers', function() {
-                    return customerService.getAllCustomers();
-                }, []),
-                loadDashboardCollection('products', function() {
-                    return productService.getAllProducts();
-                }, []),
-                loadDashboardCollection('categories', function() {
-                    return productService.getAllCategories();
-                }, []),
-                loadDashboardCollection('returned invoices', function() {
-                    return invoiceService.getReturnedInvoicesForAnalytics();
-                }, [])
-            ]);
-
-            // Create a lookup map for customer categories
-            const categoryMap = {};
-            customers.forEach(c => {
-                const name = (c.companyName || c.name || "").toLowerCase().trim();
-                if (name) categoryMap[name] = c.category || 'C';
-            });
-
-            const productMap = {};
-            products.forEach(product => {
-                productMap[product.id] = product;
-            });
-
-            const productCategoryLookup = buildProductCategoryLookup(productCategories);
-            const returnInvoiceByOrderId = {};
-            returnInvoices.forEach(invoice => {
-                if (invoice.orderId) {
-                    returnInvoiceByOrderId[invoice.orderId] = invoice;
-                }
-            });
-
-            // Map category back to orders and calculate aging
-            const now = new Date();
-            const ordersWithCategory = orders.map(order => {
-                const returnInvoice = returnInvoiceByOrderId[order.id] || null;
-                // Priority: orderDate (user-set date) > createdAt (system date)
-                let date;
-                if (order.orderDate) {
-                    date = new Date(order.orderDate);
-                } else if (order.createdAt?.toDate) {
-                    date = order.createdAt.toDate();
-                } else if (order.createdAt) {
-                    date = new Date(order.createdAt);
-                } else {
-                    date = now;
-                }
-
-                // Ensure date is valid for aging calculation
-                const timestamp = isNaN(date.getTime()) ? now.getTime() : date.getTime();
-                const diffDays = Math.floor((now.getTime() - timestamp) / (1000 * 60 * 60 * 24));
-
-                return {
-                    ...order,
-                    items: (order.items || []).map(item => {
-                        const product = productMap[item.productId] || {};
-                        const category = resolveProductCategory(item, product, productCategoryLookup);
-                        const returnedInvoiceItem = returnInvoice && (returnInvoice.items || []).find(invoiceItem => {
-                            return (item.lineItemId && invoiceItem.lineItemId === item.lineItemId)
-                                || (item.productId && invoiceItem.productId === item.productId);
-                        });
-
-                        return {
-                            ...item,
-                            returnedQuantity: returnedInvoiceItem ? Number(returnedInvoiceItem.returnedQuantity || 0) : Number(item.returnedQuantity || item.returnQuantity || 0),
-                            returnQuantity: returnedInvoiceItem ? Number(returnedInvoiceItem.returnedQuantity || 0) : Number(item.returnQuantity || item.returnedQuantity || 0),
-                            categoryId: category.id,
-                            categoryName: category.name
-                        };
-                    }),
-                    returnSummary: returnInvoice?.returnSummary || order.returnSummary,
-                    returns: returnInvoice?.returns || order.returns,
-                    customerCategory: categoryMap[(order.customerName || "").toLowerCase().trim()] || 'C',
-                    agingDays: Math.max(0, diffDays),
-                    isOutstanding: order.status === 'confirmed' || order.status === 'fulfilled' || order.status === 'fullfilled'
-                };
-            });
-
-            return {
-                orders: ordersWithCategory,
-                returnOrders: ordersWithCategory,
-                returnInvoices: returnInvoices,
-                metrics: this.calculateMetrics(ordersWithCategory)
-            };
+            var result = await sessionDataStore.loadOrders(options || {});
+            return buildDashboardResult(result);
         } catch (error) {
             console.error("Dashboard Load Error:", error);
             notificationService.error(t('msg_load_fail'));
-            return { orders: [], returnOrders: [], returnInvoices: [], metrics: {} };
+            return { orders: [], returnOrders: [], returnInvoices: [], metrics: {}, meta: { error: true } };
         }
     },
 
+    async refreshDashboard(options) {
+        try {
+            var result = await sessionDataStore.refreshOrders(options || {});
+            return buildDashboardResult(result);
+        } catch (error) {
+            console.error("Dashboard Refresh Error:", error);
+            return { orders: [], returnOrders: [], returnInvoices: [], metrics: {}, meta: { error: true } };
+        }
+    },
+
+    updateCachedOrder: function(id, updates, reason) {
+        sessionDataStore.updateOrderRecord(id, updates || {}, reason || 'order-mutation');
+    },
+
+    removeCachedOrder: function(id, reason) {
+        sessionDataStore.removeOrderRecord(id, reason || 'order-remove');
+    },
+
+    invalidateOrdersCache: function(reason) {
+        return sessionDataStore.invalidateOrdersCache(reason || 'orders-invalidated');
+    },
+
     getRiskAlerts(orders) {
-        const criticalOverdue = orders.filter(o =>
-            ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status) && (o.agingDays || 0) >= 14
-        );
+        const criticalOverdue = orders.filter(function(order) {
+            return ['confirmed', 'fulfilled', 'fullfilled'].includes(order.status) && (order.agingDays || 0) >= 14;
+        });
 
         if (criticalOverdue.length === 0) return null;
 
-        const totalRisk = criticalOverdue.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+        const totalRisk = criticalOverdue.reduce(function(sum, order) {
+            return sum + (order.totalAmount || 0);
+        }, 0);
         return {
             count: criticalOverdue.length,
             amount: totalRisk,
@@ -211,14 +107,14 @@ export const dashboardController = {
 
         return {
             totalOrders: orders.length,
-            pending: orders.filter(o => o.status === 'pending').length,
-            draft: orders.filter(o => o.status === 'draft').length,
+            pending: orders.filter(function(order) { return order.status === 'pending'; }).length,
+            draft: orders.filter(function(order) { return order.status === 'draft'; }).length,
             totalConfirmedAmount: orders
-                .filter(o => confirmedStati.includes(o.status))
-                .reduce((sum, o) => sum + (o.totalAmount || 0), 0),
+                .filter(function(order) { return confirmedStati.includes(order.status); })
+                .reduce(function(sum, order) { return sum + (order.totalAmount || 0); }, 0),
             outstandingAmount: orders
-                .filter(o => outstandingStati.includes(o.status))
-                .reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+                .filter(function(order) { return outstandingStati.includes(order.status); })
+                .reduce(function(sum, order) { return sum + (order.totalAmount || 0); }, 0)
         };
     },
 

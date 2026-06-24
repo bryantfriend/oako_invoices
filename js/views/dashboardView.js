@@ -63,7 +63,11 @@ export const renderDashboard = async () => {
     layoutView.updateTitle(t("sidebar_orders"));
 
     const container = document.getElementById('page-container');
-    container.innerHTML = LoadingSkeleton();
+    const cachedDashboard = dashboardController.getCachedDashboard();
+    const hasCachedDashboard = cachedDashboard && cachedDashboard.meta && cachedDashboard.meta.cacheHit === true;
+    if (!hasCachedDashboard) {
+        container.innerHTML = LoadingSkeleton();
+    }
 
     // Internal State
     let allOrders = [];
@@ -86,16 +90,32 @@ export const renderDashboard = async () => {
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
-    const [{ orders, returnOrders: loadedReturnOrders = [], returnInvoices: loadedReturnInvoices = [] }, inventoryData] = await Promise.all([
-        dashboardController.loadDashboard(),
-        inventoryController.loadInventoryData(today)
-    ]);
+    let shouldRunBackgroundRefresh = false;
+    let initialDashboardResult = cachedDashboard;
+    let initialInventoryData = [];
+
+    if (hasCachedDashboard) {
+        shouldRunBackgroundRefresh = dashboardController.shouldRefreshDashboard();
+        console.info('[PERF] Orders first visible render: memory cache path selected');
+    } else {
+        const [loadedDashboard, loadedInventoryData] = await Promise.all([
+            dashboardController.loadDashboard({ source: 'orders-view' }),
+            inventoryController.loadInventoryData(today)
+        ]);
+        initialDashboardResult = loadedDashboard;
+        initialInventoryData = loadedInventoryData;
+        shouldRunBackgroundRefresh = loadedDashboard.meta && loadedDashboard.meta.shouldRefresh === true;
+    }
+
+    const orders = initialDashboardResult && initialDashboardResult.orders ? initialDashboardResult.orders : [];
+    const loadedReturnOrders = initialDashboardResult && initialDashboardResult.returnOrders ? initialDashboardResult.returnOrders : [];
+    const loadedReturnInvoices = initialDashboardResult && initialDashboardResult.returnInvoices ? initialDashboardResult.returnInvoices : [];
     allOrders = orders;
     activeOrders = getActiveOrders(allOrders);
     returnOrders = loadedReturnOrders;
     returnInvoices = loadedReturnInvoices;
     filteredOrders = [...activeOrders];
-    inventoryCategories = inventoryData;
+    inventoryCategories = initialInventoryData;
 
     const getScrollPosition = () => container.scrollTop || 0;
 
@@ -108,7 +128,7 @@ export const renderDashboard = async () => {
     const refreshDashboardDataPreservingState = async () => {
         const scrollTop = getScrollPosition();
         const [{ orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [] }, refreshedInventoryData] = await Promise.all([
-            dashboardController.loadDashboard(),
+            dashboardController.refreshDashboard({ source: 'orders-background-refresh' }),
             inventoryController.loadInventoryData(today)
         ]);
 
@@ -1231,6 +1251,9 @@ export const renderDashboard = async () => {
             const { orderService } = await import("../services/orderService.js");
             const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.archiveOrders(ids);
+            ids.forEach(function(orderId) {
+                dashboardController.updateCachedOrder(orderId, { archived: true, archivedAt: new Date(), updatedAt: new Date() }, 'archive-orders');
+            });
             await gamificationService.awardAction('ordersArchived', ids.length);
             allOrders.forEach(order => {
                 if (selectedOrderIds.has(order.id)) {
@@ -1279,6 +1302,7 @@ export const renderDashboard = async () => {
                     paidAt: new Date(),
                     updatedAt: new Date()
                 });
+                dashboardController.updateCachedOrder(id, { status: 'paid', paidAt: new Date(), updatedAt: new Date() }, 'mark-paid');
                 refreshTable();
             } catch (error) {
                 pendingCheckmarkUpdates.delete(id);
@@ -1295,6 +1319,7 @@ export const renderDashboard = async () => {
             const { orderService } = await import("../services/orderService.js");
             const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.updateOrderStatus(id, 'fulfilled');
+            dashboardController.updateCachedOrder(id, { status: 'fulfilled', fulfilledAt: new Date(), updatedAt: new Date() }, 'mark-fulfilled');
             await gamificationService.awardAction('ordersFulfilled');
             renderDashboard();
         };
@@ -1317,6 +1342,7 @@ export const renderDashboard = async () => {
         window.togglePrinted = async (id, isPrintedState) => {
             const { orderService } = await import("../services/orderService.js");
             await orderService.updateOrder(id, { isPrinted: isPrintedState });
+            dashboardController.updateCachedOrder(id, { isPrinted: isPrintedState, updatedAt: new Date() }, 'toggle-printed');
             renderDashboard();
         };
 
@@ -1324,10 +1350,20 @@ export const renderDashboard = async () => {
             if (confirm('Archive this draft order? It will be hidden from the active Orders list, but the record will be kept.')) {
                 const { orderService } = await import("../services/orderService.js");
                 await orderService.deleteOrder(id);
+                dashboardController.updateCachedOrder(id, { archived: true, archivedAt: new Date(), updatedAt: new Date() }, 'delete-order');
                 renderDashboard();
             }
         };
     };
 
+    const visibleRenderStartedAt = performance.now();
     renderUI();
+    console.info('[PERF] Orders first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');
+
+    if (shouldRunBackgroundRefresh) {
+        refreshDashboardDataPreservingState().catch(function(error) {
+            console.warn('Orders background refresh failed.', error);
+            notificationService.error('Orders refresh failed. Cached data is still visible.');
+        });
+    }
 };

@@ -27,6 +27,14 @@ function registerProjectIntents() {
       updateInvoiceItemsIntentModule.createUpdateInvoiceItemsIntent,
     RecordInvoiceReturnIntent:
       recordInvoiceReturnIntentModule.createRecordInvoiceReturnIntent,
+    LoadOrdersIntent: loadOrdersIntentModule.createLoadOrdersIntent,
+    RefreshOrdersIntent: refreshOrdersIntentModule.createRefreshOrdersIntent,
+    InvalidateOrdersCacheIntent:
+      invalidateOrdersCacheIntentModule.createInvalidateOrdersCacheIntent,
+    LoadInvoicesIntent: loadInvoicesIntentModule.createLoadInvoicesIntent,
+    RefreshInvoicesIntent: refreshInvoicesIntentModule.createRefreshInvoicesIntent,
+    InvalidateInvoicesCacheIntent:
+      invalidateInvoicesCacheIntentModule.createInvalidateInvoicesCacheIntent,
     DemoIntent: demoIntentModule.createDemoIntent
   });
 }

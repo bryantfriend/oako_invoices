@@ -2,6 +2,7 @@ import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
 import { invoiceApprovalController } from "./invoiceApprovalController.js";
+import sessionDataStore from "../services/sessionDataStore.js";
 
 function getIntentErrorMessage(result, fallbackMessage) {
     if (!result) {
@@ -33,13 +34,62 @@ export const invoiceController = {
         }
     },
 
-    async loadAllInvoices() {
+    async loadInvoiceList(options) {
         try {
-            return await invoiceService.getWorkingInvoices();
+            var result = await sessionDataStore.loadInvoices(options || {});
+            var extras = result.extras || {};
+            return {
+                invoices: result.records || [],
+                orders: extras.orders || [],
+                invoiceSettings: extras.invoiceSettings || {},
+                meta: result.meta || {}
+            };
         } catch (error) {
             notificationService.error(t('msg_load_fail'));
-            return [];
+            return { invoices: [], orders: [], invoiceSettings: {}, meta: { error: true } };
         }
+    },
+
+    getCachedInvoiceList() {
+        var snapshot = sessionDataStore.getInvoicesSnapshot();
+        if (!snapshot) {
+            return null;
+        }
+        var extras = snapshot.extras || {};
+        return {
+            invoices: snapshot.records || [],
+            orders: extras.orders || [],
+            invoiceSettings: extras.invoiceSettings || {},
+            meta: {
+                source: snapshot.source || 'memory',
+                cacheHit: true,
+                shouldRefresh: snapshot.shouldRefresh === true,
+                revision: snapshot.revision || 0,
+                loadedAt: snapshot.loadedAt || null,
+                readCount: 0
+            }
+        };
+    },
+
+    async refreshInvoiceList(options) {
+        try {
+            var result = await sessionDataStore.refreshInvoices(options || {});
+            var extras = result.extras || {};
+            return {
+                invoices: result.records || [],
+                orders: extras.orders || [],
+                invoiceSettings: extras.invoiceSettings || {},
+                meta: result.meta || {}
+            };
+        } catch (error) {
+            console.warn('Invoice background refresh failed.', error);
+            return { invoices: [], orders: [], invoiceSettings: {}, meta: { error: true } };
+        }
+    },
+
+    async loadAllInvoices() {
+        var result = await this.loadInvoiceList({ source: 'invoice-controller' });
+        return result.invoices || [];
     },
 
     async loadInvoiceHistoryPage(limitCount) {
@@ -66,6 +116,7 @@ export const invoiceController = {
             if (!result || !result.ok) {
                 throw new Error(getIntentErrorMessage(result, 'Failed to archive invoice.'));
             }
+            sessionDataStore.removeInvoiceRecord(invoiceId, 'archive-invoice');
             notificationService.success('Invoice archived.');
             return true;
         } catch (error) {
@@ -77,6 +128,7 @@ export const invoiceController = {
     async generateForOrder(orderId, orderSnapshot) {
         try {
             const invoiceId = await invoiceService.createInvoice(orderId, {}, orderSnapshot);
+            await sessionDataStore.invalidateInvoicesCache('create-invoice');
             return invoiceId;
         } catch (error) {
             notificationService.error(t('msg_save_fail'));
@@ -87,6 +139,7 @@ export const invoiceController = {
     async updateDate(id, newDate) {
         try {
             await invoiceService.updateInvoiceDate(id, newDate);
+            sessionDataStore.updateInvoiceRecord(id, { createdAt: new Date(newDate + 'T12:00:00'), dueDate: new Date(newDate + 'T12:00:00') }, 'update-invoice-date');
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
@@ -110,6 +163,7 @@ export const invoiceController = {
     async saveInvoiceItems(invoiceId, items) {
         try {
             await invoiceService.saveInvoiceItems(invoiceId, items);
+            await sessionDataStore.invalidateInvoicesCache('save-invoice-items');
             notificationService.success('Invoice items updated.');
             return true;
         } catch (error) {
@@ -121,6 +175,7 @@ export const invoiceController = {
     async addInvoiceItem(invoiceId, product, quantity = 1) {
         try {
             await invoiceService.addInvoiceItem(invoiceId, product, quantity);
+            await sessionDataStore.invalidateInvoicesCache('add-invoice-item');
             notificationService.success('Product added to invoice.');
             return true;
         } catch (error) {
@@ -132,6 +187,7 @@ export const invoiceController = {
     async removeInvoiceItem(invoiceId, lineItemId) {
         try {
             await invoiceService.removeInvoiceItem(invoiceId, lineItemId);
+            await sessionDataStore.invalidateInvoicesCache('remove-invoice-item');
             notificationService.success('Product removed from invoice.');
             return true;
         } catch (error) {
@@ -143,6 +199,7 @@ export const invoiceController = {
     async updateInvoiceItemQuantity(invoiceId, lineItemId, quantity) {
         try {
             await invoiceService.updateInvoiceItemQuantity(invoiceId, lineItemId, quantity);
+            await sessionDataStore.invalidateInvoicesCache('update-invoice-quantity');
             notificationService.success('Invoice quantity updated.');
             return true;
         } catch (error) {
@@ -154,6 +211,7 @@ export const invoiceController = {
     async updateStatus(invoiceId, status) {
         try {
             await invoiceService.updateInvoice(invoiceId, { status }, 'updateInvoiceStatus');
+            sessionDataStore.updateInvoiceRecord(invoiceId, { status: status, updatedAt: new Date() }, 'update-invoice-status');
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
@@ -165,6 +223,8 @@ export const invoiceController = {
     async recordInvoiceReturn(invoiceId, returnPayload) {
         try {
             await invoiceService.recordInvoiceReturn(invoiceId, returnPayload);
+            await sessionDataStore.invalidateInvoicesCache('record-invoice-return');
+            await sessionDataStore.invalidateOrdersCache('record-invoice-return');
             notificationService.success('Returned items recorded.');
             return true;
         } catch (error) {
@@ -179,6 +239,7 @@ export const invoiceController = {
             if (!result || !result.ok) {
                 throw new Error((result && (result.reason || result.message)) || 'Failed to restore invoice.');
             }
+            await sessionDataStore.invalidateInvoicesCache('restore-archived-invoice');
             notificationService.success('Invoice restored.');
             return true;
         } catch (error) {

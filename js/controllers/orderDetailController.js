@@ -4,6 +4,7 @@ import { notificationService } from "../core/notificationService.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { t } from "../core/i18n.js";
 import { gamificationService } from "../services/gamificationService.js";
+import sessionDataStore from "../services/sessionDataStore.js";
 
 export const orderDetailController = {
     async loadOrder(id) {
@@ -43,6 +44,7 @@ export const orderDetailController = {
     async updateStatus(id, newStatus) {
         try {
             await orderService.updateOrderStatus(id, newStatus);
+            sessionDataStore.updateOrderRecord(id, { status: newStatus, updatedAt: new Date() }, 'update-order-status');
             if (newStatus === ORDER_STATUS.FULFILLED) {
                 await gamificationService.awardAction('ordersFulfilled');
             }
@@ -91,6 +93,12 @@ export const orderDetailController = {
                 totalAmount: normalizedItems.reduce((sum, item) => sum + item.total, 0)
             });
             await invoiceService.syncInvoiceWithOrder(id).catch(() => null);
+            sessionDataStore.updateOrderRecord(id, {
+                items: normalizedItems,
+                totalAmount: normalizedItems.reduce((sum, item) => sum + item.total, 0),
+                updatedAt: new Date()
+            }, 'update-order-items');
+            await sessionDataStore.invalidateInvoicesCache('order-items-changed');
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {
@@ -113,6 +121,7 @@ export const orderDetailController = {
     async updateNotes(id, notes) {
         try {
             await orderService.updateOrder(id, { notes });
+            sessionDataStore.updateOrderRecord(id, { notes: notes, updatedAt: new Date() }, 'update-order-notes');
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {

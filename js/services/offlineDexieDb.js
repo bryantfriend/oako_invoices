@@ -2,7 +2,7 @@ import Dexie from "../../vendor/dexie.mjs";
 import { APP_CONFIG } from "../config.js";
 
 export const OFFLINE_DATABASE_NAME = 'kyrgyz-organics-offline-v1';
-export const OFFLINE_DATABASE_SCHEMA_VERSION = 2;
+export const OFFLINE_DATABASE_SCHEMA_VERSION = 3;
 export const SYNC_LEASE_ID = 'invoice-sync';
 export const SYNC_LEASE_TTL_MS = 45000;
 
@@ -35,6 +35,24 @@ function createDatabase() {
         });
     });
 
+    database.version(3).stores({
+        queue: 'id,status,createdAtLocal,entityId',
+        metadata: 'key',
+        conflicts: 'id,entityId,status',
+        offlineIntents: 'intentId,status,actorId,aggregateType,aggregateId,sequenceNumber,nextAttemptAt,createdAt,updatedAt',
+        invoiceProjections: 'invoiceId,canonicalInvoiceId,syncState,actorId,updatedAt',
+        syncMetadata: 'key',
+        syncLocks: 'lockId,expiresAt,ownerId',
+        sessionRecords: 'cacheKey,ownerKey,collectionName,loadedAt'
+    }).upgrade(function(transaction) {
+        return transaction.table('syncMetadata').put({
+            key: 'schema',
+            databaseName: OFFLINE_DATABASE_NAME,
+            schemaVersion: OFFLINE_DATABASE_SCHEMA_VERSION,
+            appVersion: APP_CONFIG.VERSION,
+            upgradedAt: new Date().toISOString()
+        });
+    });
     return database;
 }
 

@@ -10,6 +10,7 @@ import {
     getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { store } from "./store.js";
+import sessionDataStore from "../services/sessionDataStore.js";
 
 const ADMIN_ROLES = ['admin', 'superadmin'];
 const ADMIN_PROFILE_TIMEOUT_MS = 12000;
@@ -44,6 +45,10 @@ class AuthService {
                 const adminProfile = user ? await this.verifyAdminProfile(user, 'auth-state') : null;
                 const isAdmin = this.isValidAdminProfile(adminProfile);
 
+                if (!user || !isAdmin) {
+                    sessionDataStore.clearUserScopedMemory('auth-state-cleared');
+                }
+
                 store.setState({
                     currentUser: user || null,
                     adminProfile,
@@ -76,6 +81,7 @@ class AuthService {
 
             if (!isAdmin) {
                 await signOut(auth);
+                sessionDataStore.clearUserScopedMemory('login-profile-rejected');
                 store.setState({
                     currentUser: null,
                     adminProfile: null,
@@ -113,6 +119,7 @@ class AuthService {
     async logout() {
         try {
             await signOut(auth);
+            sessionDataStore.clearUserScopedMemory('logout');
             return { success: true };
         } catch (err) {
             return { success: false, error: err.message };
