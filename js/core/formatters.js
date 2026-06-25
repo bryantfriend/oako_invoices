@@ -18,6 +18,9 @@ export const formatCurrency = (amount, currency = 'KGS') => {
 export const formatDate = (val) => {
     if (!val) return '-';
     const date = val.toDate ? val.toDate() : new Date(val);
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return '-';
+    }
     return new Intl.DateTimeFormat('en-GB', {
         day: '2-digit',
         month: '2-digit',
