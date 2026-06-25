@@ -3,6 +3,7 @@ import {
     collection,
     addDoc,
     getDoc,
+    getDocFromCache,
     doc,
     updateDoc,
     query,
@@ -16,6 +17,7 @@ import { googleSheetsService } from "./googleSheetsService.js";
 import { dataIntegrityService } from "./dataIntegrityService.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
 import { getDocsWithCache } from "../core/firestoreRead.js";
+import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'orders';
 
@@ -51,7 +53,9 @@ export const orderService = {
             const timeoutPromise = new Promise((_, reject) => {
                 timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
-            const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
+            const docSnap = offlineStatusService.isOnline()
+                ? await Promise.race([getDoc(docRef), timeoutPromise])
+                : await getDocFromCache(docRef);
             if (docSnap.exists()) {
                 return { id: docSnap.id, ...docSnap.data() };
             }

@@ -3,13 +3,41 @@ import {
     collection
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getDocsWithCache } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRows } from "../core/firestoreRead.js";
+import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'products';
 const CATEGORIES_COLLECTION = 'categories';
+function normalizeProducts(rows) {
+    return (Array.isArray(rows) ? rows : []).map(row => {
+        const data = row || {};
+        const name = data.name || data.name_en || data.title || data.title_en || 'Unknown Product';
+        return {
+            id: data.id,
+            ...data,
+            displayName: name,
+            price: data.price || 0
+        };
+    }).filter(product => product.archived !== true && product.active !== false);
+}
+
+function normalizeCategories(rows) {
+    return (Array.isArray(rows) ? rows : []).map(row => {
+        const data = row || {};
+        return {
+            id: data.id,
+            ...data,
+            name: data.name || data.name_en || 'Unknown Category'
+        };
+    }).filter(category => category.archived !== true && category.active !== false);
+}
 
 export const productService = {
     async getAllProducts() {
+        if (!offlineStatusService.isOnline()) {
+            return normalizeProducts(readCachedRows('products:all'));
+        }
+
         try {
             // Try to filter by active first, if index exists
             // If not, we might need to fetch all and filter client side or handle the index error
@@ -24,17 +52,7 @@ export const productService = {
                 attempts: 2
             });
 
-            return rows.map(row => {
-                const data = row || {};
-                // heuristics to find the name
-                const name = data.name || data.name_en || data.title || data.title_en || 'Unknown Product';
-                return {
-                    id: data.id,
-                    ...data,
-                    displayName: name,
-                    price: data.price || 0 // Assuming there is a price field, otherwise default to 0
-                };
-            }).filter(product => product.archived !== true && product.active !== false);
+            return normalizeProducts(rows);
         } catch (error) {
             logCollectionError(COLLECTION, error);
             // Fallback for UI if permission denied or other error
@@ -43,6 +61,10 @@ export const productService = {
     },
 
     async getAllCategories() {
+        if (!offlineStatusService.isOnline()) {
+            return normalizeCategories(readCachedRows('categories:all'));
+        }
+
         try {
             const q = collection(db, CATEGORIES_COLLECTION);
             const rows = await getDocsWithCache(q, {
@@ -51,14 +73,7 @@ export const productService = {
                 timeoutMs: 45000,
                 attempts: 2
             });
-            return rows.map(row => {
-                const data = row || {};
-                return {
-                    id: data.id,
-                    ...data,
-                    name: data.name || data.name_en || 'Unknown Category'
-                };
-            }).filter(category => category.archived !== true && category.active !== false);
+            return normalizeCategories(rows);
         } catch (error) {
             logCollectionError(CATEGORIES_COLLECTION, error);
             return [];

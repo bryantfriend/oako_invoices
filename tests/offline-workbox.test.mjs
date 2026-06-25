@@ -184,3 +184,20 @@ test('Synchronization UI is excluded from print output', function() {
     assert.notEqual(css.indexOf('.sync-status-badge'), -1);
     assert.notEqual(css.indexOf('.oako-update-banner'), -1);
 });
+
+test('Offline invoice print dependencies use cached/local data before network reads', function() {
+    var settingsSource = fs.readFileSync('js/services/settingsService.js', 'utf8');
+    var customerSource = fs.readFileSync('js/services/customerService.js', 'utf8');
+    var productSource = fs.readFileSync('js/services/productService.js', 'utf8');
+    var invoiceSource = fs.readFileSync('js/services/invoiceService.js', 'utf8');
+    var orderSource = fs.readFileSync('js/services/orderService.js', 'utf8');
+
+    assert.notEqual(settingsSource.indexOf('!offlineStatusService.isOnline()'), -1);
+    assert.notEqual(settingsSource.indexOf('readCachedRows(SETTINGS_CACHE_KEY)'), -1);
+    assert.notEqual(customerSource.indexOf("readCachedRows('customers:all')"), -1);
+    assert.notEqual(productSource.indexOf("readCachedRows('products:all')"), -1);
+    assert.notEqual(productSource.indexOf("readCachedRows('categories:all')"), -1);
+    assert.notEqual(invoiceSource.indexOf('offlineQueueService.getLocalInvoiceSnapshot(id)'), -1);
+    assert.notEqual(invoiceSource.indexOf('getDocFromCache(docRef)'), -1);
+    assert.notEqual(orderSource.indexOf('getDocFromCache(docRef)'), -1);
+});

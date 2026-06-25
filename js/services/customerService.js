@@ -12,7 +12,8 @@ import {
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getDocsWithCache } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRows } from "../core/firestoreRead.js";
+import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'customers';
 
@@ -31,11 +32,20 @@ function normalizeCustomerPin(pinCode) {
 function isCustomerPin(pinCode) {
     return /^1\d{5}$/.test(String(pinCode || ''));
 }
+function filterActiveCustomers(rows) {
+    return (Array.isArray(rows) ? rows : [])
+        .filter(d => d.archived !== true)
+        .sort((a, b) => (a.companyName || a.name || "").localeCompare(b.companyName || b.name || ""));
+}
 
 export const customerService = {
     generateCustomerPin,
 
     async getAllCustomers() {
+        if (!offlineStatusService.isOnline()) {
+            return filterActiveCustomers(readCachedRows('customers:all'));
+        }
+
         try {
             // Simplified query to avoid index requirements for now
             // We can add filtering/ordering back once index is created in Firebase
@@ -60,9 +70,7 @@ export const customerService = {
             }));
 
             // Client-side filter and sort as a fallback
-            return docs
-                .filter(d => d.archived !== true)
-                .sort((a, b) => (a.companyName || a.name || "").localeCompare(b.companyName || b.name || ""));
+            return filterActiveCustomers(docs);
         } catch (error) {
             logCollectionError(COLLECTION, error);
             if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('timeout')) {

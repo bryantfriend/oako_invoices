@@ -3,6 +3,7 @@ import {
     collection,
     getDocs,
     getDoc,
+    getDocFromCache,
     doc,
     query,
     where,
@@ -508,11 +509,18 @@ export const invoiceService = {
     },
 
     async getInvoice(id) {
+        const localInvoice = await offlineQueueService.getLocalInvoiceSnapshot(id);
+        if (!offlineStatusService.isOnline() && localInvoice) {
+            return localInvoice;
+        }
+
         const docRef = doc(db, COLLECTION, id);
         let invoice = null;
 
         try {
-            const snap = await getDoc(docRef);
+            const snap = offlineStatusService.isOnline()
+                ? await getDoc(docRef)
+                : await getDocFromCache(docRef);
             if (snap.exists()) {
                 invoice = Object.assign({ id: snap.id }, snap.data());
                 if (invoice.orderId) {
@@ -527,8 +535,6 @@ export const invoiceService = {
         } catch (error) {
             console.warn("Could not load server invoice; checking local offline queue.", error);
         }
-
-        const localInvoice = await offlineQueueService.getLocalInvoiceSnapshot(id);
         if (localInvoice) {
             invoice = Object.assign({}, invoice || {}, localInvoice);
         }

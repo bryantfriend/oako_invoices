@@ -5,6 +5,7 @@ import {
     setDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { readCachedRows, writeCachedRows } from "../core/firestoreRead.js";
+import { offlineStatusService } from "./offlineStatusService.js";
 import {
     getStorage,
     ref,
@@ -77,6 +78,15 @@ export const settingsService = {
     async getInvoiceSettings() {
         if (invoiceSettingsCache) {
             return invoiceSettingsCache;
+        }
+
+        if (!offlineStatusService.isOnline()) {
+            const cachedSettings = readCachedRows(SETTINGS_CACHE_KEY)[0];
+            if (cachedSettings) {
+                invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true };
+                return invoiceSettingsCache;
+            }
+            return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
         }
 
         let timeoutId;
