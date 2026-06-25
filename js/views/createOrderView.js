@@ -25,19 +25,23 @@ export const renderCreateOrder = async () => {
 
     const container = document.getElementById('page-container');
 
-    // Fetch data
+    // Fetch data independently so a weak connection on one dataset does not empty the others.
     let products = [];
     let categories = [];
     let customers = [];
-    try {
-        [products, categories, customers] = await Promise.all([
-            productService.getAllProducts(),
-            productService.getAllCategories(),
-            customerController.loadAllCustomers()
-        ]);
-    } catch (e) {
-        console.warn("Could not fetch initial data", e);
-    }
+    const initialData = await Promise.allSettled([
+        productService.getAllProducts(),
+        productService.getAllCategories(),
+        customerController.loadAllCustomers()
+    ]);
+    products = initialData[0].status === 'fulfilled' ? initialData[0].value : [];
+    categories = initialData[1].status === 'fulfilled' ? initialData[1].value : [];
+    customers = initialData[2].status === 'fulfilled' ? initialData[2].value : [];
+    initialData.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            console.warn('Could not fetch create-order data', { dataset: ['products', 'categories', 'customers'][index], error: result.reason });
+        }
+    });
 
     let selectedItems = []; // { productId, name, price, quantity, imageUrl }
     let repeatOrderDraft = null;
@@ -498,7 +502,7 @@ export const renderCreateOrder = async () => {
     });
 
     // Customer Picker Modal
-    document.getElementById('select-customer-btn').addEventListener('click', () => {
+    document.getElementById('select-customer-btn').addEventListener('click', async () => {
         let selectedCategory = 'all';
         let searchQuery = '';
 
@@ -523,6 +527,12 @@ export const renderCreateOrder = async () => {
         });
 
         modal.open();
+
+        const tableContainer = document.getElementById('modal-customer-table-container');
+        if (!customers.length && tableContainer) {
+            tableContainer.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">Loading saved customers...</div>';
+            customers = await customerController.loadAllCustomers();
+        }
 
         const renderTable = () => {
             const filtered = customers.filter(c => {
@@ -551,7 +561,12 @@ export const renderCreateOrder = async () => {
                 }
             });
 
-            document.getElementById('modal-customer-table-container').innerHTML = table.render();
+            const container = document.getElementById('modal-customer-table-container');
+            if (!customers.length) {
+                container.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">No saved customers are available on this device yet. Connect to the internet once to refresh the customer list.</div>';
+                return;
+            }
+            container.innerHTML = table.render();
 
             // Re-bind row clicks since DataTable might just return string
             document.querySelectorAll('#modal-customer-table-container .data-row').forEach((rowEl, idx) => {

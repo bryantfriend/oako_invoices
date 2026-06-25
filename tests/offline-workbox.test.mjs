@@ -235,3 +235,14 @@ test('Offline readiness and conflict review are exposed in diagnostics and navig
     assert.notEqual(sidebarSource.indexOf('ROUTES.SYNC_CONFLICTS'), -1);
     assert.notEqual(mainSource.indexOf('renderConflictReview'), -1);
 });
+
+test('Create order customer picker survives weak product or customer network loads', function() {
+    var createOrderSource = fs.readFileSync('js/views/createOrderView.js', 'utf8');
+    var customerSource = fs.readFileSync('js/services/customerService.js', 'utf8');
+
+    assert.notEqual(createOrderSource.indexOf('Promise.allSettled'), -1);
+    assert.notEqual(createOrderSource.indexOf('Loading saved customers'), -1);
+    assert.notEqual(createOrderSource.indexOf('No saved customers are available on this device yet'), -1);
+    assert.notEqual(customerSource.indexOf("filterActiveCustomers(readCachedRows('customers:all'))"), -1);
+    assert.notEqual(customerSource.indexOf('Using cached customers after live customer load failed'), -1);
+});

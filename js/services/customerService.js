@@ -73,6 +73,11 @@ export const customerService = {
             return filterActiveCustomers(docs);
         } catch (error) {
             logCollectionError(COLLECTION, error);
+            const cachedCustomers = filterActiveCustomers(readCachedRows('customers:all'));
+            if (cachedCustomers.length) {
+                console.warn('Using cached customers after live customer load failed.', error);
+                return cachedCustomers;
+            }
             if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('timeout')) {
                 throw error;
             }
