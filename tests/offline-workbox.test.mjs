@@ -201,3 +201,37 @@ test('Offline invoice print dependencies use cached/local data before network re
     assert.notEqual(invoiceSource.indexOf('getDocFromCache(docRef)'), -1);
     assert.notEqual(orderSource.indexOf('getDocFromCache(docRef)'), -1);
 });
+test('Route render errors stay on the current route instead of redirecting to Orders', function() {
+    var routerSource = fs.readFileSync('js/router.js', 'utf8');
+    var renderCatchStart = routerSource.indexOf('console.error("View Render Error:"');
+    var noRouteStart = routerSource.indexOf('console.warn("No route found for"');
+    var renderCatchBlock = routerSource.slice(renderCatchStart, noRouteStart);
+
+    assert.notEqual(renderCatchStart, -1);
+    assert.equal(renderCatchBlock.indexOf('this.navigate(ROUTES.DASHBOARD)'), -1);
+    assert.notEqual(renderCatchBlock.indexOf('Could not open this page.'), -1);
+});
+
+test('Offline order creation is queued, merged into reads, and replayed by sync', function() {
+    var orderSource = fs.readFileSync('js/services/orderService.js', 'utf8');
+    var queueSource = fs.readFileSync('js/services/offlineQueueService.js', 'utf8');
+    var syncSource = fs.readFileSync('js/services/syncService.js', 'utf8');
+
+    assert.notEqual(orderSource.indexOf("enqueue('createOrder', 'order'"), -1);
+    assert.notEqual(orderSource.indexOf("getLocalEntitySnapshots('order')"), -1);
+    assert.notEqual(queueSource.indexOf("entityType === 'order'"), -1);
+    assert.notEqual(syncSource.indexOf("queueItem.entityType === 'order'"), -1);
+    assert.notEqual(syncSource.indexOf('writeOrderCreate(queueItem)'), -1);
+});
+
+test('Offline readiness and conflict review are exposed in diagnostics and navigation', function() {
+    var diagnosticsSource = fs.readFileSync('js/services/syncDiagnosticsService.js', 'utf8');
+    var layoutSource = fs.readFileSync('js/views/layoutView.js', 'utf8');
+    var sidebarSource = fs.readFileSync('js/components/sidebar.js', 'utf8');
+    var mainSource = fs.readFileSync('js/main.js', 'utf8');
+
+    assert.notEqual(diagnosticsSource.indexOf('offlineReadinessService.getStatus()'), -1);
+    assert.notEqual(layoutSource.indexOf('renderOfflineReadinessPanel'), -1);
+    assert.notEqual(sidebarSource.indexOf('ROUTES.SYNC_CONFLICTS'), -1);
+    assert.notEqual(mainSource.indexOf('renderConflictReview'), -1);
+});

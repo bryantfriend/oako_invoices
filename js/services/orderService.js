@@ -18,9 +18,31 @@ import { dataIntegrityService } from "./dataIntegrityService.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
 import { getDocsWithCache } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
+import { offlineQueueService } from "./offlineQueueService.js";
+import { deviceIdService } from "./deviceIdService.js";
 
 const COLLECTION = 'orders';
 
+
+function mergeLocalOrders(serverOrders, localOrdersById) {
+    const byId = {};
+    (serverOrders || []).forEach(order => {
+        if (order && order.id) {
+            byId[order.id] = order;
+        }
+    });
+    Object.keys(localOrdersById || {}).forEach(id => {
+        byId[id] = Object.assign({}, byId[id] || {}, localOrdersById[id], { id });
+    });
+    return Object.keys(byId).map(id => byId[id]);
+}
+
+async function getLocalOrderSnapshot(id) {
+    const snapshots = await offlineQueueService.getLocalEntitySnapshots('order').catch(function() {
+        return {};
+    });
+    return snapshots[id] || null;
+}
 function buildOrderAuditDetails(order) {
     var source = order || {};
     return {
@@ -34,12 +56,13 @@ export const orderService = {
     async getAllOrders() {
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
-            return await getDocsWithCache(q, {
+            const rows = await getDocsWithCache(q, {
                 collectionName: COLLECTION,
                 cacheKey: 'orders:all:createdAt_desc',
                 timeoutMs: 45000,
                 attempts: 2
             });
+            return mergeLocalOrders(rows, await offlineQueueService.getLocalEntitySnapshots('order'));
         } catch (error) {
             logCollectionError(COLLECTION, error);
             throw error;
@@ -53,13 +76,17 @@ export const orderService = {
             const timeoutPromise = new Promise((_, reject) => {
                 timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
             });
+            const localOrder = await getLocalOrderSnapshot(id);
+            if (!offlineStatusService.isOnline() && localOrder) {
+                return localOrder;
+            }
             const docSnap = offlineStatusService.isOnline()
                 ? await Promise.race([getDoc(docRef), timeoutPromise])
                 : await getDocFromCache(docRef);
             if (docSnap.exists()) {
-                return { id: docSnap.id, ...docSnap.data() };
+                return Object.assign({ id: docSnap.id }, docSnap.data(), localOrder || {});
             }
-            return null;
+            return localOrder;
         } catch (error) {
             console.error("Error fetching order:", error);
             throw error;
@@ -125,14 +152,34 @@ export const orderService = {
 
     async createOrder(orderData, userId) {
         try {
+            const now = new Date();
+            const isOffline = !offlineStatusService.isOnline();
+            const offlineOrderId = isOffline ? await deviceIdService.createOfflineEntityId('KORG') : '';
             const payload = {
                 ...orderData,
+                id: offlineOrderId,
                 status: ORDER_STATUS.DRAFT,
                 createdBy: userId,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
+                createdAt: isOffline ? now : serverTimestamp(),
+                updatedAt: isOffline ? now : serverTimestamp(),
+                localUpdatedAt: now.toISOString(),
+                syncState: isOffline ? 'offline_created' : 'synced',
+                offlineCreated: isOffline,
                 invoiceGenerated: false
             };
+
+            if (isOffline) {
+                await offlineQueueService.enqueue('createOrder', 'order', offlineOrderId, {
+                    order: payload,
+                    localOrderSnapshot: payload,
+                    localUpdatedAt: now.toISOString()
+                }, {
+                    storeId: payload.storeId || payload.companyId || 'KORG'
+                });
+                return offlineOrderId;
+            }
+
+            delete payload.id;
             const docRef = await addDoc(collection(db, COLLECTION), payload);
             const createdOrder = await this.getOrderById(docRef.id).catch(() => ({ id: docRef.id, ...orderData, ...payload, createdAt: new Date(), updatedAt: new Date() }));
             await dataIntegrityService.recordAuditLogSafely({

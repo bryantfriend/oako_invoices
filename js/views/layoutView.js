@@ -12,6 +12,37 @@ import { syncService } from "../services/syncService.js";
 import { syncDiagnosticsService } from "../services/syncDiagnosticsService.js";
 import { Modal } from "../components/modal.js";
 
+
+function renderOfflineReadinessPanel(readiness) {
+    const status = readiness || { datasets: [], serviceWorker: {}, queue: {} };
+    const toneColor = status.ready ? '#166534' : '#92400e';
+    const toneBg = status.ready ? '#ecfdf5' : '#fffbeb';
+    const serviceWorker = status.serviceWorker || {};
+    const queue = status.queue || {};
+    return `
+        <section style="display: grid; gap: 12px; margin-bottom: 16px;">
+            <div style="border: 1px solid ${status.ready ? '#bbf7d0' : '#fde68a'}; background: ${toneBg}; color: ${toneColor}; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                <strong>${escapeHtml(status.label || 'Offline readiness')}</strong>
+                <span style="font-size: 12px; font-weight: 800;">Service worker: ${serviceWorker.ready ? 'ready' : 'not ready'} · caches: ${escapeHtml(serviceWorker.cacheCount || 0)}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;">
+                ${(status.datasets || []).map(item => `
+                    <div style="border: 1px solid ${item.ready ? 'var(--color-gray-200)' : '#fecaca'}; border-radius: 8px; background: white; padding: 10px;">
+                        <div style="font-size: 12px; font-weight: 900; color: var(--color-gray-800);">${escapeHtml(item.label)}</div>
+                        <div style="font-size: 20px; font-weight: 900; color: ${item.ready ? 'var(--color-primary-800)' : '#991b1b'};">${escapeHtml(item.count)}</div>
+                        <div style="font-size: 11px; color: var(--color-gray-500);">${escapeHtml(item.ageLabel)}</div>
+                    </div>
+                `).join('')}
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--color-gray-600);">
+                <span>Pending: <strong>${escapeHtml((queue.pending || 0) + (queue.retry_wait || 0))}</strong></span>
+                <span>Conflicts: <strong>${escapeHtml(status.openConflicts || 0)}</strong></span>
+                <span>Failed: <strong>${escapeHtml((queue.failed || 0) + (queue.failed_terminal || 0))}</strong></span>
+                <a href="#/sync-conflicts" style="font-weight: 900;">Review conflicts</a>
+            </div>
+        </section>
+    `;
+}
 function escapeHtml(value) {
     return String(value || '')
         .replace(/&/g, '&amp;')
@@ -222,6 +253,7 @@ class LayoutView {
                     size: 'large',
                     footer: false,
                     content: `
+                        ${renderOfflineReadinessPanel(diagnostics.offlineReadiness)}
                         <div class="no-print" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px;">
                             <div><strong>App</strong><br>${escapeHtml(diagnostics.appVersion)}</div>
                             <div><strong>Service Worker</strong><br>${escapeHtml(diagnostics.serviceWorkerVersion)}</div>

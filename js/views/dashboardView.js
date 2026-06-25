@@ -98,12 +98,9 @@ export const renderDashboard = async () => {
         shouldRunBackgroundRefresh = dashboardController.shouldRefreshDashboard();
         console.info('[PERF] Orders first visible render: memory cache path selected');
     } else {
-        const [loadedDashboard, loadedInventoryData] = await Promise.all([
-            dashboardController.loadDashboard({ source: 'orders-view' }),
-            inventoryController.loadInventoryData(today)
-        ]);
+        const loadedDashboard = await dashboardController.loadDashboard({ source: 'orders-view' });
         initialDashboardResult = loadedDashboard;
-        initialInventoryData = loadedInventoryData;
+        initialInventoryData = [];
         shouldRunBackgroundRefresh = loadedDashboard.meta && loadedDashboard.meta.shouldRefresh === true;
     }
 
@@ -141,6 +138,13 @@ export const renderDashboard = async () => {
         updatedCheckmarkUpdates.clear();
         renderUI();
         restoreScrollPosition(scrollTop);
+    };
+
+
+    const refreshInventoryStrip = async () => {
+        const refreshedInventoryData = await inventoryController.loadInventoryData(today);
+        inventoryCategories = refreshedInventoryData;
+        renderUI();
     };
 
     const scheduleInvoiceListRefresh = (delayMs = 6000) => {
@@ -1359,6 +1363,10 @@ export const renderDashboard = async () => {
     const visibleRenderStartedAt = performance.now();
     renderUI();
     console.info('[PERF] Orders first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');
+
+    refreshInventoryStrip().catch(function(error) {
+        console.warn('Inventory strip refresh failed.', error);
+    });
 
     if (shouldRunBackgroundRefresh) {
         refreshDashboardDataPreservingState().catch(function(error) {

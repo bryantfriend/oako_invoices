@@ -2,6 +2,7 @@ import { APP_CONFIG } from "../config.js";
 import { auth } from "../core/firebase.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { offlineStatusService } from "./offlineStatusService.js";
+import { offlineReadinessService } from "./offlineReadinessService.js";
 
 function maskActorId(value) {
     var text = String(value || '');
@@ -19,6 +20,7 @@ export const syncDiagnosticsService = {
         var queueDiagnostics = await offlineQueueService.getDiagnostics();
         var snapshot = offlineStatusService.getSnapshot();
         var user = auth.currentUser;
+        var offlineReadiness = await offlineReadinessService.getStatus();
 
         return {
             appVersion: APP_CONFIG.VERSION,
@@ -32,7 +34,8 @@ export const syncDiagnosticsService = {
             authenticationBlockedCount: snapshot.authenticationBlockedCount,
             lastSuccessfulSynchronization: snapshot.lastSuccessfulSyncAt || '',
             updateAvailable: snapshot.updateAvailable,
-            queue: queueDiagnostics
+            queue: queueDiagnostics,
+            offlineReadiness: offlineReadiness
         };
     },
 

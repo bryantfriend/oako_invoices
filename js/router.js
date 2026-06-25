@@ -114,7 +114,10 @@ class Router {
                 await this.routes[matchedRoute](params);
             } catch (err) {
                 console.error("View Render Error:", err);
-                this.navigate(ROUTES.DASHBOARD);
+                const container = document.getElementById('page-container');
+                if (container) {
+                    container.innerHTML = '<div class="card" style="border-color: #fecaca; background: #fff7f7; color: #7f1d1d;"><strong>Could not open this page.</strong><br><span style="font-size: 13px;">The route stayed here so the error can be fixed without sending you back to Orders.</span></div>';
+                }
             }
         } else {
             console.warn("No route found for", path);

@@ -590,7 +590,7 @@ export const renderInvoices = async () => {
         }
 
         // Event Listeners for filters
-        document.getElementById('filter-customer').addEventListener('change', (e) => {
+        document.getElementById('filter-customer')?.addEventListener('change', (e) => {
             filters.customer = e.target.value;
             applyInvoicesFilters();
         });

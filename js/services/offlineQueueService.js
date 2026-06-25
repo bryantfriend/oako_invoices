@@ -171,6 +171,20 @@ function buildInvoiceProjection(intentRecord) {
     };
 }
 
+
+function getLocalEntitySnapshotFromIntent(intentRecord, entityType) {
+    if (!intentRecord || (intentRecord.aggregateType !== entityType && intentRecord.entityType !== entityType)) {
+        return null;
+    }
+    var payload = intentRecord.payload || {};
+    if (entityType === 'invoice') {
+        return payload.localInvoiceSnapshot || payload.invoice || null;
+    }
+    if (entityType === 'order') {
+        return payload.localOrderSnapshot || payload.order || null;
+    }
+    return null;
+}
 function mapIntentForCompatibility(record) {
     if (!record) {
         return null;
@@ -441,6 +455,22 @@ export const offlineQueueService = {
         return snapshots;
     },
 
+
+    async getLocalEntitySnapshots(entityType) {
+        var items = await getAllIntentRecords();
+        var snapshots = {};
+        for (var index = 0; index < items.length; index += 1) {
+            var item = items[index];
+            if (!isActiveLocalStatus(item.status)) {
+                continue;
+            }
+            var snapshot = getLocalEntitySnapshotFromIntent(item, entityType);
+            if (snapshot && item.entityId) {
+                snapshots[item.entityId] = cloneData(snapshot);
+            }
+        }
+        return snapshots;
+    },
     async acquireSyncLease(ownerId) {
         return acquireSyncLease(ownerId || 'tab-' + createRandomHex(8));
     },

@@ -38,7 +38,6 @@ export class Sidebar {
                     <div>Wholesale Admin</div>
                 </div>
             </div>
-            
             <nav class="sidebar-nav">
                 ${this.createNavItem(t('sidebar_orders'), ROUTES.DASHBOARD, 'orders', 'orders')}
                 ${this.createNavItem(t('dash_new_order'), ROUTES.CREATE_ORDER, 'plus')}
@@ -46,6 +45,7 @@ export class Sidebar {
                 ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, 'inventory', 'lowStock')}
                 ${this.createNavItem(t('sidebar_customers'), ROUTES.CUSTOMERS, 'customers')}
                 ${this.createNavItem(t('sidebar_settings'), ROUTES.SETTINGS, 'settings')}
+                ${this.createNavItem('Conflicts', ROUTES.SYNC_CONFLICTS, 'settings', 'conflicts')}
                 ${this.createNavItem('Profile', ROUTES.PROFILE, 'profile')}
             </nav>
 
@@ -94,21 +94,24 @@ export class Sidebar {
         };
 
         try {
-            const [{ orderService }, { invoiceService }, { inventoryController }] = await Promise.all([
+            const [{ orderService }, { invoiceService }, { inventoryController }, { conflictService }] = await Promise.all([
                 import("../services/orderService.js"),
                 import("../services/invoiceService.js"),
-                import("../controllers/inventoryController.js")
+                import("../controllers/inventoryController.js"),
+                import("../services/conflictService.js")
             ]);
 
             const today = new Date().toISOString().split('T')[0];
-            const [orders, invoices, categories] = await Promise.all([
+            const [orders, invoices, categories, conflicts] = await Promise.all([
                 orderService.getAllOrders().catch(() => []),
                 invoiceService.getAllInvoices().catch(() => []),
-                inventoryController.loadInventoryData(today).catch(() => [])
+                inventoryController.loadInventoryData(today).catch(() => []),
+                conflictService.getOpenConflicts().catch(() => [])
             ]);
 
             setBadge('orders', orders.filter(order => order.archived !== true).length);
             setBadge('invoices', invoices.length);
+            setBadge('conflicts', conflicts.length);
             setBadge('lowStock', categories
                 .flatMap(category => category.products || [])
                 .filter(product => Number(product.left ?? 0) <= 5)

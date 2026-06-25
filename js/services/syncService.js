@@ -2,6 +2,7 @@ import { auth, db } from "../core/firebase.js";
 import {
     doc,
     getDoc,
+    setDoc,
     serverTimestamp,
     updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -222,9 +223,63 @@ async function processInvoiceQueueItem(queueItem) {
     }
 }
 
+
+function getLocalOrderSnapshot(queueItem) {
+    if (queueItem.payload && queueItem.payload.localOrderSnapshot) {
+        return queueItem.payload.localOrderSnapshot;
+    }
+    if (queueItem.payload && queueItem.payload.order) {
+        return queueItem.payload.order;
+    }
+    return {};
+}
+
+function prepareOrderForSync(queueItem) {
+    const order = Object.assign({}, getLocalOrderSnapshot(queueItem));
+    delete order.id;
+    order.updatedAt = serverTimestamp();
+    order.createdAt = order.createdAt || serverTimestamp();
+    restoreDateField(order, 'createdAt');
+    restoreDateField(order, 'updatedAt');
+    order.localUpdatedAt = order.localUpdatedAt || new Date().toISOString();
+    order.syncState = 'synced';
+    order.offlineCreated = false;
+    return order;
+}
+
+async function writeOrderCreate(queueItem) {
+    const orderRef = doc(db, 'orders', queueItem.entityId);
+    const serverSnap = await getDoc(orderRef);
+    const localVersion = getLocalOrderSnapshot(queueItem);
+
+    if (serverSnap.exists() && queueItem.payload && queueItem.payload.forceOverwrite !== true) {
+        await conflictService.saveConflict(queueItem, serverSnap.data(), localVersion);
+        throw new Error('sync_conflict');
+    }
+
+    const order = prepareOrderForSync(queueItem);
+    await setDoc(orderRef, order, { merge: true });
+    await googleSheetsService.syncOrderLifecycle(Object.assign({ id: queueItem.entityId }, localVersion, order)).catch(function(error) {
+        console.warn('Google Sheets order sync failed after offline order create.', error);
+    });
+}
+
+async function processOrderQueueItem(queueItem) {
+    if (queueItem.actionType === 'createOrder') {
+        await writeOrderCreate(queueItem);
+        return;
+    }
+
+    throw new Error('Unsupported offline order action: ' + queueItem.actionType);
+}
 async function processQueueItem(queueItem) {
     if (queueItem.entityType === 'invoice') {
         await processInvoiceQueueItem(queueItem);
+        return;
+    }
+
+    if (queueItem.entityType === 'order') {
+        await processOrderQueueItem(queueItem);
         return;
     }
 
@@ -341,9 +396,14 @@ export const syncService = {
         const nextPayload = Object.assign({}, queueItem.payload || {});
         const nextLocal = resolution === 'manual' ? manualVersion : conflict.localVersion;
         nextPayload.forceOverwrite = true;
-        nextPayload.localInvoiceSnapshot = nextLocal;
-        nextPayload.firestorePatch = nextLocal;
-        if (queueItem.actionType === 'completeInvoice' && nextPayload.firestorePatch.status === 'completed_pending_sync') {
+        if (queueItem.entityType === 'order') {
+            nextPayload.localOrderSnapshot = nextLocal;
+            nextPayload.order = nextLocal;
+        } else {
+            nextPayload.localInvoiceSnapshot = nextLocal;
+            nextPayload.firestorePatch = nextLocal;
+        }
+        if (queueItem.actionType === 'completeInvoice' && nextPayload.firestorePatch && nextPayload.firestorePatch.status === 'completed_pending_sync') {
             nextPayload.firestorePatch = Object.assign({}, nextPayload.firestorePatch, {
                 status: 'fulfilled'
             });

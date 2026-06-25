@@ -63,22 +63,38 @@ function normalizeCachedRows(rows) {
     return Array.isArray(rows) ? rows : [];
 }
 
-function readCachedRows(cacheKey) {
+
+function readCachedEntry(cacheKey) {
     if (!cacheKey || typeof window === 'undefined' || !window.localStorage) {
-        return [];
+        return { rows: [], cachedAt: '' };
     }
 
     try {
         const raw = window.localStorage.getItem(getCacheKey(cacheKey));
         if (!raw) {
-            return [];
+            return { rows: [], cachedAt: '' };
         }
         const cached = JSON.parse(raw);
-        return normalizeCachedRows(cached.rows);
+        return {
+            rows: normalizeCachedRows(cached.rows),
+            cachedAt: cached.cachedAt || ''
+        };
     } catch (error) {
-        console.warn('[firestore-read] Could not read cache.', { cacheKey, error });
-        return [];
+        console.warn('[firestore-read] Could not read cache metadata.', { cacheKey, error });
+        return { rows: [], cachedAt: '' };
     }
+}
+
+function getCachedRowsInfo(cacheKey) {
+    const entry = readCachedEntry(cacheKey);
+    return {
+        rows: entry.rows,
+        count: entry.rows.length,
+        cachedAt: entry.cachedAt
+    };
+}
+function readCachedRows(cacheKey) {
+    return readCachedEntry(cacheKey).rows;
 }
 
 function writeCachedRows(cacheKey, rows) {
@@ -190,5 +206,6 @@ export async function getDocsWithCache(queryRef, options = {}) {
 
 export {
     readCachedRows,
+    getCachedRowsInfo,
     writeCachedRows
 };

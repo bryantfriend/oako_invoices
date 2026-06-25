@@ -23,7 +23,8 @@ export const ROUTES = {
     CUSTOMER_DETAIL: '/customers/:id',
     INVENTORY: '/inventory',
     SETTINGS: '/settings',
-    PROFILE: '/profile'
+    PROFILE: '/profile',
+    SYNC_CONFLICTS: '/sync-conflicts'
 };
 
 export const ALERTS = {
