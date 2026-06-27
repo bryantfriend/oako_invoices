@@ -6,6 +6,7 @@ import { authService } from "../core/authService.js";
 import { t } from "../core/i18n.js";
 import { gamificationService } from "../services/gamificationService.js";
 import sessionDataStore from "../services/sessionDataStore.js";
+import { offlineStatusService } from "../services/offlineStatusService.js";
 
 export const createOrderController = {
     async handleCreateOrder(formData) {
@@ -46,10 +47,39 @@ export const createOrderController = {
         }
 
         try {
+            const wasCloudReachable = offlineStatusService.isOnline();
+            console.info('[OFFLINE_ORDER] local validation passed');
+            notificationService.info(wasCloudReachable ? 'Saving order...' : 'Saving locally...');
+
             const orderId = await orderService.createOrder(orderPayload, user.uid);
-            sessionDataStore.updateOrderRecord(orderId, Object.assign({}, orderPayload, { id: orderId, createdBy: user.uid, createdAt: new Date(), updatedAt: new Date() }), 'create-order');
+            const now = new Date();
+            const localRecord = Object.assign({}, orderPayload, {
+                id: orderId,
+                createdBy: user.uid,
+                createdAt: now,
+                updatedAt: now,
+                syncState: wasCloudReachable ? 'synced' : 'offline_created',
+                localId: wasCloudReachable ? '' : orderId,
+                serverId: wasCloudReachable ? orderId : null,
+                syncStatus: wasCloudReachable ? 'synced' : 'pending',
+                syncAction: wasCloudReachable ? '' : 'create',
+                createdOffline: !wasCloudReachable,
+                offlineCreated: !wasCloudReachable,
+                localCreatedAt: now.getTime(),
+                localUpdatedAt: now.getTime(),
+                lastSyncAttemptAt: null,
+                syncError: null
+            });
+            sessionDataStore.updateOrderRecord(orderId, localRecord, 'create-order');
+            console.info('[OFFLINE_ORDER] added to memory cache');
             await gamificationService.awardAction('ordersCreated');
-            notificationService.success(t('msg_save_success'));
+            if (wasCloudReachable) {
+                notificationService.success(t('msg_save_success'));
+            } else {
+                console.info('[OFFLINE_ORDER] saved to Dexie/local queue');
+                console.info('[OFFLINE_ORDER] pending sync');
+                notificationService.success('Order saved offline. Will sync when connection returns.');
+            }
             router.navigate(ROUTES.DASHBOARD);
         } catch (error) {
             notificationService.error(t('msg_save_fail'));

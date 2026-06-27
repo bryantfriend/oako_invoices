@@ -20,6 +20,7 @@ import {
 } from '../js/services/syncRetryPolicy.js';
 import {
     isBackendOrAuthUrl,
+    isHealthCheckUrl,
     shouldBypassRuntimeCaching,
     shouldHandleNavigation
 } from '../js/service-worker/cacheRules.js';
@@ -209,7 +210,7 @@ test('Route render errors stay on the current route instead of redirecting to Or
 
     assert.notEqual(renderCatchStart, -1);
     assert.equal(renderCatchBlock.indexOf('this.navigate(ROUTES.DASHBOARD)'), -1);
-    assert.notEqual(renderCatchBlock.indexOf('Could not open this page.'), -1);
+    assert.notEqual(renderCatchBlock.indexOf('renderRouteError'), -1);
 });
 
 test('Offline order creation is queued, merged into reads, and replayed by sync', function() {
@@ -245,4 +246,53 @@ test('Create order customer picker survives weak product or customer network loa
     assert.notEqual(createOrderSource.indexOf('No saved customers are available on this device yet'), -1);
     assert.notEqual(customerSource.indexOf("filterActiveCustomers(readCachedRows('customers:all'))"), -1);
     assert.notEqual(customerSource.indexOf('Using cached customers after live customer load failed'), -1);
+});
+
+
+test('health.json is never treated as a cacheable runtime asset', function() {
+    var cacheRulesSource = fs.readFileSync('js/service-worker/cacheRules.js', 'utf8');
+    var healthUrl = new URL('https://oako.local/health.json?ts=123');
+
+    assert.equal(isHealthCheckUrl(healthUrl), true);
+    assert.equal(shouldBypassRuntimeCaching({ method: 'GET' }, healthUrl), true);
+    assert.notEqual(cacheRulesSource.indexOf('isHealthCheckUrl'), -1);
+    assert.notEqual(cacheRulesSource.indexOf('return false;'), -1);
+});
+
+test('Connectivity service does not rely on navigator.onLine as source of truth', function() {
+    var connectionSource = fs.readFileSync('js/services/connectionStateService.js', 'utf8');
+    var offlineStatusSource = fs.readFileSync('js/services/offlineStatusService.js', 'utf8');
+
+    assert.notEqual(connectionSource.indexOf('health.json'), -1);
+    assert.notEqual(connectionSource.indexOf("cache: 'no-store'"), -1);
+    assert.notEqual(connectionSource.indexOf('getDocFromServer'), -1);
+    assert.notEqual(offlineStatusSource.indexOf('connectionStateService.isCloudReachable()'), -1);
+    assert.equal(offlineStatusSource.indexOf('navigator.onLine !== false'), -1);
+});
+
+test('Unknown routes and invoice offline errors do not fall back to Orders', function() {
+    var routerSource = fs.readFileSync('js/router.js', 'utf8');
+    var invoiceViewSource = fs.readFileSync('js/views/invoiceView.js', 'utf8');
+    var noRouteStart = routerSource.indexOf('console.warn("No route found for", path);');
+    var noRouteBlock = routerSource.slice(noRouteStart, noRouteStart + 450);
+
+    assert.notEqual(routerSource.indexOf('[ROUTE] requested:'), -1);
+    assert.notEqual(noRouteStart, -1);
+    assert.equal(noRouteBlock.indexOf('this.navigate(ROUTES.DASHBOARD)'), -1);
+    assert.notEqual(invoiceViewSource.indexOf('Invoices are not available offline yet'), -1);
+    assert.notEqual(invoiceViewSource.indexOf('fallbackUsed: false'), -1);
+});
+
+test('Offline order submit gives feedback, cache update, and pending sync badge', function() {
+    var controllerSource = fs.readFileSync('js/controllers/createOrderController.js', 'utf8');
+    var dashboardSource = fs.readFileSync('js/views/dashboardView.js', 'utf8');
+    var orderSource = fs.readFileSync('js/services/orderService.js', 'utf8');
+    var syncSource = fs.readFileSync('js/services/syncService.js', 'utf8');
+
+    assert.notEqual(controllerSource.indexOf('Saving locally...'), -1);
+    assert.notEqual(controllerSource.indexOf('Order saved offline. Will sync when connection returns.'), -1);
+    assert.notEqual(controllerSource.indexOf('router.navigate(ROUTES.DASHBOARD)'), -1);
+    assert.notEqual(dashboardSource.indexOf('renderInvoiceSyncPill(row)'), -1);
+    assert.notEqual(orderSource.indexOf("syncStatus: isOffline ? 'pending' : 'synced'"), -1);
+    assert.notEqual(syncSource.indexOf("order.syncStatus = 'synced'"), -1);
 });

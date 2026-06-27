@@ -259,11 +259,16 @@ class LayoutView {
                             <div><strong>Service Worker</strong><br>${escapeHtml(diagnostics.serviceWorkerVersion)}</div>
                             <div><strong>Dexie Schema</strong><br>${escapeHtml(diagnostics.dexieSchemaVersion)}</div>
                             <div><strong>User</strong><br>${escapeHtml(diagnostics.authenticatedUser)}</div>
+                            <div><strong>Connection</strong><br>${escapeHtml(diagnostics.connectionMode || (diagnostics.online ? 'online' : 'offline'))}</div>
+                            <div><strong>Browser</strong><br>${diagnostics.browserOnline ? 'Online' : 'Offline'}</div>
+                            <div><strong>Health</strong><br>${diagnostics.internetReachable ? 'Reachable' : 'Unavailable'}</div>
+                            <div><strong>Firestore</strong><br>${diagnostics.firestoreReachable ? 'Reachable' : 'Unavailable'}</div>
                             <div><strong>Pending</strong><br>${escapeHtml(diagnostics.pendingIntentCount)}</div>
                             <div><strong>Conflicts</strong><br>${escapeHtml(diagnostics.conflictCount)}</div>
                             <div><strong>Failed</strong><br>${escapeHtml(diagnostics.failedIntentCount)}</div>
                             <div><strong>Last Sync</strong><br>${escapeHtml(diagnostics.lastSuccessfulSynchronization || 'Not synced yet')}</div>
                         </div>
+                        <div class="no-print" style="font-size: 12px; color: var(--color-gray-600); margin-bottom: 8px;">${escapeHtml(diagnostics.connectionReason || '')}</div>
                         <pre class="no-print" style="white-space: pre-wrap; background: var(--color-gray-100); border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 12px; font-size: 11px; max-height: 320px; overflow: auto;">${escapeHtml(JSON.stringify(diagnostics.queue.summary, null, 2))}</pre>
                     `
                 });

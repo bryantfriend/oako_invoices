@@ -3,6 +3,7 @@ import { inventoryController } from "../controllers/inventoryController.js";
 import { layoutView } from "./layoutView.js";
 import { DataTable } from "../components/dataTable.js";
 import { createStatusBadge } from "../components/statusBadge.js";
+import { renderInvoiceSyncPill } from "../components/syncStatusBadge.js";
 import { createCard } from "../components/card.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { router } from "../router.js";
@@ -966,10 +967,10 @@ export const renderDashboard = async () => {
                     sortable: false,
                     align: 'center',
                     render: (val, row) => `
-                        <input 
-                            type="checkbox" 
-                            class="order-select-checkbox" 
-                            data-id="${row.id}" 
+                        <input
+                            type="checkbox"
+                            class="order-select-checkbox"
+                            data-id="${row.id}"
                             ${selectedOrderIds.has(row.id) ? 'checked' : ''}
                             onclick="event.stopPropagation();"
                             style="cursor: pointer;"
@@ -1009,7 +1010,8 @@ export const renderDashboard = async () => {
                         return `<span style="font-weight: 800; color: ${textColor};">${val}d Overdue</span>`;
                     }
                 },
-                { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => createStatusBadge(row) }
+                { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => createStatusBadge(row) },
+                { key: 'syncState', label: 'Sync', align: 'center', render: (val, row) => renderInvoiceSyncPill(row) }
             ],
             data: filteredOrders,
             sortKey: sort.key,
@@ -1032,7 +1034,10 @@ export const renderDashboard = async () => {
                                 <small style="color: var(--color-gray-500);">#${escapeHtml(String(row.id || '').slice(-6))} · ${formatDate(row.orderDate)}</small>
                             </span>
                         </label>
-                        ${createStatusBadge(row)}
+                        <span style="display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+                            ${createStatusBadge(row)}
+                            ${renderInvoiceSyncPill(row)}
+                        </span>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: 12px;">
                         <div><span style="display: block; color: var(--color-gray-500);">Total</span><strong>${formatCurrency(row.totalAmount)}</strong></div>
@@ -1278,7 +1283,11 @@ export const renderDashboard = async () => {
             });
         }
 
-        document.getElementById('create-order-btn').addEventListener('click', () => router.navigate(ROUTES.CREATE_ORDER));
+        document.getElementById('create-order-btn').addEventListener('click', function(event) {
+            console.info('[OFFLINE_ORDER] create clicked');
+            window.playClickAnimation(event, 'create');
+            router.navigate(ROUTES.CREATE_ORDER);
+        });
 
         // Global functions for actions
         window.markAsPaid = async (id, button = null) => {

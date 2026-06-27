@@ -222,6 +222,28 @@ function renderCustomerApprovalSection(approvalLink) {
     `;
 }
 
+function renderInvoicesOfflineEmptyState(container) {
+    container.innerHTML = `
+        <section class="card animate-fade-in" style="padding: 22px; border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a; display: grid; gap: 12px;">
+            <div style="width: 42px; height: 42px; border-radius: 999px; display: flex; align-items: center; justify-content: center; background: white; color: #1d4ed8; font-weight: 900; font-size: 20px;">!</div>
+            <div>
+                <h2 style="font-size: 18px; margin: 0 0 6px; color: #1e3a8a;">Invoices are not available offline yet.</h2>
+                <p style="font-size: 13px; margin: 0; color: #1e40af;">Open this tab once while online to cache invoices on this device. You are still on the Invoices route; no Orders fallback was used.</p>
+            </div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button id="retry-invoices-offline" class="btn btn-primary btn-sm" type="button">Retry</button>
+            </div>
+        </section>
+    `;
+
+    const retryButton = document.getElementById('retry-invoices-offline');
+    if (retryButton) {
+        retryButton.addEventListener('click', function() {
+            renderInvoices();
+        });
+    }
+}
+
 export const renderInvoices = async () => {
     layoutView.render();
     layoutView.updateTitle(t('invoice_title'));
@@ -238,6 +260,15 @@ export const renderInvoices = async () => {
         console.info('[PERF] Invoices first visible render: memory cache path selected');
     } else {
         invoiceListData = await invoiceController.loadInvoiceList({ source: 'invoices-view' });
+    }
+
+    if (!hasCachedInvoiceList && invoiceListData && invoiceListData.meta && invoiceListData.meta.error === true) {
+        console.info('[ROUTE] requested: invoices');
+        console.info('[ROUTE] mounted: invoices');
+        console.info('[ROUTE] redirected: false');
+        console.info('[ROUTE] fallbackUsed: false');
+        renderInvoicesOfflineEmptyState(container);
+        return;
     }
 
     let allInvoices = invoiceListData && invoiceListData.invoices ? invoiceListData.invoices : [];

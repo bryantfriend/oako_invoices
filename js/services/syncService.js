@@ -243,6 +243,12 @@ function prepareOrderForSync(queueItem) {
     restoreDateField(order, 'updatedAt');
     order.localUpdatedAt = order.localUpdatedAt || new Date().toISOString();
     order.syncState = 'synced';
+    order.syncStatus = 'synced';
+    order.syncAction = '';
+    order.serverId = queueItem.entityId;
+    order.lastSyncAttemptAt = new Date().toISOString();
+    order.syncError = null;
+    order.createdOffline = false;
     order.offlineCreated = false;
     return order;
 }

@@ -60,6 +60,7 @@ async function initApp() {
         }
 
         window.addEventListener('kyrgyz-organics-online', function() {
+            notificationService.success(t('msg_online'));
             syncService.processQueue().catch(function(error) {
                 console.warn('Automatic sync failed.', error);
             });

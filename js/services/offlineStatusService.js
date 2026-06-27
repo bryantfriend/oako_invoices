@@ -1,11 +1,12 @@
 import * as firebaseCore from "../core/firebase.js";
 import { offlineQueueService } from "./offlineQueueService.js";
+import { connectionStateService } from "./connectionStateService.js";
 
 const subscribers = [];
 const offlinePersistenceState = firebaseCore.offlinePersistenceState || { warning: '' };
 
 const state = {
-    online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+    online: false,
     syncing: false,
     syncError: false,
     pendingCount: 0,
@@ -14,10 +15,12 @@ const state = {
     authenticationBlockedCount: 0,
     lastSuccessfulSyncAt: '',
     updateAvailable: false,
-    warning: offlinePersistenceState.warning || ''
+    warning: offlinePersistenceState.warning || '',
+    connection: connectionStateService.getSnapshot()
 };
 
 let initialized = false;
+let lastCloudReachable = false;
 
 function notifySubscribers() {
     for (let index = 0; index < subscribers.length; index += 1) {
@@ -44,8 +47,13 @@ async function refreshQueueStatus() {
     notifySubscribers();
 }
 
-function setOnlineStatus(isOnline) {
-    state.online = isOnline;
+function applyConnectionSnapshot(connection) {
+    state.connection = connection || connectionStateService.getSnapshot();
+    state.online = connectionStateService.isCloudReachable();
+    if (state.online && !lastCloudReachable && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('kyrgyz-organics-online'));
+    }
+    lastCloudReachable = state.online;
     notifySubscribers();
 }
 
@@ -56,14 +64,20 @@ export const offlineStatusService = {
         }
         initialized = true;
 
-        window.addEventListener('online', function() {
-            setOnlineStatus(true);
-            window.dispatchEvent(new CustomEvent('kyrgyz-organics-online'));
+        connectionStateService.subscribe(function(connection) {
+            applyConnectionSnapshot(connection);
         });
+        connectionStateService.init();
 
-        window.addEventListener('offline', function() {
-            setOnlineStatus(false);
-        });
+        if (typeof window !== 'undefined') {
+            window.addEventListener('online', function() {
+                connectionStateService.refresh({ reason: 'browser-online-event', force: true });
+            });
+
+            window.addEventListener('offline', function() {
+                applyConnectionSnapshot(connectionStateService.getSnapshot());
+            });
+        }
 
         offlineQueueService.subscribe(function() {
             refreshQueueStatus();
@@ -73,11 +87,12 @@ export const offlineStatusService = {
     },
 
     isOnline() {
-        return state.online === true;
+        return connectionStateService.isCloudReachable();
     },
 
     setSyncing(value) {
         state.syncing = value === true;
+        connectionStateService.setSyncing(state.syncing);
         if (value === true) {
             state.syncError = false;
         }
@@ -100,14 +115,17 @@ export const offlineStatusService = {
     },
 
     async refresh() {
+        const connection = await connectionStateService.refresh({ reason: 'offline-status-refresh', force: true });
+        applyConnectionSnapshot(connection);
         await refreshQueueStatus();
     },
 
     getSnapshot() {
         let label = 'Online';
         let tone = 'online';
+        const connection = state.connection || {};
 
-        if (state.syncing) {
+        if (state.syncing || connection.mode === 'syncing') {
             label = 'Syncing';
             tone = 'syncing';
         } else if (state.updateAvailable) {
@@ -122,11 +140,14 @@ export const offlineStatusService = {
         } else if (state.syncError || state.failedCount > 0) {
             label = 'Sync Error';
             tone = 'error';
+        } else if (connection.mode === 'degraded') {
+            label = 'Limited Connection';
+            tone = 'limited';
         } else if (!state.online) {
             label = 'Offline Mode';
             tone = 'offline';
         } else if (state.pendingCount > 0) {
-            label = 'Pending Changes';
+            label = 'Pending Sync';
             tone = 'pending';
         }
 
@@ -142,7 +163,13 @@ export const offlineStatusService = {
             updateAvailable: state.updateAvailable,
             warning: state.warning,
             label: label,
-            tone: tone
+            tone: tone,
+            connection: Object.assign({}, connection),
+            browserOnline: connection.browserOnline === true,
+            internetReachable: connection.internetReachable === true,
+            firestoreReachable: connection.firestoreReachable === true,
+            connectionMode: connection.mode || 'offline',
+            connectionReason: connection.reason || ''
         };
     },
 

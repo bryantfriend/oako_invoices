@@ -39,6 +39,11 @@ export function isBackendOrAuthUrl(value) {
     return false;
 }
 
+export function isHealthCheckUrl(value) {
+    var url = getUrl(value);
+    return url.pathname === '/health.json' || url.pathname.endsWith('/health.json');
+}
+
 export function isStaticAssetRequest(request, url) {
     var safeRequest = request || {};
     var safeUrl = url ? getUrl(url) : getUrl(safeRequest.url || '/');
@@ -57,6 +62,10 @@ export function shouldBypassRuntimeCaching(request, url) {
     var safeUrl = url ? getUrl(url) : getUrl(safeRequest.url || '/');
 
     if (safeRequest.method && safeRequest.method !== 'GET') {
+        return true;
+    }
+
+    if (isHealthCheckUrl(safeUrl)) {
         return true;
     }
 

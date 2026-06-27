@@ -6,6 +6,13 @@ function getBadgeStyle(tone) {
             border: '#fde68a'
         };
     }
+    if (tone === 'limited') {
+        return {
+            background: '#fff7ed',
+            color: '#9a3412',
+            border: '#fed7aa'
+        };
+    }
     if (tone === 'pending') {
         return {
             background: '#eff6ff',

@@ -9,6 +9,61 @@ function normalizePath(path) {
     return path;
 }
 
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function getRouteName(path) {
+    var safePath = String(path || '/');
+    if (safePath === ROUTES.DASHBOARD) {
+        return 'orders';
+    }
+    if (safePath === ROUTES.INVOICES) {
+        return 'invoices';
+    }
+    if (safePath === ROUTES.CREATE_ORDER) {
+        return 'create-order';
+    }
+    if (safePath.indexOf('/orders/') === 0) {
+        return 'order-detail';
+    }
+    if (safePath.indexOf('/invoices/') === 0) {
+        return 'invoice-detail';
+    }
+    return safePath.replace(/^\//, '') || 'orders';
+}
+
+function logRouteDiagnostics(details) {
+    var safeDetails = details || {};
+    console.info('[ROUTE] requested: ' + (safeDetails.requested || ''));
+    console.info('[ROUTE] mounted: ' + (safeDetails.mounted || ''));
+    console.info('[ROUTE] redirected: ' + (safeDetails.redirected === true));
+    console.info('[ROUTE] fallbackUsed: ' + (safeDetails.fallbackUsed === true));
+    if (safeDetails.source) {
+        console.info('[ROUTE] source: ' + safeDetails.source);
+    }
+    if (safeDetails.reason) {
+        console.info('[ROUTE] reason: ' + safeDetails.reason);
+    }
+}
+
+function renderRouteError(path, message) {
+    const container = document.getElementById('page-container');
+    if (!container) {
+        return;
+    }
+    const routeName = getRouteName(path);
+    container.innerHTML = '<section class="card animate-fade-in" style="border-color: #fecaca; background: #fff7f7; color: #7f1d1d; padding: 18px;">'
+        + '<div style="font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; color: #991b1b;">' + escapeHtml(routeName) + '</div>'
+        + '<h2 style="font-size: 18px; margin: 6px 0 6px;">Could not open this page.</h2>'
+        + '<p style="font-size: 13px; margin: 0;">' + escapeHtml(message || 'The route stayed here so the error can be fixed without sending you back to Orders.') + '</p>'
+        + '</section>';
+}
+
 
 class Router {
     constructor() {
@@ -59,10 +114,12 @@ class Router {
         });
 
         if (!isPublicRoute && !guardService.canActivate(path)) {
+            logRouteDiagnostics({ requested: getRouteName(path), mounted: 'login', redirected: true, fallbackUsed: false, source: 'auth-guard' });
             return this.navigate(ROUTES.LOGIN);
         }
 
         if (path === ROUTES.LOGIN && authService.getCurrentUser() && authService.isAdmin()) {
+            logRouteDiagnostics({ requested: 'login', mounted: 'orders', redirected: true, fallbackUsed: false, source: 'auth-guard' });
             return this.navigate(ROUTES.DASHBOARD);
         }
 
@@ -112,16 +169,16 @@ class Router {
         if (matchedRoute) {
             try {
                 await this.routes[matchedRoute](params);
+                logRouteDiagnostics({ requested: getRouteName(path), mounted: getRouteName(matchedRoute), redirected: false, fallbackUsed: false, source: 'real-view' });
             } catch (err) {
                 console.error("View Render Error:", err);
-                const container = document.getElementById('page-container');
-                if (container) {
-                    container.innerHTML = '<div class="card" style="border-color: #fecaca; background: #fff7f7; color: #7f1d1d;"><strong>Could not open this page.</strong><br><span style="font-size: 13px;">The route stayed here so the error can be fixed without sending you back to Orders.</span></div>';
-                }
+                renderRouteError(path, 'This page could not finish loading. Cached data stays visible when available; retry when the connection improves.');
+                logRouteDiagnostics({ requested: getRouteName(path), mounted: 'error', redirected: false, fallbackUsed: false, source: 'route-error', reason: err && err.message ? err.message : 'render failed' });
             }
         } else {
             console.warn("No route found for", path);
-            this.navigate(ROUTES.DASHBOARD);
+            renderRouteError(path, 'This route is not registered in the current app version. No Orders fallback was used.');
+            logRouteDiagnostics({ requested: getRouteName(path), mounted: 'error', redirected: false, fallbackUsed: false, source: 'unknown-route', reason: 'route not registered' });
         }
     }
 }

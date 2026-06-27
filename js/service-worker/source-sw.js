@@ -10,7 +10,7 @@ import {
     shouldHandleNavigation
 } from './cacheRules.js';
 
-const OAKO_SERVICE_WORKER_VERSION = '2.10';
+const OAKO_SERVICE_WORKER_VERSION = '2.11';
 const LEGACY_STATIC_CACHES = [
     'oako-invoices-v2.01',
     'oako-invoices-v2.02'
