@@ -25,18 +25,79 @@
     <link rel="icon" href="data:,">
 
     <script>
+        function showDismissibleErrorBanner(title, details, backgroundColor) {
+            var errDiv = document.createElement('div');
+            var content = document.createElement('div');
+            var heading = document.createElement('strong');
+            var body = document.createElement('div');
+            var closeButton = document.createElement('button');
+
+            errDiv.style.cssText = [
+                'position: fixed',
+                'top: 0',
+                'left: 0',
+                'right: 0',
+                'z-index: 999999',
+                'display: grid',
+                'grid-template-columns: minmax(0, 1fr) auto',
+                'gap: 14px',
+                'align-items: start',
+                'max-height: 45vh',
+                'overflow: auto',
+                'background: ' + backgroundColor,
+                'color: white',
+                'padding: 16px 18px',
+                'font-family: monospace',
+                'font-size: 14px',
+                'white-space: pre-wrap',
+                'box-shadow: 0 12px 30px rgba(0,0,0,0.25)'
+            ].join(';');
+
+            heading.textContent = title;
+            body.textContent = details;
+            body.style.marginTop = '6px';
+
+            closeButton.type = 'button';
+            closeButton.textContent = 'x';
+            closeButton.setAttribute('aria-label', 'Close error banner');
+            closeButton.style.cssText = [
+                'width: 32px',
+                'height: 32px',
+                'border: 1px solid rgba(255,255,255,0.65)',
+                'border-radius: 6px',
+                'background: rgba(255,255,255,0.14)',
+                'color: white',
+                'font-size: 18px',
+                'font-weight: 900',
+                'line-height: 1',
+                'cursor: pointer'
+            ].join(';');
+            closeButton.addEventListener('click', function() {
+                errDiv.remove();
+            });
+
+            content.appendChild(heading);
+            content.appendChild(body);
+            errDiv.appendChild(content);
+            errDiv.appendChild(closeButton);
+            (document.body || document.documentElement).appendChild(errDiv);
+        }
+
         window.onerror = function (msg, url, line, col, error) {
-            const errDiv = document.createElement('div');
-            errDiv.style = "position: fixed; top: 0; left: 0; right: 0; background: red; color: white; z-index: 999999; padding: 20px; font-family: monospace; font-size: 16px; white-space: pre-wrap;";
-            errDiv.innerHTML = `<strong>JS ERROR:</strong> ${msg}<br>Location: ${url}:${line}:${col}<br>Stack: ${error ? error.stack : 'N/A'}`;
-            document.body.appendChild(errDiv);
+            showDismissibleErrorBanner(
+                'JS ERROR:',
+                String(msg || '') + '\nLocation: ' + String(url || '') + ':' + line + ':' + col + '\nStack: ' + (error && error.stack ? error.stack : 'N/A'),
+                '#b91c1c'
+            );
             return false;
         };
         window.addEventListener('unhandledrejection', function (event) {
-            const errDiv = document.createElement('div');
-            errDiv.style = "position: fixed; top: 0; left: 0; right: 0; background: darkred; color: white; z-index: 999999; padding: 20px; font-family: monospace; font-size: 16px; white-space: pre-wrap;";
-            errDiv.innerHTML = `<strong>PROMISE REJECTION:</strong> ${event.reason}<br>Stack: ${event.reason.stack}`;
-            document.body.appendChild(errDiv);
+            var reason = event && event.reason ? event.reason : 'Unknown promise rejection';
+            showDismissibleErrorBanner(
+                'PROMISE REJECTION:',
+                String(reason) + '\nStack: ' + (reason && reason.stack ? reason.stack : 'N/A'),
+                '#7f1d1d'
+            );
         });
     </script>
 </head>
@@ -70,7 +131,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Application Logic -->
-    <script type="module" src="./js/main.js?v=2.05"></script>
+    <script type="module" src="./js/main.js?v=2.12"></script>
 </body>
 
 </html>

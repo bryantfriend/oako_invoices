@@ -296,3 +296,16 @@ test('Offline order submit gives feedback, cache update, and pending sync badge'
     assert.notEqual(orderSource.indexOf("syncStatus: isOffline ? 'pending' : 'synced'"), -1);
     assert.notEqual(syncSource.indexOf("order.syncStatus = 'synced'"), -1);
 });
+
+
+test('Emergency error banners and notifications can be dismissed', function() {
+    var indexSource = fs.readFileSync('index.html', 'utf8');
+    var notificationSource = fs.readFileSync('js/core/notificationService.js', 'utf8');
+
+    assert.notEqual(indexSource.indexOf('showDismissibleErrorBanner'), -1);
+    assert.notEqual(indexSource.indexOf("aria-label', 'Close error banner'"), -1);
+    assert.notEqual(indexSource.indexOf('errDiv.remove()'), -1);
+    assert.notEqual(notificationSource.indexOf("aria-label', 'Close notification'"), -1);
+    assert.notEqual(notificationSource.indexOf('closeButton.addEventListener'), -1);
+    assert.notEqual(notificationSource.indexOf('dismissToast'), -1);
+});

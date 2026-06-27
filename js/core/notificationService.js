@@ -13,7 +13,7 @@ class NotificationService {
         toast.style.cssText = `
             background: ${type === 'error' ? 'var(--color-error)' : 'var(--color-gray-800)'};
             color: white;
-            padding: 12px 24px;
+            padding: 12px 12px 12px 20px;
             border-radius: var(--radius-md);
             margin-bottom: 12px;
             box-shadow: var(--shadow-lg);
@@ -22,20 +22,51 @@ class NotificationService {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 12px;
             min-width: 300px;
         `;
 
-        toast.textContent = message;
+        const messageEl = document.createElement('span');
+        messageEl.textContent = message;
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.textContent = 'x';
+        closeButton.setAttribute('aria-label', 'Close notification');
+        closeButton.style.cssText = `
+            width: 26px;
+            height: 26px;
+            border: 1px solid rgba(255,255,255,0.55);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            font-size: 16px;
+            font-weight: 900;
+            line-height: 1;
+            cursor: pointer;
+            flex: 0 0 auto;
+        `;
+
+        function dismissToast() {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            toast.addEventListener('transitionend', function() {
+                toast.remove();
+            }, { once: true });
+            setTimeout(function() {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 250);
+        }
+
+        closeButton.addEventListener('click', dismissToast);
+        toast.appendChild(messageEl);
+        toast.appendChild(closeButton);
 
         this.container.appendChild(toast);
 
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(10px)';
-            toast.addEventListener('transitionend', () => {
-                toast.remove();
-            });
-        }, duration);
+        setTimeout(dismissToast, duration);
     }
 
     success(message) {
