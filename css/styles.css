@@ -330,6 +330,59 @@ textarea:focus {
     color: var(--color-gray-400);
 }
 
+.loading-brand-mark {
+    width: 56px;
+    height: 56px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--color-primary-800), var(--color-primary-500));
+    color: white;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    box-shadow: 0 12px 26px rgba(31, 122, 61, 0.22);
+}
+
+.loading-quote-card {
+    width: min(520px, 100%);
+    display: grid;
+    gap: 8px;
+    padding: 16px 18px;
+    border: 1px solid rgba(47, 143, 74, 0.16);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--shadow-card);
+    text-align: center;
+}
+
+.loading-quote-card p {
+    min-height: 48px;
+    display: grid;
+    place-items: center;
+    color: var(--color-primary-900);
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.45;
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+}
+
+.loading-quote-card span {
+    color: var(--color-gray-500);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+}
+
+.loading-quote-card .is-visible {
+    opacity: 1;
+}
+
 /* Dashboard V2 Utilities */
 .btn-icon {
     background: none;
@@ -991,6 +1044,8 @@ textarea:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .loading-quote-card p,
+    .loading-quote-card span,
     .dashboard-kpi-card,
     .dashboard-card,
     .ranked-product-row,

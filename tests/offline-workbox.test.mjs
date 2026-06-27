@@ -309,3 +309,16 @@ test('Emergency error banners and notifications can be dismissed', function() {
     assert.notEqual(notificationSource.indexOf('closeButton.addEventListener'), -1);
     assert.notEqual(notificationSource.indexOf('dismissToast'), -1);
 });
+
+
+test('Initial loading screen shows rotating inspirational quotes', function() {
+    var indexSource = fs.readFileSync('index.html', 'utf8');
+    var stylesSource = fs.readFileSync('css/styles.css', 'utf8');
+    var mainSource = fs.readFileSync('js/main.js', 'utf8');
+
+    assert.notEqual(indexSource.indexOf('loading-inspiration-quote'), -1);
+    assert.notEqual(indexSource.indexOf('rotateLoadingQuotes'), -1);
+    assert.notEqual(indexSource.indexOf('Every order is a promise'), -1);
+    assert.notEqual(stylesSource.indexOf('.loading-quote-card'), -1);
+    assert.notEqual(mainSource.indexOf('oakoLoadingQuoteTimer'), -1);
+});
