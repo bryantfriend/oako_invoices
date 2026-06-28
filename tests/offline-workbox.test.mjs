@@ -225,6 +225,50 @@ test('Offline order creation is queued, merged into reads, and replayed by sync'
     assert.notEqual(syncSource.indexOf('writeOrderCreate(queueItem)'), -1);
 });
 
+test('Pending offline orders can be archived or removed without duplicate syncs', function() {
+    var orderSource = fs.readFileSync('js/services/orderService.js', 'utf8');
+    var queueSource = fs.readFileSync('js/services/offlineQueueService.js', 'utf8');
+    var syncSource = fs.readFileSync('js/services/syncService.js', 'utf8');
+    var dashboardSource = fs.readFileSync('js/views/dashboardView.js', 'utf8');
+
+    assert.notEqual(orderSource.indexOf('isPendingLocalCreate'), -1);
+    assert.notEqual(orderSource.indexOf('offlineQueueService.compactPendingOrderCreate'), -1);
+    assert.notEqual(orderSource.indexOf('offlineQueueService.removePendingOrderCreate'), -1);
+    assert.notEqual(orderSource.indexOf("enqueue('archiveOrder', 'order'"), -1);
+    assert.notEqual(queueSource.indexOf('compactPendingOrderCreate'), -1);
+    assert.notEqual(queueSource.indexOf('removePendingOrderCreate'), -1);
+    assert.notEqual(syncSource.indexOf("queueItem.actionType === 'archiveOrder'"), -1);
+    assert.notEqual(syncSource.indexOf('writeOrderArchive(queueItem)'), -1);
+    assert.notEqual(dashboardSource.indexOf('removeCachedOrder'), -1);
+});
+
+test('Manual Sync Now reports diagnostics and bypasses retry wait', function() {
+    var syncSource = fs.readFileSync('js/services/syncService.js', 'utf8');
+    var queueSource = fs.readFileSync('js/services/offlineQueueService.js', 'utf8');
+    var layoutSource = fs.readFileSync('js/views/layoutView.js', 'utf8');
+
+    assert.notEqual(layoutSource.indexOf('processQueue({ manual: true })'), -1);
+    assert.notEqual(layoutSource.indexOf('[SYNC_NOW] clicked'), -1);
+    assert.notEqual(layoutSource.indexOf('Cannot reach Firestore yet'), -1);
+    assert.notEqual(syncSource.indexOf('failureReason'), -1);
+    assert.notEqual(syncSource.indexOf('firestore_unreachable'), -1);
+    assert.notEqual(syncSource.indexOf('authentication_required'), -1);
+    assert.notEqual(syncSource.indexOf('queueProcessorStarted: true'), -1);
+    assert.notEqual(syncSource.indexOf('includeRetryWait: manual'), -1);
+    assert.notEqual(queueSource.indexOf('safeOptions.includeRetryWait === true'), -1);
+});
+
+test('Sync diagnostics expose a sanitized queue inspector', function() {
+    var queueSource = fs.readFileSync('js/services/offlineQueueService.js', 'utf8');
+    var layoutSource = fs.readFileSync('js/views/layoutView.js', 'utf8');
+
+    assert.notEqual(queueSource.indexOf('items: items.map(function(item)'), -1);
+    assert.notEqual(queueSource.indexOf('lastErrorCode'), -1);
+    assert.equal(queueSource.indexOf('payload: item.payload'), -1);
+    assert.notEqual(layoutSource.indexOf('Queue Items'), -1);
+    assert.notEqual(layoutSource.indexOf('diagnostics.queue.items || []'), -1);
+});
+
 test('Offline readiness and conflict review are exposed in diagnostics and navigation', function() {
     var diagnosticsSource = fs.readFileSync('js/services/syncDiagnosticsService.js', 'utf8');
     var layoutSource = fs.readFileSync('js/views/layoutView.js', 'utf8');
@@ -311,14 +355,19 @@ test('Emergency error banners and notifications can be dismissed', function() {
 });
 
 
-test('Initial loading screen shows rotating inspirational quotes', function() {
-    var indexSource = fs.readFileSync('index.html', 'utf8');
-    var stylesSource = fs.readFileSync('css/styles.css', 'utf8');
-    var mainSource = fs.readFileSync('js/main.js', 'utf8');
 
-    assert.notEqual(indexSource.indexOf('loading-inspiration-quote'), -1);
-    assert.notEqual(indexSource.indexOf('rotateLoadingQuotes'), -1);
-    assert.notEqual(indexSource.indexOf('Every order is a promise'), -1);
-    assert.notEqual(stylesSource.indexOf('.loading-quote-card'), -1);
-    assert.notEqual(mainSource.indexOf('oakoLoadingQuoteTimer'), -1);
+test('Orders and Invoices loading states use centralized loading quotes', function() {
+    var indexSource = fs.readFileSync('index.html', 'utf8');
+    var quotesSource = fs.readFileSync('js/components/loadingQuotes.js', 'utf8');
+    var dashboardSource = fs.readFileSync('js/views/dashboardView.js', 'utf8');
+    var invoiceSource = fs.readFileSync('js/views/invoiceView.js', 'utf8');
+
+    assert.equal(indexSource.indexOf('rotateLoadingQuotes'), -1);
+    assert.equal(indexSource.indexOf('loading-inspiration-quote'), -1);
+    assert.notEqual(quotesSource.indexOf('Every great bakery is built one order at a time.'), -1);
+    assert.notEqual(quotesSource.indexOf('Clear invoices build clear trust.'), -1);
+    assert.notEqual(quotesSource.indexOf('startLoadingQuoteRotation'), -1);
+    assert.notEqual(quotesSource.indexOf('stopLoadingQuoteRotation'), -1);
+    assert.notEqual(dashboardSource.indexOf("renderLoadingQuotePanel('orders')"), -1);
+    assert.notEqual(invoiceSource.indexOf("renderLoadingQuotePanel('invoices')"), -1);
 });

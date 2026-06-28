@@ -130,11 +130,6 @@ async function initApp() {
         }, 1500); // Small delay to prioritize initial render
 
         // Remove scaffolding loading screen if it exists
-        if (window.oakoLoadingQuoteTimer) {
-            clearInterval(window.oakoLoadingQuoteTimer);
-            window.oakoLoadingQuoteTimer = null;
-        }
-
         const loader = document.querySelector('.loading-screen');
         if (loader && loader.parentElement === document.body) {
             loader.remove();

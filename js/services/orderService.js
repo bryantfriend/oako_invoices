@@ -1,4 +1,4 @@
-import { db } from "../core/firebase.js";
+import { auth, db } from "../core/firebase.js";
 import {
     collection,
     addDoc,
@@ -23,6 +23,15 @@ import { deviceIdService } from "./deviceIdService.js";
 
 const COLLECTION = 'orders';
 
+function getCurrentUserId() {
+    return auth.currentUser && auth.currentUser.uid ? auth.currentUser.uid : '';
+}
+
+function isPendingLocalCreate(order) {
+    return !!(order
+        && (order.syncAction === 'create' || order.syncState === 'offline_created' || order.syncStatus === 'pending')
+        && !order.serverId);
+}
 
 function mergeLocalOrders(serverOrders, localOrdersById) {
     const byId = {};
@@ -287,9 +296,59 @@ export const orderService = {
             const existingOrder = await this.getOrderById(id).catch(function() {
                 return null;
             });
+            const now = new Date();
+            const userId = getCurrentUserId();
+
+            if (isPendingLocalCreate(existingOrder)) {
+                const compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, {
+                    archived: true,
+                    status: 'archived',
+                    archivedAt: now.toISOString(),
+                    archivedAtLocal: now.getTime(),
+                    archivedBy: userId,
+                    syncStatus: 'pending',
+                    syncAction: 'create',
+                    syncState: 'offline_created'
+                });
+                return { local: true, archived: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: true, status: 'archived' }) };
+            }
+
+            if (!offlineStatusService.isOnline()) {
+                const localSnapshot = Object.assign({}, existingOrder || { id: id }, {
+                    id: id,
+                    archived: true,
+                    status: 'archived',
+                    archivedAt: now.toISOString(),
+                    archivedAtLocal: now.getTime(),
+                    archivedBy: userId,
+                    updatedAt: now.toISOString(),
+                    localUpdatedAt: now.toISOString(),
+                    localUpdatedAtMillis: now.getTime(),
+                    syncState: 'pending_sync',
+                    syncStatus: 'pending',
+                    syncAction: 'archive'
+                });
+                await offlineQueueService.enqueue('archiveOrder', 'order', id, {
+                    firestorePatch: {
+                        archived: true,
+                        status: 'archived',
+                        archivedAt: now.toISOString(),
+                        archivedBy: userId
+                    },
+                    localOrderSnapshot: localSnapshot,
+                    order: localSnapshot,
+                    localUpdatedAt: now.toISOString()
+                }, {
+                    storeId: localSnapshot.storeId || localSnapshot.companyId || 'KORG'
+                });
+                return { queued: true, archived: true, order: localSnapshot };
+            }
+
             await this.updateOrder(id, {
                 archived: true,
-                archivedAt: serverTimestamp()
+                status: 'archived',
+                archivedAt: serverTimestamp(),
+                archivedBy: userId
             });
             await dataIntegrityService.recordAuditLogSafely({
                 type: 'ORDER_ARCHIVED',
@@ -302,7 +361,7 @@ export const orderService = {
             }, {
                 source: 'ui'
             });
-            return true;
+            return { archived: true };
         } catch (error) {
             console.error("Error archiving order:", error);
             throw error;
@@ -310,6 +369,13 @@ export const orderService = {
     },
 
     async deleteOrder(id) {
+        const existingOrder = await this.getOrderById(id).catch(function() {
+            return null;
+        });
+        if (isPendingLocalCreate(existingOrder)) {
+            await offlineQueueService.removePendingOrderCreate(id);
+            return { localRemoved: true };
+        }
         return this.archiveOrder(id);
     }
 };

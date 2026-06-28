@@ -230,17 +230,32 @@ class LayoutView {
         const button = document.getElementById('sync-now-btn');
         if (button) {
             button.addEventListener('click', async function() {
-            try {
-                const result = await syncService.processQueue();
-                if (result.message === 'Offline') {
-                    notificationService.error('Offline mode. Sync will run when internet returns.');
-                    return;
+                console.info('[SYNC_NOW] clicked');
+                const originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = 'Syncing...';
+                try {
+                    const result = await syncService.processQueue({ manual: true });
+                    if (result.failureReason === 'authentication_required') {
+                        notificationService.error(result.message || 'Cannot sync yet because login/auth is not ready.');
+                        return;
+                    }
+                    if (result.failureReason === 'firestore_unreachable') {
+                        notificationService.error(result.message || 'Cannot reach Firestore yet. Changes are still saved locally.');
+                        return;
+                    }
+                    if (result.failed > 0) {
+                        notificationService.error(result.message || ('Sync failed: ' + result.failed + ' item(s) still need attention.'));
+                        return;
+                    }
+                    notificationService.info(result.message || ('Sync complete: ' + result.synced + ' synced, ' + result.failed + ' failed.'));
+                } catch (error) {
+                    console.error('Manual sync failed.', error);
+                    notificationService.error('Sync failed. Pending changes were kept.');
+                } finally {
+                    button.disabled = false;
+                    button.textContent = originalText || 'Sync Now';
                 }
-                notificationService.info('Sync complete: ' + result.synced + ' synced, ' + result.failed + ' failed.');
-            } catch (error) {
-                console.error('Manual sync failed.', error);
-                notificationService.error('Sync failed. Pending changes were kept.');
-            }
             });
         }
 
@@ -269,7 +284,16 @@ class LayoutView {
                             <div><strong>Last Sync</strong><br>${escapeHtml(diagnostics.lastSuccessfulSynchronization || 'Not synced yet')}</div>
                         </div>
                         <div class="no-print" style="font-size: 12px; color: var(--color-gray-600); margin-bottom: 8px;">${escapeHtml(diagnostics.connectionReason || '')}</div>
-                        <pre class="no-print" style="white-space: pre-wrap; background: var(--color-gray-100); border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 12px; font-size: 11px; max-height: 320px; overflow: auto;">${escapeHtml(JSON.stringify(diagnostics.queue.summary, null, 2))}</pre>
+                        <div class="no-print" style="display: grid; gap: 10px;">
+                            <div>
+                                <div style="font-size: 12px; font-weight: 900; color: var(--color-gray-700); margin-bottom: 4px;">Queue Summary</div>
+                                <pre style="white-space: pre-wrap; background: var(--color-gray-100); border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 12px; font-size: 11px; max-height: 220px; overflow: auto;">${escapeHtml(JSON.stringify(diagnostics.queue.summary, null, 2))}</pre>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; font-weight: 900; color: var(--color-gray-700); margin-bottom: 4px;">Queue Items</div>
+                                <pre style="white-space: pre-wrap; background: var(--color-gray-100); border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 12px; font-size: 11px; max-height: 260px; overflow: auto;">${escapeHtml(JSON.stringify(diagnostics.queue.items || [], null, 2))}</pre>
+                            </div>
+                        </div>
                     `
                 });
                 modal.open();

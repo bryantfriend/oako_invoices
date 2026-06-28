@@ -5,7 +5,7 @@ import { DataTable } from "../components/dataTable.js";
 import { createStatusBadge } from "../components/statusBadge.js";
 import { renderInvoiceSyncPill } from "../components/syncStatusBadge.js";
 import { createCard } from "../components/card.js";
-import { LoadingSkeleton } from "../components/loadingSkeleton.js";
+import { renderLoadingQuotePanel, startLoadingQuoteRotation, stopLoadingQuoteRotation } from "../components/loadingQuotes.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
@@ -67,7 +67,8 @@ export const renderDashboard = async () => {
     const cachedDashboard = dashboardController.getCachedDashboard();
     const hasCachedDashboard = cachedDashboard && cachedDashboard.meta && cachedDashboard.meta.cacheHit === true;
     if (!hasCachedDashboard) {
-        container.innerHTML = LoadingSkeleton();
+        container.innerHTML = renderLoadingQuotePanel('orders');
+        startLoadingQuoteRotation(container, 'orders');
     }
 
     // Internal State
@@ -1362,13 +1363,20 @@ export const renderDashboard = async () => {
         window.deleteOrder = async (id) => {
             if (confirm('Archive this draft order? It will be hidden from the active Orders list, but the record will be kept.')) {
                 const { orderService } = await import("../services/orderService.js");
-                await orderService.deleteOrder(id);
-                dashboardController.updateCachedOrder(id, { archived: true, archivedAt: new Date(), updatedAt: new Date() }, 'delete-order');
+                const result = await orderService.deleteOrder(id);
+                if (result && result.localRemoved) {
+                    dashboardController.removeCachedOrder(id, 'remove-local-pending-order');
+                    notificationService.success('Local pending order removed.');
+                } else {
+                    dashboardController.updateCachedOrder(id, { archived: true, archivedAt: new Date(), updatedAt: new Date() }, 'delete-order');
+                    notificationService.success('Order archived.');
+                }
                 renderDashboard();
             }
         };
     };
 
+    stopLoadingQuoteRotation('orders');
     const visibleRenderStartedAt = performance.now();
     renderUI();
     console.info('[PERF] Orders first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');

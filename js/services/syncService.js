@@ -270,9 +270,40 @@ async function writeOrderCreate(queueItem) {
     });
 }
 
+function prepareOrderPatchForSync(queueItem) {
+    const payload = queueItem.payload || {};
+    const patch = Object.assign({}, payload.firestorePatch || {});
+    patch.updatedAt = serverTimestamp();
+    patch.localUpdatedAt = payload.localUpdatedAt || new Date().toISOString();
+    patch.updatedBy = queueItem.userId || patch.archivedBy || '';
+    patch.deviceId = queueItem.deviceId || '';
+    patch.syncState = 'synced';
+    patch.syncStatus = 'synced';
+    patch.syncAction = '';
+    patch.syncError = null;
+    patch.lastSyncAttemptAt = new Date().toISOString();
+    restoreDateField(patch, 'archivedAt');
+    return patch;
+}
+
+async function writeOrderArchive(queueItem) {
+    const orderRef = doc(db, 'orders', queueItem.entityId);
+    const localVersion = getLocalOrderSnapshot(queueItem);
+    const patch = prepareOrderPatchForSync(queueItem);
+    await updateDoc(orderRef, patch);
+    await googleSheetsService.syncOrderLifecycle(Object.assign({ id: queueItem.entityId }, localVersion, patch)).catch(function(error) {
+        console.warn('Google Sheets order sync failed after offline order archive.', error);
+    });
+}
+
 async function processOrderQueueItem(queueItem) {
     if (queueItem.actionType === 'createOrder') {
         await writeOrderCreate(queueItem);
+        return;
+    }
+
+    if (queueItem.actionType === 'archiveOrder') {
+        await writeOrderArchive(queueItem);
         return;
     }
 
@@ -293,51 +324,94 @@ async function processQueueItem(queueItem) {
 }
 
 export const syncService = {
-    async processQueue() {
+    async processQueue(options) {
+        const safeOptions = options || {};
+        const manual = safeOptions.manual === true;
+        let snapshot = offlineStatusService.getSnapshot();
+
+        if (manual) {
+            console.info('[SYNC_NOW] clicked', { pending: snapshot.pendingCount, failed: snapshot.failedCount });
+            await offlineStatusService.refresh();
+            snapshot = offlineStatusService.getSnapshot();
+            console.info('[SYNC_NOW] reachability', {
+                online: snapshot.online,
+                browserOnline: snapshot.browserOnline,
+                internetReachable: snapshot.internetReachable,
+                firestoreReachable: snapshot.firestoreReachable,
+                connectionMode: snapshot.connectionMode
+            });
+        }
+
         if (!offlineStatusService.isOnline()) {
-            return {
+            const offlineResult = {
                 processed: 0,
                 synced: 0,
                 failed: 0,
-                message: 'Offline'
+                failureReason: 'firestore_unreachable',
+                message: 'Cannot reach Firestore yet. Your ' + (snapshot.pendingCount || 0) + ' changes are still saved locally.'
             };
+            if (manual) {
+                console.warn('[SYNC_NOW] stopped', offlineResult);
+            }
+            return offlineResult;
         }
 
         const currentUser = auth.currentUser;
         if (!currentUser) {
             await offlineStatusService.refresh();
-            return {
+            const authResult = {
                 processed: 0,
                 synced: 0,
                 failed: 0,
-                message: 'Authentication required'
+                failureReason: 'authentication_required',
+                message: 'Cannot sync yet because login/auth is not ready.'
             };
+            if (manual) {
+                console.warn('[SYNC_NOW] stopped', authResult);
+            }
+            return authResult;
         }
 
         const ownerId = 'sync-' + (currentUser.uid || 'anonymous') + '-' + Date.now();
         const leaseAcquired = await offlineQueueService.acquireSyncLease(ownerId);
         if (!leaseAcquired) {
-            return {
+            const leaseResult = {
                 processed: 0,
                 synced: 0,
                 failed: 0,
+                failureReason: 'sync_lease_busy',
                 message: 'Another tab is synchronizing'
             };
+            if (manual) {
+                console.info('[SYNC_NOW] stopped', leaseResult);
+            }
+            return leaseResult;
         }
 
         await offlineQueueService.recoverStaleSyncingItems();
 
-        const items = await offlineQueueService.listProcessableItems(currentUser.uid || '');
+        const items = await offlineQueueService.listProcessableItems(currentUser.uid || '', {
+            includeRetryWait: manual
+        });
         const result = {
             processed: items.length,
             synced: 0,
             failed: 0,
-            conflicts: 0
+            conflicts: 0,
+            failureReason: '',
+            message: ''
         };
+
+        if (manual) {
+            console.info('[SYNC_NOW] queueProcessorStarted: true', { processable: items.length });
+        }
 
         if (items.length === 0) {
             await offlineStatusService.refresh();
             await offlineQueueService.releaseSyncLease(ownerId);
+            if (manual) {
+                console.info('[SYNC_NOW] complete', result);
+            }
             return result;
         }
 
@@ -350,6 +424,7 @@ export const syncService = {
                     if (item.userId && item.userId !== (currentUser.uid || '')) {
                         await offlineQueueService.markBlockedForAuthentication(item.id);
                         result.failed += 1;
+                        result.failureReason = result.failureReason || 'authentication_required';
                         continue;
                     }
 
@@ -361,10 +436,27 @@ export const syncService = {
                     result.synced += 1;
                 } catch (error) {
                     await offlineQueueService.markFailed(item.id, error);
-                    if (String(error && error.message ? error.message : error).indexOf('sync_conflict') !== -1) {
+                    const message = String(error && error.message ? error.message : error);
+                    if (message.indexOf('sync_conflict') !== -1) {
                         result.conflicts += 1;
+                        result.failureReason = result.failureReason || 'sync_conflict';
+                    } else if (message.indexOf('permission') !== -1 || message.indexOf('PERMISSION_DENIED') !== -1) {
+                        result.failureReason = result.failureReason || 'security_rules_or_auth';
+                    } else if (message.indexOf('invalid') !== -1 || message.indexOf('payload') !== -1) {
+                        result.failureReason = result.failureReason || 'payload_error';
+                    } else {
+                        result.failureReason = result.failureReason || 'sync_write_failed';
                     }
                     result.failed += 1;
+                    if (manual) {
+                        console.warn('[SYNC_NOW] item failed', {
+                            id: item.id,
+                            actionType: item.actionType,
+                            entityType: item.entityType,
+                            entityId: item.entityId,
+                            error: message
+                        });
+                    }
                 }
             }
         } finally {
@@ -375,8 +467,14 @@ export const syncService = {
         offlineStatusService.setSyncError(result.failed > 0);
         if (result.failed === 0) {
             offlineStatusService.setLastSuccessfulSyncAt(new Date().toISOString());
+            result.message = 'Sync complete: ' + result.synced + ' synced, 0 failed.';
+        } else {
+            result.message = 'Sync finished with ' + result.failed + ' failed item' + (result.failed === 1 ? '' : 's') + '. Pending changes were kept.';
         }
         await offlineStatusService.refresh();
+        if (manual) {
+            console.info('[SYNC_NOW] complete', result);
+        }
         return result;
     },
 

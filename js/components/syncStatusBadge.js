@@ -87,7 +87,7 @@ export function renderSyncStatusBadge(snapshot) {
 }
 
 export function renderInvoiceSyncPill(invoice) {
-    const state = invoice && invoice.syncState ? invoice.syncState : 'synced';
+    const state = invoice && invoice.syncState ? invoice.syncState : (invoice && invoice.syncStatus ? invoice.syncStatus : 'synced');
     const labels = {
         synced: 'synced',
         pending_sync: 'pending sync',

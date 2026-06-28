@@ -324,15 +324,16 @@ export const offlineQueueService = {
         return mapIntentForCompatibility(next);
     },
 
-    async listProcessableItems(actorId) {
+    async listProcessableItems(actorId, options) {
         var items = await getAllIntentRecords();
         var now = getIsoNow();
         var safeActorId = actorId || getCurrentActorId();
+        var safeOptions = options || {};
 
         return items.filter(function(item) {
             var status = item.status || SYNC_RETRY_STATUSES.PENDING;
             var statusIsProcessable = status === SYNC_RETRY_STATUSES.PENDING || status === SYNC_RETRY_STATUSES.RETRY_WAIT;
-            var retryReady = !item.nextAttemptAt || item.nextAttemptAt <= now;
+            var retryReady = safeOptions.includeRetryWait === true || !item.nextAttemptAt || item.nextAttemptAt <= now;
             var actorMatches = !item.userId || item.userId === safeActorId;
             return statusIsProcessable && retryReady && actorMatches;
         });
@@ -378,16 +379,34 @@ export const offlineQueueService = {
         var nextAttemptAt = classification.retryable
             ? getNextRetryIsoString(nextAttemptCount)
             : existing.nextAttemptAt || getIsoNow();
+        var failedPayload = existing.payload || null;
+
+        if (failedPayload && (existing.entityType === 'order' || existing.aggregateType === 'order')) {
+            var failedOrder = Object.assign({}, failedPayload.localOrderSnapshot || failedPayload.order || {}, {
+                syncState: 'sync_failed',
+                syncStatus: 'failed',
+                syncErrorCode: classification.code,
+                syncErrorMessage: classification.message,
+                lastSyncAttemptAt: Date.now(),
+                attemptCount: nextAttemptCount
+            });
+            failedPayload = Object.assign({}, failedPayload, {
+                localOrderSnapshot: failedOrder,
+                order: failedOrder
+            });
+        }
 
         return this.updateQueueItem(id, {
             status: classification.status,
             attemptCount: nextAttemptCount,
             retryCount: nextAttemptCount,
             nextAttemptAt: nextAttemptAt,
+            lastAttemptAt: getIsoNow(),
             lastError: classification.message,
             lastErrorCode: classification.code,
             lastErrorMessage: classification.message,
-            failedAt: getIsoNow()
+            failedAt: getIsoNow(),
+            payload: failedPayload || existing.payload
         });
     },
 
@@ -471,6 +490,69 @@ export const offlineQueueService = {
         }
         return snapshots;
     },
+    async findActiveItemForEntity(entityType, entityId, actionType) {
+        var items = await getAllIntentRecords();
+        for (var index = 0; index < items.length; index += 1) {
+            var item = items[index];
+            if (!isActiveLocalStatus(item.status)) {
+                continue;
+            }
+            if ((item.entityType || item.aggregateType) !== entityType) {
+                continue;
+            }
+            if ((item.entityId || item.aggregateId) !== entityId) {
+                continue;
+            }
+            if (actionType && (item.actionType || item.intentType) !== actionType) {
+                continue;
+            }
+            return item;
+        }
+        return null;
+    },
+
+    async compactPendingOrderCreate(entityId, patch) {
+        var queueItem = await this.findActiveItemForEntity('order', entityId, 'createOrder');
+        if (!queueItem) {
+            return null;
+        }
+        var payload = Object.assign({}, queueItem.payload || {});
+        var existingOrder = Object.assign({}, payload.localOrderSnapshot || payload.order || {}, { id: entityId });
+        var nextOrder = Object.assign({}, existingOrder, patch || {}, {
+            id: entityId,
+            localId: existingOrder.localId || entityId,
+            serverId: existingOrder.serverId || null,
+            syncStatus: 'pending',
+            syncAction: 'create',
+            syncState: existingOrder.syncState || 'offline_created',
+            localUpdatedAt: new Date().toISOString(),
+            localUpdatedAtMillis: Date.now()
+        });
+        payload.order = nextOrder;
+        payload.localOrderSnapshot = nextOrder;
+        payload.localUpdatedAt = nextOrder.localUpdatedAt;
+        await this.updateQueueItem(queueItem.id, {
+            status: SYNC_RETRY_STATUSES.PENDING,
+            nextAttemptAt: new Date().toISOString(),
+            lastError: '',
+            lastErrorCode: '',
+            lastErrorMessage: '',
+            payload: payload
+        });
+        return nextOrder;
+    },
+
+    async removePendingOrderCreate(entityId) {
+        var queueItem = await this.findActiveItemForEntity('order', entityId, 'createOrder');
+        if (!queueItem) {
+            return false;
+        }
+        var database = await openOfflineDexieDatabase();
+        await database.offlineIntents.delete(queueItem.id);
+        notifySubscribers();
+        return true;
+    },
+
     async acquireSyncLease(ownerId) {
         return acquireSyncLease(ownerId || 'tab-' + createRandomHex(8));
     },
@@ -487,6 +569,7 @@ export const offlineQueueService = {
     async getDiagnostics() {
         var database = await openOfflineDexieDatabase();
         var summary = await this.getSummary();
+        var items = await getAllIntentRecords();
         var metadataRows = await database.syncMetadata.toArray().catch(function() {
             return [];
         });
@@ -498,6 +581,21 @@ export const offlineQueueService = {
             dexieSchemaVersion: APP_CONFIG.DEXIE_SCHEMA_VERSION,
             online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
             summary: summary,
+            items: items.map(function(item) {
+                return {
+                    id: item.id || item.intentId || '',
+                    actionType: item.actionType || item.intentType || '',
+                    entityType: item.entityType || item.aggregateType || '',
+                    entityId: item.entityId || item.aggregateId || '',
+                    status: item.status || '',
+                    attemptCount: item.attemptCount || item.retryCount || 0,
+                    nextAttemptAt: item.nextAttemptAt || '',
+                    lastErrorCode: item.lastErrorCode || '',
+                    lastErrorMessage: item.lastErrorMessage || item.lastError || '',
+                    updatedAt: item.updatedAt || '',
+                    createdAt: item.createdAt || ''
+                };
+            }),
             metadata: metadataRows,
             locks: lockRows
         };

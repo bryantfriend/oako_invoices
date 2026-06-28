@@ -1,6 +1,7 @@
 import { layoutView } from "./layoutView.js";
 import { invoiceController } from "../controllers/invoiceController.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
+import { renderLoadingQuotePanel, startLoadingQuoteRotation, stopLoadingQuoteRotation } from "../components/loadingQuotes.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { createCard } from "../components/card.js";
 import { createStatusBadge } from "../components/statusBadge.js";
@@ -251,7 +252,8 @@ export const renderInvoices = async () => {
     const cachedInvoiceList = invoiceController.getCachedInvoiceList();
     const hasCachedInvoiceList = cachedInvoiceList && cachedInvoiceList.meta && cachedInvoiceList.meta.cacheHit === true;
     if (!hasCachedInvoiceList) {
-        container.innerHTML = LoadingSkeleton();
+        container.innerHTML = renderLoadingQuotePanel('invoices');
+        startLoadingQuoteRotation(container, 'invoices');
     }
 
     // Load Data
@@ -267,9 +269,12 @@ export const renderInvoices = async () => {
         console.info('[ROUTE] mounted: invoices');
         console.info('[ROUTE] redirected: false');
         console.info('[ROUTE] fallbackUsed: false');
+        stopLoadingQuoteRotation('invoices');
         renderInvoicesOfflineEmptyState(container);
         return;
     }
+
+    stopLoadingQuoteRotation('invoices');
 
     let allInvoices = invoiceListData && invoiceListData.invoices ? invoiceListData.invoices : [];
     let allOrders = invoiceListData && invoiceListData.orders ? invoiceListData.orders : [];

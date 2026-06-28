@@ -24,7 +24,7 @@ test('order and customer deletion paths archive instead of deleting Firestore do
 
     assert.doesNotMatch(orderService, /deleteDoc/);
     assert.doesNotMatch(customerService, /deleteDoc/);
-    assert.match(orderService, /async\s+deleteOrder\(id\)\s*{[\s\S]*return\s+this\.archiveOrder\(id\);/);
+    assert.match(orderService, /async\s+deleteOrder\(id\)\s*{[\s\S]*removePendingOrderCreate\(id\)[\s\S]*return\s+this\.archiveOrder\(id\);/);
     assert.match(customerService, /async\s+deleteCustomer\(id\)\s*{[\s\S]*archived:\s*true/);
     assert.match(invoiceService, /async\s+deleteInvoice\(id\)\s*{[\s\S]*return\s+this\.archiveInvoice\(id\);/);
 });

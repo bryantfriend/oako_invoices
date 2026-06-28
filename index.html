@@ -117,12 +117,7 @@
             <div id="page-container" class="page-container">
                 <!-- Page views injected here -->
                 <div class="loading-screen">
-                    <div class="loading-brand-mark">OAKO</div>
-                    <div class="loading-quote-card" aria-live="polite">
-                        <p id="loading-inspiration-quote">Every order is a promise. Make it clear, careful, and kind.</p>
-                        <span id="loading-inspiration-label">Preparing your workspace</span>
-                    </div>
-                    <div class="skeleton-card"></div>
+<div class="skeleton-card"></div>
                     <div class="skeleton-text"></div>
                 </div>
             </div>
@@ -131,55 +126,11 @@
         <div id="modal-container"></div>
         <div id="toast-container"></div>
     </div>
-
-    <script>
-        (function rotateLoadingQuotes() {
-            var quotes = [
-                'Every order is a promise. Make it clear, careful, and kind.',
-                'Small details today become trust tomorrow.',
-                'Good work moves quietly, then changes everything.',
-                'A calm start makes the whole day easier to carry.',
-                'Serve the customer in front of you, one clean step at a time.',
-                'Reliable systems create room for generous work.'
-            ];
-            var labels = [
-                'Preparing your workspace',
-                'Checking your tools',
-                'Getting orders ready',
-                'Warming up the dashboard',
-                'Making offline work dependable',
-                'Almost ready'
-            ];
-            var quoteEl = document.getElementById('loading-inspiration-quote');
-            var labelEl = document.getElementById('loading-inspiration-label');
-            var index = 0;
-
-            if (!quoteEl || !labelEl) {
-                return;
-            }
-
-            window.oakoLoadingQuoteTimer = setInterval(function() {
-                index = (index + 1) % quotes.length;
-                quoteEl.classList.remove('is-visible');
-                labelEl.classList.remove('is-visible');
-                setTimeout(function() {
-                    quoteEl.textContent = quotes[index];
-                    labelEl.textContent = labels[index];
-                    quoteEl.classList.add('is-visible');
-                    labelEl.classList.add('is-visible');
-                }, 160);
-            }, 3800);
-
-            quoteEl.classList.add('is-visible');
-            labelEl.classList.add('is-visible');
-        }());
-    </script>
-
     <!-- External Dependencies: Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Application Logic -->
-    <script type="module" src="./js/main.js?v=2.13"></script>
+    <script type="module" src="./js/main.js?v=2.14"></script>
 </body>
 
 </html>
