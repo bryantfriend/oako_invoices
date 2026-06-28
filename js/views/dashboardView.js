@@ -5,12 +5,14 @@ import { DataTable } from "../components/dataTable.js";
 import { createStatusBadge } from "../components/statusBadge.js";
 import { renderInvoiceSyncPill } from "../components/syncStatusBadge.js";
 import { createCard } from "../components/card.js";
+import { Modal } from "../components/modal.js";
 import { renderLoadingQuotePanel, startLoadingQuoteRotation, stopLoadingQuoteRotation } from "../components/loadingQuotes.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
 import { notificationService } from "../core/notificationService.js";
+import { offlineStatusService } from "../services/offlineStatusService.js";
 import { isReturnFilterMatch } from "../core/returnStatus.js";
 
 // Global chart registry to prevent "broken" graphs
@@ -48,7 +50,8 @@ const ICONS = {
     view: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     package: '<path d="m7.5 4.3 9 5.2"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
     trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
-    check: '<path d="M20 6 9 17l-5-5"/>'
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    report: '<path d="M4 3h16v18H4z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>'
 };
 
 function icon(name, className = '') {
@@ -182,6 +185,105 @@ export const renderDashboard = async () => {
         filteredOrders.forEach(applyUpdate);
     };
 
+    const getDateKey = (value) => {
+        if (!value) return '';
+        const date = value.toDate ? value.toDate() : new Date(value);
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+        return date.toISOString().split('T')[0];
+    };
+
+    const getOrderCreatedKey = (order) => {
+        if (order.localCreatedAt) {
+            return getDateKey(order.localCreatedAt);
+        }
+        return getDateKey(order.createdAt || order.updatedAt || order.orderDate);
+    };
+
+    const buildEndOfDaySummary = () => {
+        const todayKey = new Date().toISOString().split('T')[0];
+        const todayOrders = allOrders.filter(order => order.archived !== true && getOrderCreatedKey(order) === todayKey);
+        const deliveryToday = activeOrders.filter(order => getDateKey(order.orderDate) === todayKey);
+        const fulfilledToday = allOrders.filter(order => ['fulfilled', 'fullfilled'].includes(order.status) && getDateKey(order.fulfilledAt || order.updatedAt || order.orderDate) === todayKey);
+        const paidToday = allOrders.filter(order => order.status === 'paid' && getDateKey(order.paidAt || order.updatedAt || order.orderDate) === todayKey);
+        const unpaidOrders = activeOrders.filter(order => ['confirmed', 'fulfilled', 'fullfilled'].includes(order.status));
+        const todayReturnInvoices = (returnInvoices || []).filter(invoice => getDateKey(invoice.returnedAt || invoice.updatedAt || invoice.createdAt) === todayKey);
+        const todayReturnOrders = (returnOrders || []).filter(order => getDateKey(order.returnedAt || order.updatedAt || order.orderDate) === todayKey);
+        const productTotals = {};
+
+        todayOrders.forEach(order => {
+            (order.items || []).forEach(item => {
+                const key = item.productId || item.name || item.productName || 'unknown';
+                if (!productTotals[key]) {
+                    productTotals[key] = {
+                        name: item.name || item.productName || item.name_en || 'Product',
+                        quantity: 0,
+                        amount: 0
+                    };
+                }
+                productTotals[key].quantity += Number(item.quantity || 0);
+                productTotals[key].amount += Number(item.total || (Number(item.quantity || 0) * Number(item.price || 0)));
+            });
+        });
+
+        return {
+            todayKey,
+            ordersCreated: todayOrders.length,
+            deliveryCount: deliveryToday.length,
+            salesCreated: todayOrders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0),
+            fulfilledCount: fulfilledToday.length,
+            cashCollected: paidToday.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0),
+            unpaidCount: unpaidOrders.length,
+            unpaidTotal: unpaidOrders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0),
+            returnCount: todayReturnInvoices.length + todayReturnOrders.length,
+            pendingSync: offlineStatusService.getSnapshot().pendingCount || 0,
+            failedSync: offlineStatusService.getSnapshot().failedCount || 0,
+            topProducts: Object.values(productTotals).sort((a, b) => b.quantity - a.quantity).slice(0, 6)
+        };
+    };
+
+    const renderEndOfDaySummaryModal = () => {
+        const summary = buildEndOfDaySummary();
+        const metric = (label, value) => [
+            '<div style="padding: 12px; background: var(--color-gray-50); border-radius: 8px;">',
+            '  <div style="font-size: 11px; font-weight: 900; color: var(--color-gray-500); text-transform: uppercase;">' + escapeHtml(label) + '</div>',
+            '  <div style="font-size: 20px; font-weight: 900; color: var(--color-gray-900); margin-top: 4px;">' + value + '</div>',
+            '</div>'
+        ].join('');
+        const modal = new Modal({
+            title: 'End-of-Day Summary',
+            size: 'large',
+            footer: false,
+            content: [
+                '<div id="end-of-day-report" style="display: grid; gap: 16px;">',
+                '  <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">',
+                '    <div style="font-size: 13px; color: var(--color-gray-500);">Report date: ' + escapeHtml(summary.todayKey) + '</div>',
+                '    <button type="button" id="print-end-of-day-report" class="btn btn-secondary btn-sm">Print</button>',
+                '  </div>',
+                '  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">',
+                metric('Orders Created', summary.ordersCreated),
+                metric('Delivery Today', summary.deliveryCount),
+                metric('Sales Created', formatCurrency(summary.salesCreated)),
+                metric('Fulfilled', summary.fulfilledCount),
+                metric('Cash Collected', formatCurrency(summary.cashCollected)),
+                metric('Unpaid Balance', formatCurrency(summary.unpaidTotal)),
+                metric('Unpaid Orders', summary.unpaidCount),
+                metric('Returns', summary.returnCount),
+                metric('Pending Sync', summary.pendingSync),
+                metric('Failed Sync', summary.failedSync),
+                '  </div>',
+                '  <section style="border-top: 1px solid var(--color-gray-100); padding-top: 12px;">',
+                '    <h4 style="font-size: 13px; font-weight: 900; margin: 0 0 8px;">Top Products Today</h4>',
+                summary.topProducts.length ? summary.topProducts.map(product => '<div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--color-gray-100); font-size: 12px;"><strong>' + escapeHtml(product.name) + '</strong><span>' + product.quantity + ' units</span><span>' + formatCurrency(product.amount) + '</span></div>').join('') : '<div style="font-size: 12px; color: var(--color-gray-500);">No products sold in orders created today.</div>',
+                '  </section>',
+                '</div>'
+            ].join('')
+        });
+        modal.open();
+        document.getElementById('print-end-of-day-report')?.addEventListener('click', function() {
+            window.print();
+        });
+    };
+
     const renderPayCheckmarkButton = (row) => {
         const isPending = pendingCheckmarkUpdates.has(row.id);
         const isUpdated = updatedCheckmarkUpdates.has(row.id);
@@ -246,6 +348,7 @@ export const renderDashboard = async () => {
                                 </div>
                             </div>
                         </div>
+                        <button id="end-of-day-report-btn" class="btn btn-secondary dashboard-new-order">${icon('report', 'button-icon')} End of Day</button>
                         <button id="create-order-btn" class="btn btn-primary dashboard-new-order">${icon('plus', 'button-icon')} ${t('dash_new_order')}</button>
                     </div>
                 </div>
@@ -1250,6 +1353,7 @@ export const renderDashboard = async () => {
         });
 
         document.getElementById('open-inventory-btn')?.addEventListener('click', () => router.navigate(ROUTES.INVENTORY));
+        document.getElementById('end-of-day-report-btn')?.addEventListener('click', renderEndOfDaySummaryModal);
         document.getElementById('archive-selected-orders')?.addEventListener('click', async () => {
             const ids = [...selectedOrderIds];
             if (ids.length === 0) return;

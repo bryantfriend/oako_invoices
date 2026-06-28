@@ -7,7 +7,7 @@ import { createCard } from "../components/card.js";
 import { notificationService } from "../core/notificationService.js";
 import { Modal } from "../components/modal.js";
 import { DataTable } from "../components/dataTable.js";
-import { formatCurrency } from "../core/formatters.js";
+import { formatCurrency, formatDate } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
 
 function escapeHtml(value = '') {
@@ -96,6 +96,7 @@ export const renderCreateOrder = async () => {
                             <textarea id="notes" name="notes" rows="2" placeholder="Special instructions...">${escapeHtml(repeatOrderDraft?.notes || '')}</textarea>
                         </div>
                         <div id="smart-basket-panel" class="smart-basket-panel"></div>
+                        <div id="customer-price-history-panel" class="smart-basket-panel"></div>
                     `
     })}
 
@@ -274,6 +275,119 @@ export const renderCreateOrder = async () => {
 
         document.getElementById('dismiss-usual-basket')?.addEventListener('click', () => {
             panel.classList.remove('active');
+        });
+    };
+
+    const buildCustomerPriceHistory = (orders = []) => {
+        const productMap = {};
+        orders.forEach(order => {
+            (order.items || []).forEach(item => {
+                const key = item.productId || item.name || item.productName || item.name_en || 'custom';
+                const productName = item.name || item.productName || item.name_en || 'Product';
+                const price = Number(item.price) || 0;
+                const quantity = Number(item.quantity) || 0;
+                if (!productMap[key]) {
+                    productMap[key] = {
+                        productId: item.productId || '',
+                        name: productName,
+                        name_en: item.name_en || productName,
+                        name_ru: item.name_ru || '',
+                        name_kg: item.name_kg || '',
+                        categoryId: item.categoryId || item.category_id || item.category || '',
+                        categoryName: item.categoryName || item.category_name || item.category || '',
+                        imageUrl: item.imageUrl || '',
+                        weight: item.weight || '',
+                        lastPrice: price,
+                        lastQuantity: quantity || 1,
+                        lastOrderedAt: order.orderDate || order.createdAt || '',
+                        totalQuantity: 0,
+                        orderCount: 0,
+                        prices: []
+                    };
+                }
+                const entry = productMap[key];
+                entry.totalQuantity += quantity;
+                entry.orderCount += 1;
+                entry.prices.push(price);
+                if (!entry.lastOrderedAt || new Date(order.orderDate || order.createdAt || 0).getTime() >= new Date(entry.lastOrderedAt || 0).getTime()) {
+                    entry.lastPrice = price;
+                    entry.lastQuantity = quantity || 1;
+                    entry.lastOrderedAt = order.orderDate || order.createdAt || '';
+                }
+            });
+        });
+
+        return Object.values(productMap).map(entry => ({
+            ...entry,
+            averagePrice: entry.prices.length ? entry.prices.reduce((sum, price) => sum + price, 0) / entry.prices.length : entry.lastPrice
+        })).sort((a, b) => b.totalQuantity - a.totalQuantity);
+    };
+
+    const renderCustomerPriceHistoryPanel = (customerName, orders = []) => {
+        const panel = document.getElementById('customer-price-history-panel');
+        if (!panel) return;
+
+        const history = buildCustomerPriceHistory(orders);
+        if (!history.length) {
+            panel.classList.remove('active');
+            panel.innerHTML = '';
+            return;
+        }
+
+        panel.classList.add('active');
+        panel.innerHTML = [
+            '<div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap;">',
+            '  <div>',
+            '    <div style="font-size: 12px; font-weight: 900; color: var(--color-primary-800); text-transform: uppercase;">Customer Price History</div>',
+            '    <div style="font-size: 13px; color: var(--color-gray-700); margin-top: 2px;">' + escapeHtml(customerName) + ' has ' + orders.length + ' recent order' + (orders.length === 1 ? '' : 's') + ' saved on this device.</div>',
+            '  </div>',
+            '  <button type="button" id="dismiss-price-history" class="btn btn-secondary btn-sm">Hide</button>',
+            '</div>',
+            '<div style="display: grid; gap: 8px; margin-top: 12px;">',
+            history.slice(0, 6).map((item, index) => [
+                '<div style="display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, auto); gap: 10px; align-items: center; padding: 10px; background: white; border: 1px solid var(--color-gray-100); border-radius: 8px; font-size: 12px;">',
+                '  <div style="min-width: 0;">',
+                '    <strong style="display: block; color: var(--color-gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escapeHtml(item.name) + '</strong>',
+                '    <span style="display: block; color: var(--color-gray-500); margin-top: 2px;">Last: ' + formatDate(item.lastOrderedAt) + ' - Qty ' + item.lastQuantity + '</span>',
+                '  </div>',
+                '  <span style="font-weight: 900; color: var(--color-primary-700);">' + formatCurrency(item.lastPrice) + '</span>',
+                '  <span style="color: var(--color-gray-500);">Avg ' + formatCurrency(item.averagePrice) + '</span>',
+                '  <button type="button" class="btn btn-secondary btn-sm add-history-item" data-history-index="' + index + '">Add</button>',
+                '</div>'
+            ].join('')).join(''),
+            '</div>'
+        ].join('');
+
+        document.getElementById('dismiss-price-history')?.addEventListener('click', () => {
+            panel.classList.remove('active');
+        });
+
+        panel.querySelectorAll('.add-history-item').forEach(button => {
+            button.addEventListener('click', () => {
+                const item = history[Number(button.dataset.historyIndex)];
+                if (!item) return;
+                const existing = selectedItems.find(entry => entry.productId && item.productId && entry.productId === item.productId);
+                if (existing) {
+                    existing.price = item.lastPrice;
+                    existing.quantity = Number(existing.quantity || 0) + Number(item.lastQuantity || 1);
+                } else {
+                    selectedItems.push({
+                        productId: item.productId,
+                        name: item.name,
+                        name_en: item.name_en,
+                        name_ru: item.name_ru,
+                        name_kg: item.name_kg,
+                        categoryId: item.categoryId,
+                        categoryName: item.categoryName,
+                        price: item.lastPrice,
+                        quantity: item.lastQuantity || 1,
+                        imageUrl: item.imageUrl,
+                        weight: item.weight
+                    });
+                }
+                renderItems();
+                notificationService.success('Added previous customer item.');
+            });
         });
     };
 
@@ -490,15 +604,19 @@ export const renderCreateOrder = async () => {
 
         const hint = document.getElementById('auto-fill-hint');
         if (hint) hint.textContent = 'Looking for this customer\u2019s usual basket...';
-        const lastItems = await createOrderController.getLastOrderItems(val);
+        const [lastItems, historyOrders] = await Promise.all([
+            createOrderController.getLastOrderItems(val),
+            createOrderController.getCustomerOrderHistory(val, 8)
+        ]);
+        renderCustomerPriceHistoryPanel(val, historyOrders);
         if (lastItems && lastItems.length > 0) {
             renderSmartBasketPanel(val, lastItems);
-            if (hint) hint.textContent = 'Usual basket ready. Review it below before adding products.';
+            if (hint) hint.textContent = 'Usual basket and customer price history are ready.';
             return;
         }
 
         renderSmartBasketPanel(val, []);
-        if (hint) hint.textContent = 'No previous basket found. Build this order from the catalog.';
+        if (hint) hint.textContent = historyOrders.length ? 'Customer price history is ready.' : 'No previous basket found. Build this order from the catalog.';
     });
 
     // Customer Picker Modal

@@ -97,5 +97,15 @@ export const createOrderController = {
             console.warn("Could not fetch last order", error);
             return null;
         }
+    },
+
+    async getCustomerOrderHistory(customerName, limitCount = 8) {
+        try {
+            const orders = await orderService.getOrdersByCustomerName(customerName);
+            return (orders || []).slice(0, limitCount);
+        } catch (error) {
+            console.warn("Could not fetch customer order history", error);
+            return [];
+        }
     }
 };

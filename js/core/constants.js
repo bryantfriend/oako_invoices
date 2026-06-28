@@ -24,6 +24,7 @@ export const ROUTES = {
     INVENTORY: '/inventory',
     SETTINGS: '/settings',
     PROFILE: '/profile',
+    OFFLINE_DATA: '/offline',
     SYNC_CONFLICTS: '/sync-conflicts'
 };
 

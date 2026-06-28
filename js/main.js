@@ -47,6 +47,7 @@ import { renderInventory } from "./views/inventoryView.js";
 import { renderSettings } from "./views/settingsView.js";
 import { renderProfile } from "./views/profileView.js";
 import { renderConflictReview } from "./views/conflictReviewView.js";
+import { renderOfflineCache } from "./views/offlineCacheView.js";
 import { renderMobileInvoice } from "./views/mobileInvoiceView.js";
 
 async function initApp() {
@@ -86,6 +87,7 @@ async function initApp() {
         router.addRoute(ROUTES.CUSTOMER_DETAIL, renderCustomerDetail);
         router.addRoute(ROUTES.SETTINGS, renderSettings);
         router.addRoute(ROUTES.PROFILE, renderProfile);
+        router.addRoute(ROUTES.OFFLINE_DATA, renderOfflineCache);
         router.addRoute(ROUTES.SYNC_CONFLICTS, renderConflictReview);
 
         // Init Router (load current URL)

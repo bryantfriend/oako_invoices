@@ -11,6 +11,7 @@ const NAV_ICONS = {
     customers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     settings: '<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 5 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.4 5a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.4.6.8 1 .9.3.1.7.1 1.1.1H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/>',
     profile: '<path d="M12 17.8 5.8 21l1.2-6.9L2 9.2l6.9-1L12 2l3.1 6.2 6.9 1-5 4.9 1.2 6.9Z"/>',
+    offline: '<path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>'
 };
 
@@ -45,6 +46,7 @@ export class Sidebar {
                 ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, 'inventory', 'lowStock')}
                 ${this.createNavItem(t('sidebar_customers'), ROUTES.CUSTOMERS, 'customers')}
                 ${this.createNavItem(t('sidebar_settings'), ROUTES.SETTINGS, 'settings')}
+                ${this.createNavItem('Offline Data', ROUTES.OFFLINE_DATA, 'offline')}
                 ${this.createNavItem('Conflicts', ROUTES.SYNC_CONFLICTS, 'settings', 'conflicts')}
                 ${this.createNavItem('Profile', ROUTES.PROFILE, 'profile')}
             </nav>

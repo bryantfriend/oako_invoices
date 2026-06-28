@@ -371,3 +371,45 @@ test('Orders and Invoices loading states use centralized loading quotes', functi
     assert.notEqual(dashboardSource.indexOf("renderLoadingQuotePanel('orders')"), -1);
     assert.notEqual(invoiceSource.indexOf("renderLoadingQuotePanel('invoices')"), -1);
 });
+
+
+test('Offline data manager exposes cached datasets and refresh route', function() {
+    var constantsSource = fs.readFileSync('js/core/constants.js', 'utf8');
+    var mainSource = fs.readFileSync('js/main.js', 'utf8');
+    var sidebarSource = fs.readFileSync('js/components/sidebar.js', 'utf8');
+    var serviceSource = fs.readFileSync('js/services/offlineCacheService.js', 'utf8');
+    var viewSource = fs.readFileSync('js/views/offlineCacheView.js', 'utf8');
+
+    assert.notEqual(constantsSource.indexOf("OFFLINE_DATA: '/offline'"), -1);
+    assert.notEqual(mainSource.indexOf('renderOfflineCache'), -1);
+    assert.notEqual(sidebarSource.indexOf('Offline Data'), -1);
+    assert.notEqual(serviceSource.indexOf('getCachedRowsInfo'), -1);
+    assert.notEqual(serviceSource.indexOf('refreshOfflineData'), -1);
+    assert.notEqual(serviceSource.indexOf('customerService.getAllCustomers()'), -1);
+    assert.notEqual(serviceSource.indexOf('productService.getAllProducts()'), -1);
+    assert.notEqual(viewSource.indexOf('Refresh Offline Data'), -1);
+});
+
+test('Create Order shows customer price history and favorite products', function() {
+    var controllerSource = fs.readFileSync('js/controllers/createOrderController.js', 'utf8');
+    var createOrderSource = fs.readFileSync('js/views/createOrderView.js', 'utf8');
+
+    assert.notEqual(controllerSource.indexOf('getCustomerOrderHistory'), -1);
+    assert.notEqual(controllerSource.indexOf('orderService.getOrdersByCustomerName'), -1);
+    assert.notEqual(createOrderSource.indexOf('customer-price-history-panel'), -1);
+    assert.notEqual(createOrderSource.indexOf('Customer Price History'), -1);
+    assert.notEqual(createOrderSource.indexOf('buildCustomerPriceHistory'), -1);
+    assert.notEqual(createOrderSource.indexOf('add-history-item'), -1);
+    assert.notEqual(createOrderSource.indexOf('Usual basket and customer price history are ready.'), -1);
+});
+
+test('Orders dashboard includes an end-of-day summary report', function() {
+    var dashboardSource = fs.readFileSync('js/views/dashboardView.js', 'utf8');
+
+    assert.notEqual(dashboardSource.indexOf('end-of-day-report-btn'), -1);
+    assert.notEqual(dashboardSource.indexOf('buildEndOfDaySummary'), -1);
+    assert.notEqual(dashboardSource.indexOf('End-of-Day Summary'), -1);
+    assert.notEqual(dashboardSource.indexOf('Cash Collected'), -1);
+    assert.notEqual(dashboardSource.indexOf('Pending Sync'), -1);
+    assert.notEqual(dashboardSource.indexOf('Top Products Today'), -1);
+});
