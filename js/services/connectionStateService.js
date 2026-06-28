@@ -96,7 +96,7 @@ async function runHealthCheck() {
 
 async function runFirestoreCheck() {
     try {
-        await withTimeout(getDocFromServer(doc(db, 'system', 'health')), FIRESTORE_TIMEOUT_MS, 'Firestore reachability check');
+        await withTimeout(getDocFromServer(doc(db, 'settings', 'offline_health')), FIRESTORE_TIMEOUT_MS, 'Firestore reachability check');
         return { ok: true, reason: '' };
     } catch (error) {
         return { ok: false, reason: error && error.message ? error.message : 'Firestore reachability check failed.' };
@@ -120,16 +120,19 @@ function computeMode(syncing, browserOnline, internetReachable, firestoreReachab
     if (!browserOnline) {
         return { mode: 'offline', reason: 'The browser reports no network connection.' };
     }
+    if (firestoreReachable) {
+        if (pendingSyncCount > 0) {
+            return { mode: 'online', reason: 'Firestore is reachable and local changes are pending sync.' };
+        }
+        if (!internetReachable) {
+            return { mode: 'online', reason: 'Firestore is reachable. The static health check did not respond, so diagnostics may be limited.' };
+        }
+        return { mode: 'online', reason: 'Cloud services are reachable.' };
+    }
     if (!internetReachable) {
-        return { mode: 'degraded', reason: 'The browser reports online, but the uncached health check failed.' };
+        return { mode: 'degraded', reason: 'The browser reports online, but cloud reachability checks failed.' };
     }
-    if (!firestoreReachable) {
-        return { mode: 'degraded', reason: 'The app can reach the network, but Firestore is unavailable.' };
-    }
-    if (pendingSyncCount > 0) {
-        return { mode: 'online', reason: 'Cloud is reachable and local changes are pending sync.' };
-    }
-    return { mode: 'online', reason: 'Cloud services are reachable.' };
+    return { mode: 'degraded', reason: 'The app can reach the network, but Firestore is unavailable.' };
 }
 
 export const connectionStateService = {
@@ -181,10 +184,10 @@ export const connectionStateService = {
                 healthResult = await runHealthCheck();
                 if (healthResult.ok) {
                     state.lastSuccessfulHealthCheckAt = new Date().toISOString();
-                    firestoreResult = await runFirestoreCheck();
-                    if (firestoreResult.ok) {
-                        state.lastSuccessfulFirestoreReadAt = new Date().toISOString();
-                    }
+                }
+                firestoreResult = await runFirestoreCheck();
+                if (firestoreResult.ok) {
+                    state.lastSuccessfulFirestoreReadAt = new Date().toISOString();
                 }
             } else if (browserOnline && safeOptions.skipNetworkCheck === true) {
                 healthResult = { ok: state.internetReachable === true, reason: state.reason || '' };
@@ -203,6 +206,9 @@ export const connectionStateService = {
             }
             if (state.mode === 'degraded' && healthResult.ok === true && firestoreResult.ok !== true && firestoreResult.reason) {
                 state.reason = firestoreResult.reason;
+            }
+            if (state.mode === 'online' && firestoreResult.ok === true && healthResult.ok !== true && healthResult.reason) {
+                state.reason = 'Firestore is reachable. Static health check failed: ' + healthResult.reason;
             }
             state.checkedAt = new Date().toISOString();
 

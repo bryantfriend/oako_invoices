@@ -413,3 +413,14 @@ test('Orders dashboard includes an end-of-day summary report', function() {
     assert.notEqual(dashboardSource.indexOf('Pending Sync'), -1);
     assert.notEqual(dashboardSource.indexOf('Top Products Today'), -1);
 });
+
+
+test('Connectivity probe uses allowed Firestore read and does not let health.json alone block online mode', function() {
+    var connectionSource = fs.readFileSync('js/services/connectionStateService.js', 'utf8');
+
+    assert.notEqual(connectionSource.indexOf("doc(db, 'settings', 'offline_health')"), -1);
+    assert.equal(connectionSource.indexOf("doc(db, 'system', 'health')"), -1);
+    assert.notEqual(connectionSource.indexOf('firestoreResult = await runFirestoreCheck();'), -1);
+    assert.notEqual(connectionSource.indexOf('if (firestoreReachable)'), -1);
+    assert.notEqual(connectionSource.indexOf('Static health check failed'), -1);
+});
