@@ -4,7 +4,7 @@ import {
     getDoc,
     setDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { readCachedRows, writeCachedRows } from "../core/firestoreRead.js";
+import { readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 import {
     getStorage,
@@ -81,7 +81,7 @@ export const settingsService = {
         }
 
         if (!offlineStatusService.isOnline()) {
-            const cachedSettings = readCachedRows(SETTINGS_CACHE_KEY)[0];
+            const cachedSettings = (await readCachedRowsAsync(SETTINGS_CACHE_KEY))[0];
             if (cachedSettings) {
                 invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true };
                 return invoiceSettingsCache;
@@ -105,7 +105,7 @@ export const settingsService = {
             writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
             return invoiceSettingsCache;
         } catch (error) {
-            const cachedSettings = readCachedRows(SETTINGS_CACHE_KEY)[0];
+            const cachedSettings = (await readCachedRowsAsync(SETTINGS_CACHE_KEY))[0];
             if (cachedSettings) {
                 invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true };
                 return invoiceSettingsCache;

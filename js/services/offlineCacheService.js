@@ -1,4 +1,4 @@
-import { getCachedRowsInfo } from "../core/firestoreRead.js";
+import { getCachedRowsInfoAsync } from "../core/firestoreRead.js";
 import { customerService } from "./customerService.js";
 import { productService } from "./productService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
@@ -34,8 +34,8 @@ function describeFreshness(cachedAt) {
     return Math.round(ageHours / 24) + ' day(s) ago';
 }
 
-function buildDatasetStatus(dataset) {
-    var info = getCachedRowsInfo(dataset.key);
+async function buildDatasetStatus(dataset) {
+    var info = await getCachedRowsInfoAsync(dataset.key);
     return {
         key: dataset.key,
         label: dataset.label,
@@ -67,7 +67,7 @@ export const offlineCacheService = {
         var snapshot = offlineStatusService.getSnapshot();
         var orderSnapshot = dashboardController.getCachedDashboard();
         var invoiceSnapshot = invoiceController.getCachedInvoiceList();
-        var datasets = DATASETS.map(buildDatasetStatus);
+        var datasets = await Promise.all(DATASETS.map(buildDatasetStatus));
         datasets.push(getSessionDatasetStatus('Orders', orderSnapshot));
         datasets.push(getSessionDatasetStatus('Invoices', invoiceSnapshot));
 

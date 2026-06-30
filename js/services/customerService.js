@@ -12,7 +12,7 @@ import {
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getDocsWithCache, readCachedRows } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRowsAsync } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'customers';
@@ -43,7 +43,7 @@ export const customerService = {
 
     async getAllCustomers() {
         if (!offlineStatusService.isOnline()) {
-            return filterActiveCustomers(readCachedRows('customers:all'));
+            return filterActiveCustomers(await readCachedRowsAsync('customers:all'));
         }
 
         try {
@@ -73,7 +73,7 @@ export const customerService = {
             return filterActiveCustomers(docs);
         } catch (error) {
             logCollectionError(COLLECTION, error);
-            const cachedCustomers = filterActiveCustomers(readCachedRows('customers:all'));
+            const cachedCustomers = filterActiveCustomers(await readCachedRowsAsync('customers:all'));
             if (cachedCustomers.length) {
                 console.warn('Using cached customers after live customer load failed.', error);
                 return cachedCustomers;

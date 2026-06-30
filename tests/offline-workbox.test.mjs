@@ -194,10 +194,10 @@ test('Offline invoice print dependencies use cached/local data before network re
     var orderSource = fs.readFileSync('js/services/orderService.js', 'utf8');
 
     assert.notEqual(settingsSource.indexOf('!offlineStatusService.isOnline()'), -1);
-    assert.notEqual(settingsSource.indexOf('readCachedRows(SETTINGS_CACHE_KEY)'), -1);
-    assert.notEqual(customerSource.indexOf("readCachedRows('customers:all')"), -1);
-    assert.notEqual(productSource.indexOf("readCachedRows('products:all')"), -1);
-    assert.notEqual(productSource.indexOf("readCachedRows('categories:all')"), -1);
+    assert.notEqual(settingsSource.indexOf('await readCachedRowsAsync(SETTINGS_CACHE_KEY)'), -1);
+    assert.notEqual(customerSource.indexOf("await readCachedRowsAsync('customers:all')"), -1);
+    assert.notEqual(productSource.indexOf("await readCachedRowsAsync('products:all')"), -1);
+    assert.notEqual(productSource.indexOf("await readCachedRowsAsync('categories:all')"), -1);
     assert.notEqual(invoiceSource.indexOf('offlineQueueService.getLocalInvoiceSnapshot(id)'), -1);
     assert.notEqual(invoiceSource.indexOf('getDocFromCache(docRef)'), -1);
     assert.notEqual(orderSource.indexOf('getDocFromCache(docRef)'), -1);
@@ -288,7 +288,7 @@ test('Create order customer picker survives weak product or customer network loa
     assert.notEqual(createOrderSource.indexOf('Promise.allSettled'), -1);
     assert.notEqual(createOrderSource.indexOf('Loading saved customers'), -1);
     assert.notEqual(createOrderSource.indexOf('No saved customers are available on this device yet'), -1);
-    assert.notEqual(customerSource.indexOf("filterActiveCustomers(readCachedRows('customers:all'))"), -1);
+    assert.notEqual(customerSource.indexOf("filterActiveCustomers(await readCachedRowsAsync('customers:all'))"), -1);
     assert.notEqual(customerSource.indexOf('Using cached customers after live customer load failed'), -1);
 });
 
@@ -423,4 +423,25 @@ test('Connectivity probe uses allowed Firestore read and does not let health.jso
     assert.notEqual(connectionSource.indexOf('firestoreResult = await runFirestoreCheck();'), -1);
     assert.notEqual(connectionSource.indexOf('if (firestoreReachable)'), -1);
     assert.notEqual(connectionSource.indexOf('Static health check failed'), -1);
+});
+
+
+test('Large offline reference datasets are stored in Dexie-backed full cache', function() {
+    var firestoreReadSource = fs.readFileSync('js/core/firestoreRead.js', 'utf8');
+    var customerSource = fs.readFileSync('js/services/customerService.js', 'utf8');
+    var productSource = fs.readFileSync('js/services/productService.js', 'utf8');
+    var settingsSource = fs.readFileSync('js/services/settingsService.js', 'utf8');
+    var offlineCacheSource = fs.readFileSync('js/services/offlineCacheService.js', 'utf8');
+
+    assert.notEqual(firestoreReadSource.indexOf('openOfflineDexieDatabase'), -1);
+    assert.notEqual(firestoreReadSource.indexOf("DEXIE_CACHE_PREFIX = 'firestore-read:'"), -1);
+    assert.notEqual(firestoreReadSource.indexOf('writeDexieCachedRows(cacheKey, rows, cachedAt)'), -1);
+    assert.notEqual(firestoreReadSource.indexOf('readCachedRowsAsync'), -1);
+    assert.notEqual(firestoreReadSource.indexOf('getCachedRowsInfoAsync'), -1);
+    assert.notEqual(firestoreReadSource.indexOf('const cachedRows = await readCachedRowsAsync(cacheKey)'), -1);
+    assert.notEqual(customerSource.indexOf("await readCachedRowsAsync('customers:all')"), -1);
+    assert.notEqual(productSource.indexOf("await readCachedRowsAsync('products:all')"), -1);
+    assert.notEqual(productSource.indexOf("await readCachedRowsAsync('categories:all')"), -1);
+    assert.notEqual(settingsSource.indexOf('await readCachedRowsAsync(SETTINGS_CACHE_KEY)'), -1);
+    assert.notEqual(offlineCacheSource.indexOf('getCachedRowsInfoAsync'), -1);
 });

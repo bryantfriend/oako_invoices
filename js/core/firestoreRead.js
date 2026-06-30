@@ -1,11 +1,13 @@
 import { getDocs, getDocsFromCache } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "./firestoreDiagnostics.js";
+import { openOfflineDexieDatabase } from "../services/offlineDexieDb.js";
 
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_ATTEMPTS = 2;
 const CACHE_PREFIX = 'kyrgyz-organics-read-cache:';
 const MAX_LOCAL_CACHE_ENTRY_BYTES = 180000;
 const MAX_LOCAL_CACHE_TOTAL_BYTES = 900000;
+const DEXIE_CACHE_PREFIX = 'firestore-read:';
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -64,6 +66,59 @@ function normalizeCachedRows(rows) {
 }
 
 
+
+function getDexieCacheKey(cacheKey) {
+    return DEXIE_CACHE_PREFIX + String(cacheKey || '').trim();
+}
+
+async function readDexieCachedEntry(cacheKey) {
+    if (!cacheKey) {
+        return { rows: [], cachedAt: '' };
+    }
+
+    try {
+        const database = await openOfflineDexieDatabase();
+        if (!database.sessionRecords) {
+            return { rows: [], cachedAt: '' };
+        }
+        const record = await database.sessionRecords.get(getDexieCacheKey(cacheKey));
+        if (!record) {
+            return { rows: [], cachedAt: '' };
+        }
+        return {
+            rows: normalizeCachedRows(record.records),
+            cachedAt: record.extras && record.extras.cachedAt ? record.extras.cachedAt : (record.cachedAt || '')
+        };
+    } catch (error) {
+        console.warn('[firestore-read] Could not read Dexie cache.', { cacheKey, message: error && error.message ? error.message : '' });
+        return { rows: [], cachedAt: '' };
+    }
+}
+
+async function writeDexieCachedRows(cacheKey, rows, cachedAt) {
+    if (!cacheKey || !Array.isArray(rows)) {
+        return;
+    }
+
+    try {
+        const database = await openOfflineDexieDatabase();
+        if (!database.sessionRecords) {
+            return;
+        }
+        await database.sessionRecords.put({
+            cacheKey: getDexieCacheKey(cacheKey),
+            ownerKey: 'firestore-read',
+            collectionName: 'firestore-read',
+            records: normalizeCachedRows(rows),
+            extras: { cachedAt: cachedAt || new Date().toISOString() },
+            loadedAt: Date.now(),
+            cachedAt: cachedAt || new Date().toISOString()
+        });
+    } catch (error) {
+        console.warn('[firestore-read] Could not write Dexie cache.', { cacheKey, message: error && error.message ? error.message : '' });
+    }
+}
+
 function readCachedEntry(cacheKey) {
     if (!cacheKey || typeof window === 'undefined' || !window.localStorage) {
         return { rows: [], cachedAt: '' };
@@ -90,11 +145,37 @@ function getCachedRowsInfo(cacheKey) {
     return {
         rows: entry.rows,
         count: entry.rows.length,
-        cachedAt: entry.cachedAt
+        cachedAt: entry.cachedAt,
+        source: entry.cachedAt ? 'localStorage' : ''
+    };
+}
+async function getCachedRowsInfoAsync(cacheKey) {
+    const dexieEntry = await readDexieCachedEntry(cacheKey);
+    if (dexieEntry.rows.length > 0) {
+        return {
+            rows: dexieEntry.rows,
+            count: dexieEntry.rows.length,
+            cachedAt: dexieEntry.cachedAt,
+            source: 'dexie'
+        };
+    }
+    const entry = readCachedEntry(cacheKey);
+    return {
+        rows: entry.rows,
+        count: entry.rows.length,
+        cachedAt: entry.cachedAt,
+        source: entry.cachedAt ? 'localStorage' : ''
     };
 }
 function readCachedRows(cacheKey) {
     return readCachedEntry(cacheKey).rows;
+}
+async function readCachedRowsAsync(cacheKey) {
+    const dexieEntry = await readDexieCachedEntry(cacheKey);
+    if (dexieEntry.rows.length > 0) {
+        return dexieEntry.rows;
+    }
+    return readCachedRows(cacheKey);
 }
 
 function writeCachedRows(cacheKey, rows) {
@@ -103,9 +184,11 @@ function writeCachedRows(cacheKey, rows) {
     }
 
     const storageKey = getCacheKey(cacheKey);
+    const cachedAt = new Date().toISOString();
+    writeDexieCachedRows(cacheKey, rows, cachedAt);
     const serialized = JSON.stringify({
         rows,
-        cachedAt: new Date().toISOString()
+        cachedAt: cachedAt
     });
 
     if (serialized.length > MAX_LOCAL_CACHE_ENTRY_BYTES) {
@@ -190,7 +273,7 @@ export async function getDocsWithCache(queryRef, options = {}) {
         });
     }
 
-    const cachedRows = readCachedRows(cacheKey);
+    const cachedRows = await readCachedRowsAsync(cacheKey);
     if (cachedRows.length > 0) {
         console.warn('[firestore-read] Using cached rows after Firestore read failed.', {
             collection: collectionName,
@@ -206,6 +289,8 @@ export async function getDocsWithCache(queryRef, options = {}) {
 
 export {
     readCachedRows,
+    readCachedRowsAsync,
     getCachedRowsInfo,
+    getCachedRowsInfoAsync,
     writeCachedRows
 };

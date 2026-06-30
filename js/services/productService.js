@@ -3,7 +3,7 @@ import {
     collection
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getDocsWithCache, readCachedRows } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRowsAsync } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'products';
@@ -35,7 +35,7 @@ function normalizeCategories(rows) {
 export const productService = {
     async getAllProducts() {
         if (!offlineStatusService.isOnline()) {
-            return normalizeProducts(readCachedRows('products:all'));
+            return normalizeProducts(await readCachedRowsAsync('products:all'));
         }
 
         try {
@@ -62,7 +62,7 @@ export const productService = {
 
     async getAllCategories() {
         if (!offlineStatusService.isOnline()) {
-            return normalizeCategories(readCachedRows('categories:all'));
+            return normalizeCategories(await readCachedRowsAsync('categories:all'));
         }
 
         try {
