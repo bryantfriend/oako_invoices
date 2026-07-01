@@ -42,7 +42,7 @@ export const customerService = {
     generateCustomerPin,
 
     async getAllCustomers() {
-        if (!offlineStatusService.isOnline()) {
+        if (!offlineStatusService.canAttemptCloudRead()) {
             return filterActiveCustomers(await readCachedRowsAsync('customers:all'));
         }
 
@@ -187,3 +187,4 @@ export const customerService = {
         });
     }
 };
+

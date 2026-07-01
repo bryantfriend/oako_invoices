@@ -34,7 +34,7 @@ function normalizeCategories(rows) {
 
 export const productService = {
     async getAllProducts() {
-        if (!offlineStatusService.isOnline()) {
+        if (!offlineStatusService.canAttemptCloudRead()) {
             return normalizeProducts(await readCachedRowsAsync('products:all'));
         }
 
@@ -61,7 +61,7 @@ export const productService = {
     },
 
     async getAllCategories() {
-        if (!offlineStatusService.isOnline()) {
+        if (!offlineStatusService.canAttemptCloudRead()) {
             return normalizeCategories(await readCachedRowsAsync('categories:all'));
         }
 
@@ -80,3 +80,4 @@ export const productService = {
         }
     }
 };
+

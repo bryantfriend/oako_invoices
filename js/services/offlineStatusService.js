@@ -90,6 +90,11 @@ export const offlineStatusService = {
         return connectionStateService.isCloudReachable();
     },
 
+    canAttemptCloudRead() {
+        const connection = connectionStateService.getSnapshot();
+        return connection.browserOnline !== false;
+    },
+
     setSyncing(value) {
         state.syncing = value === true;
         connectionStateService.setSyncing(state.syncing);
@@ -184,3 +189,5 @@ export const offlineStatusService = {
         };
     }
 };
+
+

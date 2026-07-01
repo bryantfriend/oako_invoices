@@ -82,10 +82,10 @@ export const offlineCacheService = {
     },
 
     async refreshOfflineData() {
-        if (!offlineStatusService.isOnline()) {
+        if (!offlineStatusService.canAttemptCloudRead()) {
             return {
                 ok: false,
-                reason: 'Cannot refresh offline data until Firestore is reachable.'
+                reason: 'Cannot refresh offline data because this browser reports no network connection.'
             };
         }
 
@@ -107,3 +107,4 @@ export const offlineCacheService = {
         };
     }
 };
+
