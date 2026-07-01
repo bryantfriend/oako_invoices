@@ -13,6 +13,17 @@ export function getFirestoreAuthState() {
     };
 }
 
+export function formatFirestoreAuthState(authState = getFirestoreAuthState()) {
+    const state = authState || {};
+    return [
+        'authReady=' + (state.authReady === true),
+        'signedIn=' + (state.signedIn === true),
+        'uid=' + (state.uid || 'none'),
+        'isAdmin=' + (state.isAdmin === true),
+        'role=' + (state.role || 'none')
+    ].join(' ');
+}
+
 export function createCollectionTimeoutError(collectionName, timeoutMs) {
     const error = new Error(`${collectionName} fetch timeout after ${timeoutMs}ms`);
     error.collectionName = collectionName;
@@ -21,12 +32,15 @@ export function createCollectionTimeoutError(collectionName, timeoutMs) {
 }
 
 export function logCollectionError(collectionName, error, action = 'fetch') {
+    const authState = error?.authState || getFirestoreAuthState();
+    const authSummary = formatFirestoreAuthState(authState);
     const details = {
         collection: collectionName,
         code: error?.code || '',
         message: error?.message || '',
-        authState: error?.authState || getFirestoreAuthState()
+        authSummary,
+        authState
     };
     const summary = details.message || details.code || 'unknown Firestore error';
-    console.error(`Error ${action} ${collectionName}: ${summary}`, details);
+    console.error(`Error ${action} ${collectionName}: ${summary} (${authSummary})`, details);
 }

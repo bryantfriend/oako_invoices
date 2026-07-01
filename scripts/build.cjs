@@ -8,8 +8,8 @@ const vendorDir = path.join(root, 'vendor');
 const tempDir = path.join(root, '.workbox');
 const bundledWorker = path.join(tempDir, 'sw-bundled.js');
 const deploymentVersion = {
-    appVersion: '2.19',
-    serviceWorkerVersion: '2.19',
+    appVersion: '2.20',
+    serviceWorkerVersion: '2.20',
     dexieSchemaVersion: 3
 };
 
@@ -22,6 +22,38 @@ function copyFile(source, destination) {
     fs.copyFileSync(source, destination);
 }
 
+function replaceInFile(filePath, replacements) {
+    let source = fs.readFileSync(filePath, 'utf8');
+    for (const replacement of replacements) {
+        source = source.replace(replacement.pattern, replacement.value);
+    }
+    fs.writeFileSync(filePath, source);
+}
+
+function updateRuntimeVersions() {
+    replaceInFile(path.join(root, 'js/config.js'), [
+        {
+            pattern: /VERSION: '[^']+'/, 
+            value: `VERSION: '${deploymentVersion.appVersion}'`
+        },
+        {
+            pattern: /SERVICE_WORKER_VERSION: '[^']+'/, 
+            value: `SERVICE_WORKER_VERSION: '${deploymentVersion.serviceWorkerVersion}'`
+        }
+    ]);
+    replaceInFile(path.join(root, 'js/service-worker/source-sw.js'), [
+        {
+            pattern: /const OAKO_SERVICE_WORKER_VERSION = '[^']+';/,
+            value: `const OAKO_SERVICE_WORKER_VERSION = '${deploymentVersion.serviceWorkerVersion}';`
+        }
+    ]);
+    replaceInFile(path.join(root, 'index.html'), [
+        {
+            pattern: /src="\.\/js\/main\.js\?v=[^"]+"/,
+            value: `src="./js/main.js?v=${deploymentVersion.appVersion}"`
+        }
+    ]);
+}
 async function buildServiceWorker() {
     ensureDirectory(tempDir);
 
@@ -64,6 +96,7 @@ async function buildServiceWorker() {
 
 async function main() {
     ensureDirectory(vendorDir);
+    updateRuntimeVersions();
     copyFile(path.join(root, 'node_modules/dexie/dist/dexie.mjs'), path.join(vendorDir, 'dexie.mjs'));
     copyFile(path.join(root, 'node_modules/workbox-window/build/workbox-window.prod.mjs'), path.join(vendorDir, 'workbox-window.prod.mjs'));
     fs.writeFileSync(path.join(root, 'deployment-version.json'), JSON.stringify(deploymentVersion, null, 2) + '\n');
@@ -74,5 +107,6 @@ main().catch(function(error) {
     console.error(error);
     process.exit(1);
 });
+
 
 

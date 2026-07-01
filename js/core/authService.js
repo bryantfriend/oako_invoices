@@ -194,13 +194,8 @@ class AuthService {
             const profile = snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
             const role = profile ? profile.role || null : null;
 
-            console.info('[auth] Admin profile check', {
-                source,
-                uid: user.uid,
-                profileExists: snapshot.exists(),
-                role,
-                isAdmin: ADMIN_ROLES.includes(role)
-            });
+            const isAdminRole = ADMIN_ROLES.includes(role);
+            console.info('[auth] Admin profile check source=' + source + ' uid=' + user.uid + ' profileExists=' + snapshot.exists() + ' role=' + (role || 'none') + ' isAdmin=' + isAdminRole);
 
             if (!profile) {
                 console.warn('[auth] Missing admin profile. Create users/' + user.uid + ' with role "admin" or "superadmin".');
@@ -215,16 +210,11 @@ class AuthService {
             return profile;
         } catch (error) {
             const cachedProfile = this.getCachedAdminProfile(user.uid);
-            console.warn('[auth] Could not read admin profile for signed-in user.', {
-                source,
-                uid: user.uid,
-                code: error.code || '',
-                message: error.message || '',
-                usingCachedAdminProfile: !!cachedProfile
-            });
+            console.warn('[auth] Could not read admin profile for signed-in user source=' + source + ' uid=' + user.uid + ' code=' + (error.code || '') + ' message=' + (error.message || '') + ' usingCachedAdminProfile=' + (!!cachedProfile));
             return cachedProfile;
         }
     }
 }
 
 export const authService = new AuthService();
+

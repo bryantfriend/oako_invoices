@@ -487,3 +487,30 @@ test('Reference data reads try cloud when the browser is online even if Firestor
     assert.notEqual(offlineCacheSource.indexOf('!offlineStatusService.canAttemptCloudRead()'), -1);
     assert.equal(customerSource.indexOf('!offlineStatusService.isOnline()'), -1);
 });
+
+
+test('Runtime version pins stay in sync with deployment metadata', function() {
+    var deployment = JSON.parse(fs.readFileSync('deployment-version.json', 'utf8'));
+    var configSource = fs.readFileSync('js/config.js', 'utf8');
+    var workerSource = fs.readFileSync('js/service-worker/source-sw.js', 'utf8');
+    var indexSource = fs.readFileSync('index.html', 'utf8');
+    var buildSource = fs.readFileSync('scripts/build.cjs', 'utf8');
+
+    assert.notEqual(configSource.indexOf("VERSION: '" + deployment.appVersion + "'"), -1);
+    assert.notEqual(configSource.indexOf("SERVICE_WORKER_VERSION: '" + deployment.serviceWorkerVersion + "'"), -1);
+    assert.notEqual(workerSource.indexOf("OAKO_SERVICE_WORKER_VERSION = '" + deployment.serviceWorkerVersion + "'"), -1);
+    assert.notEqual(indexSource.indexOf('js/main.js?v=' + deployment.appVersion), -1);
+    assert.notEqual(buildSource.indexOf('updateRuntimeVersions'), -1);
+});
+
+test('Firestore permission errors include flattened auth diagnostics', function() {
+    var diagnosticsSource = fs.readFileSync('js/core/firestoreDiagnostics.js', 'utf8');
+    var authSource = fs.readFileSync('js/core/authService.js', 'utf8');
+
+    assert.notEqual(diagnosticsSource.indexOf('formatFirestoreAuthState'), -1);
+    assert.notEqual(diagnosticsSource.indexOf('authSummary'), -1);
+    assert.notEqual(diagnosticsSource.indexOf('uid='), -1);
+    assert.notEqual(diagnosticsSource.indexOf('role='), -1);
+    assert.notEqual(authSource.indexOf('[auth] Admin profile check source='), -1);
+    assert.notEqual(authSource.indexOf('usingCachedAdminProfile='), -1);
+});
