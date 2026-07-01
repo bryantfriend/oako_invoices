@@ -2,6 +2,14 @@ import { settingsService } from "../services/settingsService.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
 
+function showSaveResult(result) {
+    if (result && result.pending) {
+        notificationService.success('Settings saved on this device. They will sync when the connection returns.');
+        return;
+    }
+    notificationService.success(t('msg_save_success'));
+}
+
 export const settingsController = {
     async loadSettings() {
         try {
@@ -14,9 +22,9 @@ export const settingsController = {
 
     async updateSettings(data) {
         try {
-            await settingsService.updateInvoiceSettings(data);
-            notificationService.success(t('msg_save_success'));
-            return true;
+            const result = await settingsService.updateInvoiceSettings(data);
+            showSaveResult(result);
+            return result || { ok: true, pending: false };
         } catch (error) {
             notificationService.error(t('msg_save_fail'));
             return false;

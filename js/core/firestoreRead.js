@@ -179,13 +179,18 @@ async function readCachedRowsAsync(cacheKey) {
 }
 
 function writeCachedRows(cacheKey, rows) {
-    if (!cacheKey || typeof window === 'undefined' || !window.localStorage || !Array.isArray(rows)) {
+    if (!cacheKey || !Array.isArray(rows)) {
+        return;
+    }
+
+    const cachedAt = new Date().toISOString();
+    writeDexieCachedRows(cacheKey, rows, cachedAt);
+
+    if (typeof window === 'undefined' || !window.localStorage) {
         return;
     }
 
     const storageKey = getCacheKey(cacheKey);
-    const cachedAt = new Date().toISOString();
-    writeDexieCachedRows(cacheKey, rows, cachedAt);
     const serialized = JSON.stringify({
         rows,
         cachedAt: cachedAt
@@ -294,3 +299,5 @@ export {
     getCachedRowsInfoAsync,
     writeCachedRows
 };
+
+

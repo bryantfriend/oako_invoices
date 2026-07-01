@@ -29,11 +29,13 @@ export const renderSettings = async () => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const [settings, allCategories, inventorySettings] = await Promise.all([
+    const [loadedSettings, allCategories, inventorySettings] = await Promise.all([
         settingsController.loadSettings(),
         productService.getAllCategories(),
         inventoryService.getInventorySettings()
     ]);
+
+    const settings = loadedSettings || {};
 
     const enabledCatIds = inventorySettings.enabledCategories || [];
     const googleSheetId = getGoogleSheetId(settings.googleSheetId);
@@ -261,8 +263,8 @@ export const renderSettings = async () => {
             data.showFooter = formData.get('showFooter') === 'true';
             data.syncEnabled = formData.get('syncEnabled') === 'true';
 
-            await settingsController.updateSettings(data);
-            saveStatus.textContent = "Logo saved!";
+            const result = await settingsController.updateSettings(data);
+            saveStatus.textContent = result && result.pending ? "Logo saved on this device. Will sync when online." : "Logo saved!";
             setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
 
         } catch (error) {
@@ -296,8 +298,8 @@ export const renderSettings = async () => {
             data.showFooter = formData.get('showFooter') === 'true';
             data.syncEnabled = formData.get('syncEnabled') === 'true';
 
-            await settingsController.updateSettings(data);
-            saveStatus.textContent = "Payment QR saved!";
+            const result = await settingsController.updateSettings(data);
+            saveStatus.textContent = result && result.pending ? "Payment QR saved on this device. Will sync when online." : "Payment QR saved!";
             setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
         } catch (error) {
             paymentQrPreview.innerHTML = '<span style="color: var(--color-danger-500); font-size: 12px;">Failed</span>';
@@ -324,12 +326,19 @@ export const renderSettings = async () => {
         // Extract inventory categories
         const enabledCategories = formData.getAll('inventory_cat');
 
-        const [settingsSuccess, inventorySuccess] = await Promise.all([
+        const [settingsResult, inventoryResult] = await Promise.all([
             settingsController.updateSettings(data),
             inventoryService.updateInventorySettings({ enabledCategories })
         ]);
 
-        saveStatus.textContent = (settingsSuccess && inventorySuccess) ? "Saved Successfully" : "Error Saving";
+        const settingsSaved = settingsResult !== false;
+        const inventorySaved = inventoryResult !== false;
+        const pendingSync = Boolean((settingsResult && settingsResult.pending) || (inventoryResult && inventoryResult.pending));
+        saveStatus.textContent = settingsSaved && inventorySaved
+            ? (pendingSync ? "Saved on this device. Will sync when online." : "Saved Successfully")
+            : "Error Saving";
         setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
     });
 };
+
+

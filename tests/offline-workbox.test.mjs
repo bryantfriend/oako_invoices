@@ -445,3 +445,31 @@ test('Large offline reference datasets are stored in Dexie-backed full cache', f
     assert.notEqual(settingsSource.indexOf('await readCachedRowsAsync(SETTINGS_CACHE_KEY)'), -1);
     assert.notEqual(offlineCacheSource.indexOf('getCachedRowsInfoAsync'), -1);
 });
+
+test('Settings saves cache locally and retry when cloud writes are unavailable', function() {
+    var settingsSource = fs.readFileSync('js/services/settingsService.js', 'utf8');
+    var inventorySource = fs.readFileSync('js/services/inventoryService.js', 'utf8');
+    var controllerSource = fs.readFileSync('js/controllers/settingsController.js', 'utf8');
+    var viewSource = fs.readFileSync('js/views/settingsView.js', 'utf8');
+    var firestoreReadSource = fs.readFileSync('js/core/firestoreRead.js', 'utf8');
+
+    assert.notEqual(settingsSource.indexOf('PENDING_SETTINGS_WRITE_KEY'), -1);
+    assert.notEqual(settingsSource.indexOf('withSettingsWriteTimeout'), -1);
+    assert.notEqual(settingsSource.indexOf('!offlineStatusService.isOnline()'), -1);
+    assert.notEqual(settingsSource.indexOf('flushPendingInvoiceSettings'), -1);
+    assert.notEqual(settingsSource.indexOf('__pendingSync'), -1);
+    assert.notEqual(settingsSource.indexOf("code === 'permission-denied'"), -1);
+
+    assert.notEqual(inventorySource.indexOf('PENDING_INVENTORY_SETTINGS_WRITE_KEY'), -1);
+    assert.notEqual(inventorySource.indexOf('withInventorySettingsWriteTimeout'), -1);
+    assert.notEqual(inventorySource.indexOf('flushPendingInventorySettings'), -1);
+    assert.notEqual(inventorySource.indexOf('await readCachedRowsAsync(INVENTORY_SETTINGS_CACHE_KEY)'), -1);
+    assert.notEqual(inventorySource.indexOf('cacheInventorySettings(settings, false)'), -1);
+    assert.notEqual(inventorySource.indexOf('__pendingSync'), -1);
+
+    assert.notEqual(firestoreReadSource.indexOf('writeDexieCachedRows(cacheKey, rows, cachedAt);'), -1);
+    assert.notEqual(firestoreReadSource.indexOf("if (typeof window === 'undefined' || !window.localStorage)"), -1);
+    assert.notEqual(controllerSource.indexOf('Settings saved on this device'), -1);
+    assert.notEqual(viewSource.indexOf('Saved on this device. Will sync when online.'), -1);
+});
+

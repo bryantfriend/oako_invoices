@@ -2,7 +2,8 @@ import { db } from "../core/firebase.js";
 import {
     doc,
     getDoc,
-    setDoc
+    setDoc,
+    serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
@@ -17,6 +18,8 @@ const storage = getStorage();
 const COLLECTION = 'settings';
 const DOCUMENT_ID = 'invoice_config';
 const SETTINGS_CACHE_KEY = `${COLLECTION}:${DOCUMENT_ID}`;
+const PENDING_SETTINGS_WRITE_KEY = 'kyrgyz-organics-pending-write:settings:invoice_config';
+const SETTINGS_WRITE_TIMEOUT_MS = 15000;
 let invoiceSettingsCache = null;
 
 export const DEFAULT_INVOICE_SETTINGS = {
@@ -74,19 +77,131 @@ function normalizeInvoiceSettings(data = {}) {
     };
 }
 
+function getLocalStorage() {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return null;
+    }
+    return window.localStorage;
+}
+
+function readPendingSettingsWrite() {
+    const localStorage = getLocalStorage();
+    if (!localStorage) {
+        return null;
+    }
+
+    try {
+        const raw = localStorage.getItem(PENDING_SETTINGS_WRITE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+        console.warn('[settings] Could not read pending settings write.', error);
+        return null;
+    }
+}
+
+function writePendingSettingsWrite(data) {
+    const localStorage = getLocalStorage();
+    if (!localStorage) {
+        return;
+    }
+
+    localStorage.setItem(PENDING_SETTINGS_WRITE_KEY, JSON.stringify({
+        data,
+        savedAt: new Date().toISOString()
+    }));
+}
+
+function clearPendingSettingsWrite() {
+    const localStorage = getLocalStorage();
+    if (localStorage) {
+        localStorage.removeItem(PENDING_SETTINGS_WRITE_KEY);
+    }
+}
+
+function isTransientSettingsWriteError(error) {
+    const code = String(error && error.code ? error.code : '').toLowerCase();
+    const message = String(error && error.message ? error.message : '').toLowerCase();
+
+    if (code === 'permission-denied' || code === 'unauthenticated') {
+        return false;
+    }
+
+    return !code
+        || code === 'aborted'
+        || code === 'cancelled'
+        || code === 'deadline-exceeded'
+        || code === 'internal'
+        || code === 'resource-exhausted'
+        || code === 'unavailable'
+        || code === 'unknown'
+        || message.indexOf('timeout') !== -1
+        || message.indexOf('network') !== -1
+        || message.indexOf('offline') !== -1;
+}
+
+function withSettingsWriteTimeout(promise) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            const error = new Error('Settings save timeout');
+            error.code = 'deadline-exceeded';
+            reject(error);
+        }, SETTINGS_WRITE_TIMEOUT_MS);
+    });
+
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+function cacheInvoiceSettings(normalized, pendingSync = false) {
+    invoiceSettingsCache = {
+        ...DEFAULT_INVOICE_SETTINGS,
+        ...normalized,
+        __fromFallback: false,
+        __pendingSync: pendingSync
+    };
+    writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
+    return invoiceSettingsCache;
+}
+
+function applyPendingSettings(settings) {
+    const pendingWrite = readPendingSettingsWrite();
+    if (!pendingWrite || !pendingWrite.data) {
+        return settings;
+    }
+
+    invoiceSettingsCache = {
+        ...settings,
+        ...pendingWrite.data,
+        __pendingSync: true,
+        __pendingSavedAt: pendingWrite.savedAt || ''
+    };
+    writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
+    return invoiceSettingsCache;
+}
+
+async function writeInvoiceSettingsToServer(normalized) {
+    const docRef = doc(db, COLLECTION, DOCUMENT_ID);
+    await withSettingsWriteTimeout(setDoc(docRef, {
+        ...normalized,
+        updatedAt: serverTimestamp()
+    }, { merge: true }));
+    clearPendingSettingsWrite();
+    return cacheInvoiceSettings(normalized, false);
+}
+
 export const settingsService = {
     async getInvoiceSettings() {
         if (invoiceSettingsCache) {
-            return invoiceSettingsCache;
+            return applyPendingSettings(invoiceSettingsCache);
         }
 
         if (!offlineStatusService.isOnline()) {
             const cachedSettings = (await readCachedRowsAsync(SETTINGS_CACHE_KEY))[0];
             if (cachedSettings) {
-                invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true };
+                invoiceSettingsCache = applyPendingSettings({ ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true });
                 return invoiceSettingsCache;
             }
-            return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
+            return applyPendingSettings({ ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true });
         }
 
         let timeoutId;
@@ -102,27 +217,54 @@ export const settingsService = {
             invoiceSettingsCache = snap.exists()
                 ? { ...DEFAULT_INVOICE_SETTINGS, ...snap.data(), __fromFallback: false }
                 : { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: false };
+            invoiceSettingsCache = applyPendingSettings(invoiceSettingsCache);
             writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
+            this.flushPendingInvoiceSettings().catch(error => {
+                console.warn('[settings] Pending settings sync failed.', error);
+            });
             return invoiceSettingsCache;
         } catch (error) {
             const cachedSettings = (await readCachedRowsAsync(SETTINGS_CACHE_KEY))[0];
             if (cachedSettings) {
-                invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true };
+                invoiceSettingsCache = applyPendingSettings({ ...DEFAULT_INVOICE_SETTINGS, ...cachedSettings, __fromFallback: false, __fromCache: true });
                 return invoiceSettingsCache;
             }
             console.warn("Failed to fetch settings, using defaults.", error);
-            return { ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true };
+            return applyPendingSettings({ ...DEFAULT_INVOICE_SETTINGS, __fromFallback: true });
         } finally {
             clearTimeout(timeoutId);
         }
     },
 
     async updateInvoiceSettings(data) {
-        const docRef = doc(db, COLLECTION, DOCUMENT_ID);
         const normalized = normalizeInvoiceSettings(data);
-        await setDoc(docRef, { ...normalized, updatedAt: new Date() }, { merge: true });
-        invoiceSettingsCache = { ...DEFAULT_INVOICE_SETTINGS, ...normalized, __fromFallback: false };
-        writeCachedRows(SETTINGS_CACHE_KEY, [invoiceSettingsCache]);
+
+        if (!offlineStatusService.isOnline()) {
+            writePendingSettingsWrite(normalized);
+            cacheInvoiceSettings(normalized, true);
+            return { ok: true, pending: true };
+        }
+
+        try {
+            await writeInvoiceSettingsToServer(normalized);
+            return { ok: true, pending: false };
+        } catch (error) {
+            if (!isTransientSettingsWriteError(error)) {
+                throw error;
+            }
+            writePendingSettingsWrite(normalized);
+            cacheInvoiceSettings(normalized, true);
+            return { ok: true, pending: true };
+        }
+    },
+
+    async flushPendingInvoiceSettings() {
+        const pendingWrite = readPendingSettingsWrite();
+        if (!pendingWrite || !pendingWrite.data || !offlineStatusService.isOnline()) {
+            return false;
+        }
+
+        await writeInvoiceSettingsToServer(normalizeInvoiceSettings(pendingWrite.data));
         return true;
     },
 
@@ -144,3 +286,11 @@ export const settingsService = {
         return url;
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('kyrgyz-organics-online', function() {
+        settingsService.flushPendingInvoiceSettings().catch(function(error) {
+            console.warn('[settings] Pending settings sync failed.', error);
+        });
+    });
+}
