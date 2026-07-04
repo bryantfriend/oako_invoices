@@ -5,6 +5,7 @@ import { ORDER_STATUS } from "../core/constants.js";
 import { t } from "../core/i18n.js";
 import { gamificationService } from "../services/gamificationService.js";
 import sessionDataStore from "../services/sessionDataStore.js";
+import { calculateOrderTotals, getOrderItemUnitPrice, normalizeOrderItemPricing } from "../core/pricing.js";
 
 export const orderDetailController = {
     async loadOrder(id) {
@@ -71,16 +72,20 @@ export const orderDetailController = {
                 const adjustedQuantity = item.adjustedQuantity !== undefined
                     ? parseInt(item.adjustedQuantity, 10) || 0
                     : quantity;
-                const price = parseFloat(item.price) || 0;
-
-                return {
-                    ...item,
+                const unitPrice = getOrderItemUnitPrice(item);
+                const normalized = normalizeOrderItemPricing(Object.assign({}, item, {
                     lineItemId: item.lineItemId || item.productId || `line-${index}`,
                     quantity,
                     adjustedQuantity,
-                    price,
-                    total: adjustedQuantity * price
-                };
+                    unitPrice,
+                    price: unitPrice,
+                    total: adjustedQuantity * unitPrice,
+                    lineSubtotal: adjustedQuantity * unitPrice
+                }));
+                normalized.adjustedQuantity = adjustedQuantity;
+                normalized.total = adjustedQuantity * unitPrice;
+                normalized.lineSubtotal = normalized.total;
+                return normalized;
             }).filter(item => item.adjustedQuantity > 0);
 
             if (normalizedItems.length === 0) {
@@ -88,14 +93,16 @@ export const orderDetailController = {
                 return false;
             }
 
+            const totals = calculateOrderTotals(normalizedItems);
             await orderService.updateOrder(id, {
                 items: normalizedItems,
-                totalAmount: normalizedItems.reduce((sum, item) => sum + item.total, 0)
+                totalAmount: totals.totalAmount,
+                subtotal: totals.subtotal
             });
             await invoiceService.syncInvoiceWithOrder(id).catch(() => null);
             sessionDataStore.updateOrderRecord(id, {
                 items: normalizedItems,
-                totalAmount: normalizedItems.reduce((sum, item) => sum + item.total, 0),
+                totalAmount: calculateOrderTotals(normalizedItems).totalAmount,
                 updatedAt: new Date()
             }, 'update-order-items');
             await sessionDataStore.invalidateInvoicesCache('order-items-changed');

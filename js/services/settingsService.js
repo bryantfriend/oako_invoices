@@ -7,6 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
+import { normalizeDefaultOrderPriceMode } from "../core/pricing.js";
 import {
     getStorage,
     ref,
@@ -40,7 +41,8 @@ export const DEFAULT_INVOICE_SETTINGS = {
     whatsappNumber: '',
     googleSheetId: '',
     googleSheetsWebhookUrl: '',
-    syncEnabled: false
+    syncEnabled: false,
+    defaultOrderPriceMode: 'retail'
 };
 
 export function getGoogleSheetId(value = '') {
@@ -69,6 +71,7 @@ function normalizeInvoiceSettings(data = {}) {
 
     return {
         ...data,
+        defaultOrderPriceMode: normalizeDefaultOrderPriceMode(data.defaultOrderPriceMode),
         invoiceItemsPerPage,
         defaultInvoiceDateOffsetDays,
         approvalLinkExpirationHours,

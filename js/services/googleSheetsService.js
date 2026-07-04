@@ -1,4 +1,5 @@
 import { getGoogleSheetId, settingsService } from "./settingsService.js";
+import { getOrderItemUnitPrice } from "../core/pricing.js";
 
 function toIso(value) {
     if (!value) return '';
@@ -35,7 +36,7 @@ export const googleSheetsService = {
             const productId = item.productId || item.id || `line-${index + 1}`;
             const quantity = getLineQuantity(item);
             const returnQuantity = getOrderReturnQuantity(order, item, index);
-            const lineTotal = item.total || ((item.price || 0) * quantity);
+            const lineTotal = item.total || (getOrderItemUnitPrice(item) * quantity);
             const sourceId = order.id;
 
             return {
@@ -68,7 +69,7 @@ export const googleSheetsService = {
             toIso(invoice.orderDate || invoice.createdAt),
             toIso(invoice.updatedAt || new Date()),
             getReturnQuantity(invoice, item),
-            item.total || ((item.price || 0) * (item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity || 0)),
+            item.total || (getOrderItemUnitPrice(item) * (item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity || 0)),
             invoice.status
         ]);
     },

@@ -119,6 +119,11 @@ service cloud.firestore {
         && (!changedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp);
     }
 
+    function isValidDefaultOrderPriceMode() {
+      return !request.resource.data.keys().hasAny(['defaultOrderPriceMode'])
+        || request.resource.data.defaultOrderPriceMode in ['retail', 'business'];
+    }
+
     function isInventoryRecord() {
       return request.resource.data.date is string
         && request.resource.data.productId is string
@@ -139,6 +144,8 @@ service cloud.firestore {
           'items',
           'quantity',
           'totalAmount',
+          'subtotal',
+          'selectedPriceMode',
           'notes',
           'status',
           'createdAt',
@@ -160,6 +167,8 @@ service cloud.firestore {
         && (!request.resource.data.keys().hasAny(['items']) || request.resource.data.items is list)
         && (!request.resource.data.keys().hasAny(['quantity']) || (request.resource.data.quantity is number && request.resource.data.quantity > 0))
         && (!request.resource.data.keys().hasAny(['totalAmount']) || (request.resource.data.totalAmount is number && request.resource.data.totalAmount >= 0))
+        && (!request.resource.data.keys().hasAny(['subtotal']) || (request.resource.data.subtotal is number && request.resource.data.subtotal >= 0))
+        && (!request.resource.data.keys().hasAny(['selectedPriceMode']) || request.resource.data.selectedPriceMode in ['retail', 'business'])
         && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt is timestamp)
         && (!request.resource.data.keys().hasAny(['customerPhone']) || request.resource.data.customerPhone is string)
         && (!request.resource.data.keys().hasAny(['customerEmail']) || request.resource.data.customerEmail is string)
@@ -482,7 +491,7 @@ service cloud.firestore {
     // ===============================
     match /settings/{id} {
       allow read: if true;
-      allow create, update: if isAdmin();
+      allow create, update: if isAdmin() && isValidDefaultOrderPriceMode();
       allow delete: if false;
     }
 

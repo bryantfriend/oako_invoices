@@ -84,7 +84,19 @@ export const renderSettings = async () => {
                         </div>
                     `
     })}
-
+                ${createCard({
+        title: 'Order Pricing',
+        content: `
+                        <div class="input-group">
+                            <label for="defaultOrderPriceMode">Default Order Price</label>
+                            <select id="defaultOrderPriceMode" name="defaultOrderPriceMode" class="input" style="max-width: 240px;">
+                                <option value="retail" ${settings.defaultOrderPriceMode === 'business' ? '' : 'selected'}>Retail Price</option>
+                                <option value="business" ${settings.defaultOrderPriceMode === 'business' ? 'selected' : ''}>Business Price</option>
+                            </select>
+                            <small style="color: var(--color-gray-500);">New orders will start with this price type. You can still switch price type or enter a custom price while creating an order.</small>
+                        </div>
+                    `
+    })}
                 ${createCard({
         title: 'Financial & Payment Settings',
         content: `
@@ -340,5 +352,3 @@ export const renderSettings = async () => {
         setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
     });
 };
-
-

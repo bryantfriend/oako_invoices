@@ -7,6 +7,7 @@ import { t } from "../core/i18n.js";
 import { gamificationService } from "../services/gamificationService.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
+import { calculateOrderTotals, normalizeDefaultOrderPriceMode, normalizeOrderItemPricing } from "../core/pricing.js";
 
 export const createOrderController = {
     async handleCreateOrder(formData) {
@@ -21,22 +22,21 @@ export const createOrderController = {
             return;
         }
 
-        // Calculate totals
-        const items = formData.items.map(item => ({
-            ...item,
-            quantity: parseInt(item.quantity) || 0,
-            price: parseFloat(item.price) || 0,
-            total: (parseInt(item.quantity) || 0) * (parseFloat(item.price) || 0)
-        }));
-
-        const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+        const selectedPriceMode = normalizeDefaultOrderPriceMode(formData.selectedPriceMode);
+        const items = formData.items.map(function(item) {
+            return normalizeOrderItemPricing(item);
+        });
+        const totals = calculateOrderTotals(items);
+        console.info('[PRICING] totals recalculated');
 
         const orderPayload = {
             customerName: formData.customerName,
             orderDate: formData.orderDate,
             notes: formData.notes,
             items: items,
-            totalAmount: totalAmount,
+            selectedPriceMode: selectedPriceMode,
+            totalAmount: totals.totalAmount,
+            subtotal: totals.subtotal,
             status: 'draft'
         };
 

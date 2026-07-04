@@ -24,6 +24,7 @@ import { conflictService } from "./conflictService.js";
 import { dataIntegrityService } from "./dataIntegrityService.js";
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
 import { getDocsWithCache } from "../core/firestoreRead.js";
+import { calculateOrderTotals, getOrderItemUnitPrice, normalizeOrderItemPricing } from "../core/pricing.js";
 import {
     canEditInvoiceDate,
     canEditInvoiceItems,
@@ -338,7 +339,11 @@ export const RestoreArchivedInvoiceIntent = {
 };
 
 function buildInvoicePayload(order, settings, customer, orderId, adjustments, invoiceNumber, secureToken, metadata) {
-    const subtotal = order.totalAmount || 0;
+    const invoiceItems = (order.items || []).map(function(item) {
+        return normalizeOrderItemPricing(item);
+    });
+    const orderTotals = calculateOrderTotals(invoiceItems);
+    const subtotal = orderTotals.subtotal;
     const taxRate = adjustments.taxRate !== undefined ? adjustments.taxRate : settings.defaultTaxRate;
     const taxAmount = (subtotal * taxRate) / 100;
     let discountAmount = 0;
@@ -364,7 +369,7 @@ function buildInvoicePayload(order, settings, customer, orderId, adjustments, in
         customerName: order.customerName,
         customerAddress: order.customerAddress || '',
         customerPinCode: customer && customer.pinCode ? customer.pinCode : '',
-        items: order.items || [],
+        items: invoiceItems,
         subtotal: subtotal,
         taxRate: taxRate,
         taxAmount: taxAmount,
@@ -500,6 +505,7 @@ export const invoiceService = {
                 storeId: storeId,
                 companyId: storeId
             });
+            console.info('[PRICING] invoice generated with preserved price metadata');
             await gamificationService.awardAction('invoicesCreated');
             return invoiceId;
         } catch (error) {
@@ -759,7 +765,8 @@ export const invoiceService = {
 
         if (existingIndex >= 0) {
             items[existingIndex].quantity = (Number(items[existingIndex].quantity) || 0) + addQuantity;
-            items[existingIndex].total = (Number(items[existingIndex].price) || 0) * items[existingIndex].quantity;
+            items[existingIndex].total = getOrderItemUnitPrice(items[existingIndex]) * items[existingIndex].quantity;
+            items[existingIndex].lineSubtotal = items[existingIndex].total;
         } else {
             items.push(buildInvoiceItemFromProduct(product, addQuantity));
         }
@@ -810,7 +817,10 @@ export const invoiceService = {
             return Object.assign({}, item, {
                 quantity: nextQuantity,
                 adjustedQuantity: nextQuantity,
-                total: (Number(item.price) || 0) * nextQuantity
+                unitPrice: getOrderItemUnitPrice(item),
+                price: getOrderItemUnitPrice(item),
+                total: getOrderItemUnitPrice(item) * nextQuantity,
+                lineSubtotal: getOrderItemUnitPrice(item) * nextQuantity
             });
         });
 
@@ -1056,11 +1066,12 @@ export const invoiceService = {
 
     buildInvoiceFromOrder(invoice, order, options = {}) {
         const invoiceHasItems = Array.isArray(invoice.items) && invoice.items.length > 0;
-        const items = options.preserveInvoiceItems && invoiceHasItems ? invoice.items : (order.items || []);
-        const subtotal = items.reduce(function(sum, item) {
-            const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-            return sum + ((item.price || 0) * finalQty);
-        }, 0);
+        const sourceItems = options.preserveInvoiceItems && invoiceHasItems ? invoice.items : (order.items || []);
+        const items = sourceItems.map(function(item) {
+            return normalizeOrderItemPricing(item);
+        });
+        const totals = calculateOrderTotals(items);
+        const subtotal = totals.subtotal;
 
         const taxRate = invoice.taxRate || 0;
         const taxAmount = (subtotal * taxRate) / 100;

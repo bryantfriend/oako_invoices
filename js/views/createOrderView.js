@@ -1,6 +1,21 @@
 import { layoutView } from "./layoutView.js";
 import { createOrderController } from "../controllers/createOrderController.js";
 import { productService } from "../services/productService.js";
+import { settingsService } from "../services/settingsService.js";
+import { authService } from "../core/authService.js";
+import {
+    applyPriceOverrideToItem,
+    buildPricedOrderItemFromProduct,
+    calculateOrderTotals,
+    clearPriceOverrideFromItem,
+    normalizeDefaultOrderPriceMode,
+    normalizeOrderItemPricing,
+    ORDER_PRICE_MODES,
+    repriceOrderItem,
+    snapshotProductPrices,
+    toFinitePrice,
+    tryGetProductPriceByMode
+} from "../core/pricing.js";
 import { customerController } from "../controllers/customerController.js";
 import { FormRepeater } from "../components/formRepeater.js";
 import { createCard } from "../components/card.js";
@@ -32,18 +47,22 @@ export const renderCreateOrder = async () => {
     const initialData = await Promise.allSettled([
         productService.getAllProducts(),
         productService.getAllCategories(),
-        customerController.loadAllCustomers()
+        customerController.loadAllCustomers(),
+        settingsService.getInvoiceSettings()
     ]);
     products = initialData[0].status === 'fulfilled' ? initialData[0].value : [];
     categories = initialData[1].status === 'fulfilled' ? initialData[1].value : [];
     customers = initialData[2].status === 'fulfilled' ? initialData[2].value : [];
+    const invoiceSettings = initialData[3].status === 'fulfilled' ? initialData[3].value : {};
     initialData.forEach((result, index) => {
         if (result.status === 'rejected') {
-            console.warn('Could not fetch create-order data', { dataset: ['products', 'categories', 'customers'][index], error: result.reason });
+            console.warn('Could not fetch create-order data', { dataset: ['products', 'categories', 'customers', 'settings'][index], error: result.reason });
         }
     });
 
-    let selectedItems = []; // { productId, name, price, quantity, imageUrl }
+    let selectedPriceMode = normalizeDefaultOrderPriceMode(invoiceSettings.defaultOrderPriceMode);
+    console.info('[PRICING] defaultOrderPriceMode loaded: ' + selectedPriceMode);
+    let selectedItems = []; // { productId, name, unitPrice, priceMode, quantity, imageUrl }
     let repeatOrderDraft = null;
     try {
         repeatOrderDraft = JSON.parse(sessionStorage.getItem('repeatOrderDraft') || 'null');
@@ -71,8 +90,8 @@ export const renderCreateOrder = async () => {
                                 <div style="display: flex; gap: var(--space-2);">
                                     <div style="position: relative; flex: 1;">
                                         <span style="position: absolute; left: 10px; top: 10px;">🏢</span>
-                                        <input type="text" id="customerName" name="customerName" 
-                                            required placeholder="Enter or select company..." 
+                                        <input type="text" id="customerName" name="customerName"
+                                            required placeholder="Enter or select company..."
                                             style="padding-left: 36px; width: 100%;" autocomplete="off" value="${escapeHtml(repeatOrderDraft?.customerName || '')}">
                                     </div>
                                     <button type="button" id="select-customer-btn" class="btn btn-secondary" title="Select from List" style="padding: 0 12px; font-size: 14px;">
@@ -103,6 +122,16 @@ export const renderCreateOrder = async () => {
                 ${createCard({
         title: 'Order Items',
         content: `
+                        <div style="display: flex; justify-content: space-between; gap: var(--space-3); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4); padding: var(--space-3); background: var(--color-gray-50); border: 1px solid var(--color-gray-100); border-radius: var(--radius-md);">
+                            <div>
+                                <label style="display: block; font-weight: 800; color: var(--color-gray-900); margin-bottom: 2px;">Price Type</label>
+                                <small style="color: var(--color-gray-500);">Changing this updates non-overridden items in this order.</small>
+                            </div>
+                            <div id="order-price-mode-selector" style="display: inline-flex; gap: 6px; padding: 4px; background: white; border: 1px solid var(--color-gray-200); border-radius: 8px;">
+                                <button type="button" class="btn btn-sm price-mode-btn" data-price-mode="retail">Retail</button>
+                                <button type="button" class="btn btn-sm price-mode-btn" data-price-mode="business">Business</button>
+                            </div>
+                        </div>
                         <div id="items-list" style="display: flex; flex-direction: column; min-height: 100px;"></div>
                         <div style="margin-top: var(--space-4); display: flex; gap: var(--space-3);">
                             <button type="button" id="add-item-btn" class="btn btn-secondary" style="flex: 1; border-style: dashed; background: transparent; color: var(--color-primary-600); font-weight: 600;">
@@ -112,7 +141,7 @@ export const renderCreateOrder = async () => {
                                 ✍️ Add Custom Item
                             </button>
                         </div>
-                        
+
                         <div style="margin-top: var(--space-6); text-align: right; font-size: var(--text-lg); font-weight: 600;">
                             Total: <span id="total-preview">$0.00</span>
                         </div>
@@ -143,28 +172,39 @@ export const renderCreateOrder = async () => {
 
         list.innerHTML = selectedItems.map((item, index) => `
             <div class="animate-fade-in" style="
-                display: grid; 
-                grid-template-columns: 80px 2fr 100px 120px auto; 
-                gap: var(--space-4); 
-                align-items: center; 
-                padding: var(--space-3); 
-                background: white; 
+                display: grid;
+                grid-template-columns: 80px 2fr 90px 110px 140px auto;
+                gap: var(--space-4);
+                align-items: center;
+                padding: var(--space-3);
+                background: white;
                 border-bottom: 1px solid var(--color-gray-100);
             ">
-                <img src="${item.imageUrl || ''}" onerror="this.src='https://placehold.co/80x80?text=📦'" 
+                <img src="${item.imageUrl || ''}" onerror="this.src='https://placehold.co/80x80?text=📦'"
                      style="width: 60px; height: 60px; border-radius: var(--radius-md); object-fit: cover; background: var(--color-gray-50);">
-                
+
                 <div>
                     <div style="font-weight: 600; color: var(--color-gray-900);">${item.name}</div>
                     <div style="font-size: 12px; color: var(--color-gray-500);">${item.weight || ''}</div>
+                    ${item.priceOverridden ? '<span style="display: inline-flex; margin-top: 4px; padding: 2px 6px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 11px; font-weight: 800;">Custom Price</span>' : ''}
                 </div>
 
                 <div>
                     <input type="number" class="input qty-input" data-index="${index}" value="${item.quantity}" min="1" style="width: 100%; text-align: center;">
                 </div>
 
+                <div style="text-align: right;">
+                    <div style="font-weight: 800; color: var(--color-gray-900);">${formatCurrency(item.unitPrice || item.price || 0)}</div>
+                    <small style="color: var(--color-gray-500);">${item.priceMode === ORDER_PRICE_MODES.OVERRIDE ? 'Custom' : (item.priceMode === ORDER_PRICE_MODES.BUSINESS ? 'Business' : 'Retail')}</small>
+                </div>
+
                 <div style="text-align: right; font-weight: 600;">
-                    ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.price * item.quantity)}
+                    ${formatCurrency(item.lineSubtotal || ((item.unitPrice || item.price || 0) * item.quantity))}
+                </div>
+
+                <div style="display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary btn-sm override-item-btn" data-index="${index}">Override</button>
+                    ${item.priceOverridden ? '<button type="button" class="btn btn-secondary btn-sm clear-override-btn" data-index="' + index + '">Clear Override</button>' : ''}
                 </div>
 
                 <button type="button" class="btn btn-ghost btn-sm remove-item-btn" data-index="${index}" style="color: var(--color-destructive);">
@@ -177,8 +217,31 @@ export const renderCreateOrder = async () => {
         list.querySelectorAll('.qty-input').forEach(input => {
             input.addEventListener('change', (e) => {
                 const idx = parseInt(e.target.dataset.index);
-                selectedItems[idx].quantity = parseInt(e.target.value) || 1;
+                selectedItems[idx].quantity = parseInt(e.target.value, 10) || 1;
+                selectedItems[idx] = normalizeOrderItemPricing(selectedItems[idx]);
+                console.info('[PRICING] totals recalculated');
                 renderItems();
+            });
+        });
+
+        list.querySelectorAll('.override-item-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.closest('button').dataset.index, 10);
+                openOverridePriceModal(idx);
+            });
+        });
+
+        list.querySelectorAll('.clear-override-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.closest('button').dataset.index, 10);
+                try {
+                    selectedItems[idx] = clearPriceOverrideFromItem(selectedItems[idx]);
+                    console.info('[PRICING] item override cleared');
+                    notificationService.success('Custom price cleared.');
+                    renderItems();
+                } catch (error) {
+                    notificationService.error(error.message || 'Could not clear override.');
+                }
             });
         });
 
@@ -194,14 +257,14 @@ export const renderCreateOrder = async () => {
     };
 
     const updateTotal = () => {
-        const total = selectedItems.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
+        const totals = calculateOrderTotals(selectedItems);
         const el = document.getElementById('total-preview');
         if (el) {
-            el.textContent = formatCurrency(total);
+            el.textContent = formatCurrency(totals.totalAmount);
         }
     };
 
-    const normalizeOrderItems = (items = []) => items.map(item => ({
+    const normalizeOrderItems = (items = []) => items.map(item => normalizeOrderItemPricing({
         productId: item.productId || '',
         name: item.name || item.productName || item.name_en || 'Product',
         name_en: item.name_en || item.name || item.productName || 'Product',
@@ -209,10 +272,20 @@ export const renderCreateOrder = async () => {
         name_kg: item.name_kg || '',
         categoryId: item.categoryId || item.category_id || item.category || '',
         categoryName: item.categoryName || item.category_name || item.category || '',
-        price: Number(item.price) || 0,
+        unitPrice: Number(item.unitPrice !== undefined ? item.unitPrice : item.price) || 0,
+        price: Number(item.unitPrice !== undefined ? item.unitPrice : item.price) || 0,
         quantity: Number(item.quantity) || 1,
         imageUrl: item.imageUrl || '',
-        weight: item.weight || ''
+        weight: item.weight || '',
+        priceMode: item.priceMode || 'retail',
+        selectedBasePriceMode: item.selectedBasePriceMode || item.priceMode || 'retail',
+        originalRetailPrice: item.originalRetailPrice !== undefined ? item.originalRetailPrice : (item.unitPrice !== undefined ? item.unitPrice : item.price),
+        originalBusinessPrice: item.originalBusinessPrice !== undefined ? item.originalBusinessPrice : null,
+        priceOverridden: item.priceOverridden === true,
+        overridePrice: item.overridePrice !== undefined ? item.overridePrice : null,
+        overrideReason: item.overrideReason || '',
+        overrideBy: item.overrideBy || null,
+        overrideAt: item.overrideAt || null
     }));
 
     const renderSmartBasketPanel = (customerName, lastItems = []) => {
@@ -391,6 +464,162 @@ export const renderCreateOrder = async () => {
         });
     };
 
+    const getCurrentActorId = () => {
+        const user = authService.getCurrentUser();
+        return user && user.uid ? user.uid : null;
+    };
+
+    const updatePriceModeButtons = () => {
+        document.querySelectorAll('.price-mode-btn').forEach(button => {
+            const active = button.dataset.priceMode === selectedPriceMode;
+            button.classList.toggle('btn-primary', active);
+            button.classList.toggle('btn-secondary', !active);
+        });
+    };
+
+    const switchOrderPriceMode = (mode) => {
+        const nextMode = normalizeDefaultOrderPriceMode(mode);
+        selectedPriceMode = nextMode;
+        const skipped = [];
+        selectedItems = selectedItems.map(item => {
+            try {
+                return repriceOrderItem(item, nextMode);
+            } catch (error) {
+                skipped.push(item.name || item.productName || 'Product');
+                return normalizeOrderItemPricing(item);
+            }
+        });
+        updatePriceModeButtons();
+        console.info('[PRICING] create order price mode selected: ' + selectedPriceMode);
+        console.info('[PRICING] totals recalculated');
+        renderItems();
+        if (skipped.length) {
+            notificationService.error('Some items do not have a Business Price and were not changed.');
+            return;
+        }
+        notificationService.success('Updated non-overridden items to ' + (nextMode === ORDER_PRICE_MODES.BUSINESS ? 'Business Price.' : 'Retail Price.'));
+    };
+
+    const addProductToDraft = (product, mode) => {
+        const selectedMode = normalizeDefaultOrderPriceMode(mode || selectedPriceMode);
+        try {
+            selectedItems.push(buildPricedOrderItemFromProduct(product, selectedMode, 1));
+            console.info('[PRICING] product added with priceMode: ' + selectedMode);
+            return true;
+        } catch (error) {
+            if (selectedMode === ORDER_PRICE_MODES.BUSINESS) {
+                openMissingBusinessPriceModal(product);
+                return false;
+            }
+            notificationService.error(error.message || 'Product price is not available.');
+            return false;
+        }
+    };
+
+    const openMissingBusinessPriceModal = (product) => {
+        const modal = new Modal({
+            title: 'Business Price Missing',
+            footer: false,
+            content: '<p style="margin-bottom: 12px; color: var(--color-gray-700);">This product does not have a Business Price.</p>' +
+                '<div style="display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;">' +
+                '<button type="button" class="btn btn-secondary" id="missing-price-cancel">Cancel</button>' +
+                '<button type="button" class="btn btn-secondary" id="missing-price-retail">Use Retail Price for this item</button>' +
+                '<button type="button" class="btn btn-primary" id="missing-price-override">Enter Override Price</button>' +
+                '</div>'
+        });
+        modal.open();
+        document.getElementById('missing-price-cancel').addEventListener('click', function() { modal.close(); });
+        document.getElementById('missing-price-retail').addEventListener('click', function() {
+            addProductToDraft(product, ORDER_PRICE_MODES.RETAIL);
+            modal.close();
+            renderItems();
+        });
+        document.getElementById('missing-price-override').addEventListener('click', function() {
+            modal.close();
+            const baseItem = buildOrderItemShellForOverride(product);
+            selectedItems.push(baseItem);
+            openOverridePriceModal(selectedItems.length - 1, { removeOnCancel: true, closeOnBackdrop: false, closeOnEsc: false });
+        });
+    };
+
+    const buildOrderItemShellForOverride = (product) => {
+        const snapshots = snapshotProductPrices(product);
+        const retailResult = tryGetProductPriceByMode(product, ORDER_PRICE_MODES.RETAIL);
+        const displayName = product.displayName || product.name || product.name_en || 'Product';
+        return normalizeOrderItemPricing({
+            productId: product.id || product.productId || '',
+            name: displayName,
+            name_en: product.name_en || displayName,
+            name_ru: product.name_ru || '',
+            name_kg: product.name_kg || '',
+            categoryId: product.categoryId || product.category_id || product.category || '',
+            categoryName: product.categoryName || product.category_name || categoryNameById[product.categoryId] || product.category || '',
+            quantity: 1,
+            imageUrl: product.imageUrl || '',
+            weight: product.weight || '',
+            unitPrice: retailResult.ok ? retailResult.price : 0,
+            price: retailResult.ok ? retailResult.price : 0,
+            priceMode: selectedPriceMode,
+            selectedBasePriceMode: selectedPriceMode,
+            originalRetailPrice: snapshots.originalRetailPrice,
+            originalBusinessPrice: snapshots.originalBusinessPrice,
+            priceOverridden: false
+        });
+    };
+
+    const openOverridePriceModal = (index, options = {}) => {
+        const item = selectedItems[index];
+        if (!item) return;
+        let applied = false;
+        const modal = new Modal({
+            title: 'Override Item Price',
+            confirmText: 'Apply Override',
+            closeOnBackdrop: options.closeOnBackdrop !== false,
+            closeOnEsc: options.closeOnEsc !== false,
+            content: [
+                '<form id="override-price-form">',
+                '<div class="input-group"><label>Product</label><input class="input" value="' + escapeHtml(item.name || item.productName || 'Product') + '" disabled></div>',
+                '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">',
+                '<div class="input-group"><label>Retail Price</label><input class="input" value="' + formatCurrency(item.originalRetailPrice || 0) + '" disabled></div>',
+                '<div class="input-group"><label>Business Price</label><input class="input" value="' + (item.originalBusinessPrice !== null && item.originalBusinessPrice !== undefined ? formatCurrency(item.originalBusinessPrice) : 'Unset') + '" disabled></div>',
+                '</div>',
+                '<div class="input-group"><label>Current Price</label><input class="input" value="' + formatCurrency(item.unitPrice || item.price || 0) + '" disabled></div>',
+                '<div class="input-group"><label>New Unit Price</label><input id="override-unit-price" class="input" type="number" min="0" step="0.01" value="' + (item.overridePrice !== null && item.overridePrice !== undefined ? item.overridePrice : item.unitPrice || item.price || 0) + '" required><small id="override-price-error" style="display: none; color: var(--color-destructive);">Price must be a number greater than or equal to 0.</small></div>',
+                '<div class="input-group"><label>Reason, optional</label><textarea id="override-reason" class="input" rows="2">' + escapeHtml(item.overrideReason || '') + '</textarea></div>',
+                '</form>'
+            ].join(''),
+            onConfirm: () => {
+                const priceInput = document.getElementById('override-unit-price');
+                const errorEl = document.getElementById('override-price-error');
+                try {
+                    const overridePrice = toFinitePrice(priceInput.value, 'Override Price');
+                    selectedItems[index] = applyPriceOverrideToItem(item, overridePrice, document.getElementById('override-reason').value || '', getCurrentActorId(), new Date().toISOString());
+                    applied = true;
+                    console.info('[PRICING] item override applied');
+                    console.info('[PRICING] totals recalculated');
+                    renderItems();
+                    notificationService.success('Custom price applied.');
+                    return true;
+                } catch (error) {
+                    if (errorEl) errorEl.style.display = 'block';
+                    return false;
+                }
+            }
+        });
+        modal.open();
+        if (options.removeOnCancel && modal.modalEl) {
+            const cancelButton = modal.modalEl.querySelector('.cancel-btn');
+            if (cancelButton) {
+                cancelButton.addEventListener('click', function() {
+                    if (!applied && selectedItems[index] === item) {
+                        selectedItems.splice(index, 1);
+                        renderItems();
+                    }
+                });
+            }
+        }
+    };
+
     // Modal Product Picker
     const openProductPicker = () => {
         let activeCategory = 'all';
@@ -415,9 +644,9 @@ export const renderCreateOrder = async () => {
 
                     <!-- Product Grid -->
                     <div id="product-grid" class="grid-cols-mobile-2" style="
-                        display: grid; 
-                        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); 
-                        gap: var(--space-3); 
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                        gap: var(--space-3);
                         overflow-y: auto;
                         padding: 4px;
                     ">
@@ -460,11 +689,12 @@ export const renderCreateOrder = async () => {
                         flex-direction: column;
                         gap: var(--space-2);
                     ">
-                        <img src="${p.imageUrl || ''}" onerror="this.src='https://placehold.co/150x150?text=📦'" 
+                        <img src="${p.imageUrl || ''}" onerror="this.src='https://placehold.co/150x150?text=📦'"
                              style="width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-md); background: var(--color-gray-50);">
                         <div style="font-weight: 600; font-size: 13px; line-height: 1.2; height: 32px; overflow: hidden; color: var(--color-gray-800);">${p.displayName || 'Unnamed Product'}</div>
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
-                            <span style="color: var(--color-primary-600); font-weight: 700; font-size: 12px;">${p.price || 0} c.</span>
+                            <span style="color: ${selectedPriceMode === ORDER_PRICE_MODES.BUSINESS ? 'var(--color-gray-500)' : 'var(--color-primary-600)'}; font-weight: 700; font-size: 12px;">Retail: ${formatCurrency(p.retailPrice || p.price || 0)}</span>
+                            <span style="color: ${selectedPriceMode === ORDER_PRICE_MODES.BUSINESS ? 'var(--color-primary-600)' : 'var(--color-gray-500)'}; font-weight: 700; font-size: 12px;">Business: ${p.businessPrice !== null && p.businessPrice !== undefined ? formatCurrency(p.businessPrice) : 'Unset'}</span>
                             ${isSelected ? '<span style="font-size: 14px;">✅</span>' : ''}
                         </div>
                     </div>
@@ -481,19 +711,7 @@ export const renderCreateOrder = async () => {
                     if (idx > -1) {
                         selectedItems.splice(idx, 1);
                     } else {
-                        selectedItems.push({
-                            productId: p.id,
-                            name: p.displayName,
-                            name_en: p.name_en || p.displayName,
-                            name_ru: p.name_ru || '',
-                            name_kg: p.name_kg || '',
-                            categoryId: p.categoryId || p.category_id || p.category || '',
-                            categoryName: p.categoryName || p.category_name || categoryNameById[p.categoryId] || p.category || '',
-                            price: p.price,
-                            quantity: 1,
-                            imageUrl: p.imageUrl,
-                            weight: p.weight
-                        });
+                        addProductToDraft(p);
                     }
                     filterAndRender();
                 });
@@ -546,7 +764,7 @@ export const renderCreateOrder = async () => {
                 const data = Object.fromEntries(new FormData(form).entries());
                 const price = parseFloat(data.price) || 0;
 
-                selectedItems.push({
+                selectedItems.push(normalizeOrderItemPricing({
                     productId: 'custom-' + Date.now(),
                     name: data.name_en,
                     name_en: data.name_en,
@@ -554,11 +772,21 @@ export const renderCreateOrder = async () => {
                     name_kg: '',
                     categoryId: 'custom',
                     categoryName: 'Custom',
+                    unitPrice: price,
                     price: price,
                     quantity: 1,
                     imageUrl: '',
-                    weight: data.weight || ''
-                });
+                    weight: data.weight || '',
+                    priceMode: 'override',
+                    selectedBasePriceMode: selectedPriceMode,
+                    originalRetailPrice: price,
+                    originalBusinessPrice: null,
+                    priceOverridden: true,
+                    overridePrice: price,
+                    overrideReason: 'Custom item',
+                    overrideBy: getCurrentActorId(),
+                    overrideAt: new Date().toISOString()
+                }));
 
                 renderItems();
                 return true;
@@ -570,19 +798,7 @@ export const renderCreateOrder = async () => {
     // Initial Render Items & Default Date
     setTimeout(() => {
         if (repeatOrderDraft?.items?.length) {
-            selectedItems = repeatOrderDraft.items.map(item => ({
-                productId: item.productId || '',
-                name: item.name || item.productName || 'Product',
-                name_en: item.name_en || item.name || item.productName || 'Product',
-                name_ru: item.name_ru || '',
-                name_kg: item.name_kg || '',
-                categoryId: item.categoryId || item.category_id || item.category || '',
-                categoryName: item.categoryName || item.category_name || item.category || '',
-                price: Number(item.price) || 0,
-                quantity: Number(item.quantity) || 1,
-                imageUrl: item.imageUrl || '',
-                weight: item.weight || ''
-            }));
+            selectedItems = normalizeOrderItems(repeatOrderDraft.items);
             notificationService.success(`Repeated order loaded for ${repeatOrderDraft.customerName || 'customer'}.`);
         }
         renderItems();
@@ -592,6 +808,13 @@ export const renderCreateOrder = async () => {
         const tomorrowStr = tomorrow.toISOString().split('T')[0];
         document.getElementById('orderDate').value = tomorrowStr;
     }, 0);
+
+    updatePriceModeButtons();
+    document.querySelectorAll('.price-mode-btn').forEach(button => {
+        button.addEventListener('click', (event) => {
+            switchOrderPriceMode(event.currentTarget.dataset.priceMode);
+        });
+    });
 
     document.getElementById('add-item-btn').addEventListener('click', openProductPicker);
 
@@ -770,7 +993,8 @@ export const renderCreateOrder = async () => {
             customerName: document.getElementById('customerName').value,
             orderDate: document.getElementById('orderDate').value,
             notes: document.getElementById('notes').value,
-            items: selectedItems
+            items: selectedItems,
+            selectedPriceMode: selectedPriceMode
         };
         createOrderController.handleCreateOrder(formData);
     });

@@ -1,6 +1,7 @@
 import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getOrderItemUnitPrice } from "../../../../core/pricing.js";
 import { deviceIdService } from "../../../../services/deviceIdService.js";
 import { dataIntegrityService } from "../../../../services/dataIntegrityService.js";
 import { orderService } from "../../../../services/orderService.js";
@@ -61,7 +62,7 @@ async function processRecordInvoiceReturn(intent) {
     if (item.returnedAmount !== undefined) {
       return sum + safeNumber(item.returnedAmount, 0);
     }
-    return sum + (safeNumber(item.price, 0) * safeNumber(item.returnedQuantity, 0));
+    return sum + (getOrderItemUnitPrice(item) * safeNumber(item.returnedQuantity, 0));
   }, 0);
   var originalTotalAmount = safeNumber(previousSummary.originalTotalAmount, safeNumber(invoice.totalAmount, returnItems.originalTotalAmount));
   var updatePayload = {
@@ -196,7 +197,7 @@ function buildReturnItems(invoiceItems, requestedItems) {
       return { error: "Return quantity cannot exceed remaining returnable quantity." };
     }
 
-    var unitPrice = safeNumber(invoiceItem.price, 0);
+    var unitPrice = getOrderItemUnitPrice(invoiceItem);
     var originalAmount = getItemOriginalTotal(invoiceItem);
     var returnAmount = unitPrice * quantity;
     invoiceItem.returnedQuantity = alreadyReturned + quantity;

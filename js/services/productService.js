@@ -5,6 +5,7 @@ import {
 import { logCollectionError } from "../core/firestoreDiagnostics.js";
 import { getDocsWithCache, readCachedRowsAsync } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
+import { tryGetProductPriceByMode } from "../core/pricing.js";
 
 const COLLECTION = 'products';
 const CATEGORIES_COLLECTION = 'categories';
@@ -12,11 +13,15 @@ function normalizeProducts(rows) {
     return (Array.isArray(rows) ? rows : []).map(row => {
         const data = row || {};
         const name = data.name || data.name_en || data.title || data.title_en || 'Unknown Product';
+        const retailPrice = tryGetProductPriceByMode(data, 'retail');
+        const businessPrice = tryGetProductPriceByMode(data, 'business');
         return {
             id: data.id,
             ...data,
             displayName: name,
-            price: data.price || 0
+            retailPrice: retailPrice.ok ? retailPrice.price : 0,
+            businessPrice: businessPrice.ok ? businessPrice.price : null,
+            price: retailPrice.ok ? retailPrice.price : 0
         };
     }).filter(product => product.archived !== true && product.active !== false);
 }
@@ -80,4 +85,3 @@ export const productService = {
         }
     }
 };
-

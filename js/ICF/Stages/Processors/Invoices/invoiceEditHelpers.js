@@ -1,3 +1,4 @@
+import { getOrderItemUnitPrice, normalizeOrderItemPricing } from "../../../../core/pricing.js";
 function safeNumber(value, fallback) {
   var number = Number(value);
   if (Number.isFinite(number)) {
@@ -44,7 +45,7 @@ function getItemOriginalTotal(item) {
   if (source.total !== undefined) {
     return safeNumber(source.total, 0);
   }
-  return safeNumber(source.price, 0) * safeNumber(source.quantity, 0);
+  return getOrderItemUnitPrice(source) * safeNumber(source.quantity, 0);
 }
 
 function getItemAdjustedTotal(item) {
@@ -52,7 +53,7 @@ function getItemAdjustedTotal(item) {
   if (source.adjustedTotal !== undefined) {
     return safeNumber(source.adjustedTotal, 0);
   }
-  return safeNumber(source.price, 0) * getItemRemainingQuantity(source);
+  return getOrderItemUnitPrice(source) * getItemRemainingQuantity(source);
 }
 
 function normalizeInvoiceItemReturnFields(item) {
@@ -60,7 +61,7 @@ function normalizeInvoiceItemReturnFields(item) {
   var returnedQuantity = getItemReturnedQuantity(source);
   var remainingQuantity = getItemRemainingQuantity(source);
   var originalTotal = getItemOriginalTotal(source);
-  var adjustedTotal = safeNumber(source.price, 0) * remainingQuantity;
+  var adjustedTotal = getOrderItemUnitPrice(source) * remainingQuantity;
 
   return Object.assign({}, source, {
     returnedQuantity: returnedQuantity,
@@ -74,7 +75,7 @@ function normalizeInvoiceItemReturnFields(item) {
 function normalizeInvoiceItem(item, index) {
   var source = item || {};
   var quantity = safeNumber(source.adjustedQuantity !== undefined ? source.adjustedQuantity : source.quantity, 0);
-  var price = safeNumber(source.price, 0);
+  var price = getOrderItemUnitPrice(source);
   var returnedQuantity = safeNumber(source.returnedQuantity, 0);
   var normalized = Object.assign({}, source, {
     lineItemId: source.lineItemId || makeLineItemId(source.productId || source.id || "item", index),
@@ -83,7 +84,18 @@ function normalizeInvoiceItem(item, index) {
     quantity: quantity,
     adjustedQuantity: quantity,
     price: price,
+    unitPrice: price,
     total: source.total !== undefined ? safeNumber(source.total, 0) : price * quantity,
+    lineSubtotal: source.lineSubtotal !== undefined ? safeNumber(source.lineSubtotal, 0) : price * quantity,
+    priceMode: source.priceMode || 'retail',
+    selectedBasePriceMode: source.selectedBasePriceMode || source.priceMode || 'retail',
+    originalRetailPrice: source.originalRetailPrice !== undefined ? source.originalRetailPrice : price,
+    originalBusinessPrice: source.originalBusinessPrice !== undefined ? source.originalBusinessPrice : null,
+    priceOverridden: source.priceOverridden === true,
+    overridePrice: source.overridePrice !== undefined ? source.overridePrice : null,
+    overrideReason: source.overrideReason || '',
+    overrideBy: source.overrideBy || null,
+    overrideAt: source.overrideAt || null,
     returnedQuantity: returnedQuantity,
     returnedAmount: safeNumber(source.returnedAmount, 0)
   });
@@ -99,7 +111,7 @@ function normalizeInvoiceItemsForEditing(invoice) {
 function buildInvoiceItemFromProduct(product, quantity) {
   var source = product || {};
   var itemQuantity = safeNumber(quantity, 1);
-  var price = safeNumber(source.price, 0);
+  var price = getOrderItemUnitPrice(source);
   var displayName = source.displayName || source.name || source.name_en || source.name_ru || source.name_kg || source.title || "Product";
 
   return {
@@ -111,6 +123,16 @@ function buildInvoiceItemFromProduct(product, quantity) {
     name_kg: source.name_kg || source.nameKg || source.title_kg || source.name || displayName,
     displayName: displayName,
     price: price,
+    unitPrice: price,
+    priceMode: source.priceMode || 'retail',
+    selectedBasePriceMode: source.selectedBasePriceMode || source.priceMode || 'retail',
+    originalRetailPrice: source.originalRetailPrice !== undefined ? source.originalRetailPrice : price,
+    originalBusinessPrice: source.originalBusinessPrice !== undefined ? source.originalBusinessPrice : null,
+    priceOverridden: source.priceOverridden === true,
+    overridePrice: source.overridePrice !== undefined ? source.overridePrice : null,
+    overrideReason: source.overrideReason || '',
+    overrideBy: source.overrideBy || null,
+    overrideAt: source.overrideAt || null,
     weight: source.weight || source.weightText || "",
     quantity: itemQuantity,
     adjustedQuantity: itemQuantity,
@@ -163,7 +185,7 @@ function recalculateInvoiceTotals(invoice) {
       if (item.returnedAmount !== undefined) {
         return sum + safeNumber(item.returnedAmount, 0);
       }
-      return sum + (safeNumber(item.price, 0) * getItemReturnedQuantity(item));
+      return sum + (getOrderItemUnitPrice(item) * getItemReturnedQuantity(item));
     }, 0);
     totals.returnSummary = Object.assign({}, source.returnSummary || {}, {
       totalReturnedQuantity: totalReturnedQuantity,
