@@ -22,6 +22,18 @@ test('business mode does not silently fall back to retail price', function() {
     }, /Business Price/);
 });
 
+test('product price resolver accepts existing snake_case business price fields', function() {
+    const product = { id: 'bread', price: 120, business_price: 95 };
+    assert.equal(getProductPriceByMode(product, 'retail'), 120);
+    assert.equal(getProductPriceByMode(product, 'business'), 95);
+});
+
+test('product price resolver accepts nested pricing maps', function() {
+    const product = { id: 'bread', prices: { retail: 120, business: 95 } };
+    assert.equal(getProductPriceByMode(product, 'retail'), 120);
+    assert.equal(getProductPriceByMode(product, 'business'), 95);
+});
+
 test('order item snapshots price metadata and recalculates non-overridden mode switches', function() {
     const item = buildPricedOrderItemFromProduct({ id: 'bread', displayName: 'Bread', retailPrice: 120, businessPrice: 95 }, 'retail', 2);
     assert.equal(item.priceMode, 'retail');

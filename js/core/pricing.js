@@ -11,6 +11,103 @@ function hasOwnValue(source, key) {
         && source[key] !== '';
 }
 
+const RETAIL_PRICE_FIELDS = [
+    'retailPrice',
+    'retail_price',
+    'retail',
+    'price',
+    'defaultPrice',
+    'default_price',
+    'sellPrice',
+    'sell_price',
+    'salePrice',
+    'sale_price',
+    'standardPrice',
+    'standard_price',
+    'unitPrice',
+    'unit_price'
+];
+
+const BUSINESS_PRICE_FIELDS = [
+    'businessPrice',
+    'business_price',
+    'business',
+    'wholesalePrice',
+    'wholesale_price',
+    'wholesale',
+    'partnerPrice',
+    'partner_price',
+    'partner',
+    'companyPrice',
+    'company_price',
+    'company',
+    'b2bPrice',
+    'b2BPrice',
+    'b2b_price',
+    'b2b',
+    'tradePrice',
+    'trade_price',
+    'trade',
+    'commercialPrice',
+    'commercial_price',
+    'commercial',
+    'resellerPrice',
+    'reseller_price',
+    'reseller'
+];
+
+const NESTED_PRICE_FIELDS = [
+    'prices',
+    'pricing',
+    'priceList',
+    'price_list'
+];
+
+function getFirstPriceField(source, keys, label) {
+    for (var index = 0; index < keys.length; index += 1) {
+        var key = keys[index];
+        if (hasOwnValue(source, key)) {
+            return {
+                found: true,
+                price: toFinitePrice(source[key], label)
+            };
+        }
+    }
+    return {
+        found: false,
+        price: null
+    };
+}
+
+function getNestedPriceSource(source) {
+    var nestedSources = [];
+    for (var index = 0; index < NESTED_PRICE_FIELDS.length; index += 1) {
+        var key = NESTED_PRICE_FIELDS[index];
+        if (source && source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+            nestedSources.push(source[key]);
+        }
+    }
+    return nestedSources;
+}
+
+function resolveProductPrice(product, keys, label) {
+    var source = product || {};
+    var topLevelResult = getFirstPriceField(source, keys, label);
+    if (topLevelResult.found) {
+        return topLevelResult.price;
+    }
+
+    var nestedSources = getNestedPriceSource(source);
+    for (var index = 0; index < nestedSources.length; index += 1) {
+        var nestedResult = getFirstPriceField(nestedSources[index], keys, label);
+        if (nestedResult.found) {
+            return nestedResult.price;
+        }
+    }
+
+    throw new Error('This product does not have a ' + label + '.');
+}
+
 export function toFinitePrice(value, label) {
     var price = Number(value);
     if (!Number.isFinite(price) || price < 0) {
@@ -39,37 +136,11 @@ export function normalizeDefaultOrderPriceMode(priceMode) {
 }
 
 export function getProductRetailPrice(product) {
-    var source = product || {};
-    if (hasOwnValue(source, 'retailPrice')) {
-        return toFinitePrice(source.retailPrice, 'Retail Price');
-    }
-    if (hasOwnValue(source, 'price')) {
-        return toFinitePrice(source.price, 'Retail Price');
-    }
-    if (hasOwnValue(source, 'defaultPrice')) {
-        return toFinitePrice(source.defaultPrice, 'Retail Price');
-    }
-    if (hasOwnValue(source, 'sellPrice')) {
-        return toFinitePrice(source.sellPrice, 'Retail Price');
-    }
-    throw new Error('This product does not have a Retail Price.');
+    return resolveProductPrice(product, RETAIL_PRICE_FIELDS, 'Retail Price');
 }
 
 export function getProductBusinessPrice(product) {
-    var source = product || {};
-    if (hasOwnValue(source, 'businessPrice')) {
-        return toFinitePrice(source.businessPrice, 'Business Price');
-    }
-    if (hasOwnValue(source, 'wholesalePrice')) {
-        return toFinitePrice(source.wholesalePrice, 'Business Price');
-    }
-    if (hasOwnValue(source, 'partnerPrice')) {
-        return toFinitePrice(source.partnerPrice, 'Business Price');
-    }
-    if (hasOwnValue(source, 'companyPrice')) {
-        return toFinitePrice(source.companyPrice, 'Business Price');
-    }
-    throw new Error('This product does not have a Business Price.');
+    return resolveProductPrice(product, BUSINESS_PRICE_FIELDS, 'Business Price');
 }
 
 export function getProductPriceByMode(product, priceMode) {
