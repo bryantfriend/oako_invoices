@@ -1,6 +1,6 @@
 {
   "name": "oako-invoices",
-  "version": "2.5.6",
+  "version": "2.5.7",
   "description": "A premium, production-ready admin tool for managing orders and invoices, replacing spreadsheet workflows with a modern web interface.",
   "scripts": {
     "build": "node scripts/build.cjs",

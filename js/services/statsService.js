@@ -32,6 +32,14 @@ function isDeletedOrCancelledRecord(record) {
     );
 }
 
+function getAnalyticsStatus(record = {}) {
+    const status = String(record?.status || '').toLowerCase();
+    if (status === 'archived' && record?.previousStatus) {
+        return String(record.previousStatus).toLowerCase();
+    }
+    return status;
+}
+
 function getProductName(item = {}, parentItem = {}) {
     return item.productName || item.name || item.name_en || item.name_ru ||
         parentItem.productName || parentItem.name || parentItem.name_en || parentItem.name_ru ||
@@ -451,8 +459,8 @@ export const statsService = {
 
         return {
             count: orders.length,
-            revenue: orders.filter(o => confirmedStati.includes(o.status)).reduce((sum, o) => sum + (o.totalAmount || 0), 0),
-            outstanding: orders.filter(o => outstandingStati.includes(o.status)).reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+            revenue: orders.filter(o => confirmedStati.includes(getAnalyticsStatus(o))).reduce((sum, o) => sum + (o.totalAmount || 0), 0),
+            outstanding: orders.filter(o => outstandingStati.includes(getAnalyticsStatus(o))).reduce((sum, o) => sum + (o.totalAmount || 0), 0)
         };
     },
 
@@ -539,9 +547,10 @@ export const statsService = {
             const key = this._startOfBucket(date, granularity).toISOString().split('T')[0];
             if (groups[key]) {
                 const amount = o.totalAmount || 0;
-                if (o.status === 'paid') groups[key].paid += amount;
-                else if (['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) groups[key].outstanding += amount;
-                if (['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(o.status)) {
+                const status = getAnalyticsStatus(o);
+                if (status === 'paid') groups[key].paid += amount;
+                else if (['confirmed', 'fulfilled', 'fullfilled'].includes(getAnalyticsStatus(o))) groups[key].outstanding += amount;
+                if (['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(getAnalyticsStatus(o))) {
                     groups[key].gross += amount;
                     groups[key].confirmedRevenue += amount;
                     groups[key].orders += 1;
@@ -620,7 +629,7 @@ export const statsService = {
             const returnState = getReturnState(order);
             const status = returnState === 'partial'
                 ? 'partially_returned'
-                : (returnState === 'full' ? 'returned' : (order.status === 'fullfilled' ? 'fulfilled' : order.status));
+                : (returnState === 'full' ? 'returned' : (getAnalyticsStatus(order) === 'fullfilled' ? 'fulfilled' : getAnalyticsStatus(order)));
             if (counts[status] !== undefined) {
                 counts[status] += 1;
             }
@@ -777,11 +786,11 @@ export const statsService = {
 
         const filterPaid = (start) => orders.filter(o => {
             const d = o.orderDate ? new Date(o.orderDate) : (o.createdAt?.toDate ? o.createdAt.toDate() : new Date(0));
-            return o.status === 'paid' && d >= start;
+            return getAnalyticsStatus(o) === 'paid' && d >= start;
         }).reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
         const oldestUnpaid = orders
-            .filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status))
+            .filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(getAnalyticsStatus(o)))
             .sort((a, b) => {
                 const da = a.orderDate ? new Date(a.orderDate).getTime() : 0;
                 const db = b.orderDate ? new Date(b.orderDate).getTime() : 0;
@@ -798,7 +807,7 @@ export const statsService = {
 
     getTopOverdueCustomers(orders) {
         const customers = {};
-        orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status) && (o.agingDays || 0) > 0).forEach(o => {
+        orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(getAnalyticsStatus(o)) && (o.agingDays || 0) > 0).forEach(o => {
             if (!customers[o.customerName]) {
                 customers[o.customerName] = { name: o.customerName, amount: 0, maxAge: 0 };
             }
@@ -832,7 +841,7 @@ export const statsService = {
         }
 
         // 2. Unusually large orders
-        const confirmedOrders = orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(o.status));
+        const confirmedOrders = orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(getAnalyticsStatus(o)));
         if (confirmedOrders.length > 5) {
             const avg = confirmedOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0) / confirmedOrders.length;
             const recentLarge = confirmedOrders
@@ -846,7 +855,7 @@ export const statsService = {
         // 3. Customer payment lag
         // (Simple heuristic: if they have any unpaid older than their average)
         // For now, just flag any critical overdue as a signal if not already in alert strip
-        const critical = orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status) && (o.agingDays || 0) >= 30);
+        const critical = orders.filter(o => ['confirmed', 'fulfilled', 'fullfilled'].includes(getAnalyticsStatus(o)) && (o.agingDays || 0) >= 30);
         if (critical.length > 0) {
             signals.push({ type: 'danger', text: `${critical.length} customer(s) are at high risk (>30 days overdue).` });
         }

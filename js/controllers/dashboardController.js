@@ -3,6 +3,14 @@ import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
 
+function getAnalyticsStatus(record = {}) {
+    const status = String(record?.status || '').toLowerCase();
+    if (status === 'archived' && record?.previousStatus) {
+        return String(record.previousStatus).toLowerCase();
+    }
+    return status;
+}
+
 function buildDashboardResult(loadResult) {
     var result = loadResult || {};
     var extras = result.extras || {};
@@ -82,7 +90,7 @@ export const dashboardController = {
 
     getRiskAlerts(orders) {
         const criticalOverdue = orders.filter(function(order) {
-            return ['confirmed', 'fulfilled', 'fullfilled'].includes(order.status) && (order.agingDays || 0) >= 14;
+            return ['confirmed', 'fulfilled', 'fullfilled'].includes(getAnalyticsStatus(order)) && (order.agingDays || 0) >= 14;
         });
 
         if (criticalOverdue.length === 0) return null;
@@ -107,13 +115,13 @@ export const dashboardController = {
 
         return {
             totalOrders: orders.length,
-            pending: orders.filter(function(order) { return order.status === 'pending'; }).length,
-            draft: orders.filter(function(order) { return order.status === 'draft'; }).length,
+            pending: orders.filter(function(order) { return getAnalyticsStatus(order) === 'pending'; }).length,
+            draft: orders.filter(function(order) { return getAnalyticsStatus(order) === 'draft'; }).length,
             totalConfirmedAmount: orders
-                .filter(function(order) { return confirmedStati.includes(order.status); })
+                .filter(function(order) { return confirmedStati.includes(getAnalyticsStatus(order)); })
                 .reduce(function(sum, order) { return sum + (order.totalAmount || 0); }, 0),
             outstandingAmount: orders
-                .filter(function(order) { return outstandingStati.includes(order.status); })
+                .filter(function(order) { return outstandingStati.includes(getAnalyticsStatus(order)); })
                 .reduce(function(sum, order) { return sum + (order.totalAmount || 0); }, 0)
         };
     },

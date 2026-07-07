@@ -86,12 +86,17 @@ export const renderDashboard = async () => {
     let revenueGranularity = 'day';
     let productChartMode = 'products';
     let selectedProductCategory = null;
+    let showArchivedAnalytics = true;
     let filters = { status: 'all', drill: null };
     let sort = { key: 'orderDate', order: 'desc' };
     let invoiceRefreshTimer = null;
     const pendingCheckmarkUpdates = new Set();
     const updatedCheckmarkUpdates = new Set();
-    const getActiveOrders = (orders = []) => orders.filter(order => order.archived !== true);
+    const isArchivedRecord = (record = {}) => record.archived === true || record.status === 'archived';
+    const getActiveOrders = (orders = []) => orders.filter(order => !isArchivedRecord(order));
+    const getAnalyticsOrders = () => showArchivedAnalytics ? allOrders : getActiveOrders(allOrders);
+    const getAnalyticsReturnOrders = () => showArchivedAnalytics ? returnOrders : returnOrders.filter(order => !isArchivedRecord(order));
+    const getAnalyticsReturnInvoices = () => showArchivedAnalytics ? returnInvoices : returnInvoices.filter(invoice => !isArchivedRecord(invoice));
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
@@ -318,8 +323,11 @@ export const renderDashboard = async () => {
 
     const renderUI = () => {
         cleanupCharts();
-        const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity, returnInvoices, returnOrders);
-        const alerts = dashboardController.getRiskAlerts(allOrders);
+        const analyticsOrders = getAnalyticsOrders();
+        const analyticsReturnOrders = getAnalyticsReturnOrders();
+        const analyticsReturnInvoices = getAnalyticsReturnInvoices();
+        const stats = dashboardController.loadStats(analyticsOrders, currentPeriod, revenueGranularity, analyticsReturnInvoices, analyticsReturnOrders);
+        const alerts = dashboardController.getRiskAlerts(analyticsOrders);
         const productChart = getProductChartData(stats.charts);
         const workQueueLanes = getWorkQueueLanes();
         const lowStockProducts = getLowStockProducts(inventoryCategories);
@@ -333,6 +341,10 @@ export const renderDashboard = async () => {
                         <p>Invoices, fulfillment, stock, and payment follow-up in one workspace.</p>
                     </div>
                     <div class="dashboard-toolbar-actions">
+                        <label class="dashboard-archive-toggle" for="show-archived-analytics">
+                            <input type="checkbox" id="show-archived-analytics" ${showArchivedAnalytics ? 'checked' : ''}>
+                            <span>Show archived</span>
+                        </label>
                         <div class="segmented-control dashboard-period-control">
                             ${['today', '7d', '30d'].map(p => `
                                 <button class="time-btn ${currentPeriod === p ? 'active' : ''}" data-period="${p}">${p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : 'Today'}</button>
@@ -1278,7 +1290,7 @@ export const renderDashboard = async () => {
             row.addEventListener('click', () => {
                 if (productChartMode !== 'categories') return;
                 const index = Number(row.dataset.categoryIndex);
-                const stats = dashboardController.loadStats(allOrders, currentPeriod, revenueGranularity, returnInvoices, returnOrders);
+                const stats = dashboardController.loadStats(getAnalyticsOrders(), currentPeriod, revenueGranularity, getAnalyticsReturnInvoices(), getAnalyticsReturnOrders());
                 const categoryChart = stats.charts.topCategories;
                 selectedProductCategory = {
                     id: categoryChart.ids[index],
@@ -1286,6 +1298,12 @@ export const renderDashboard = async () => {
                 };
                 renderUI();
             });
+        });
+
+        document.getElementById('show-archived-analytics')?.addEventListener('change', (event) => {
+            showArchivedAnalytics = event.target.checked;
+            selectedProductCategory = null;
+            renderUI();
         });
 
         // CUSTOM DATE LOGIC
@@ -1366,11 +1384,14 @@ export const renderDashboard = async () => {
             const { gamificationService } = await import("../services/gamificationService.js");
             await orderService.archiveOrders(ids);
             ids.forEach(function(orderId) {
-                dashboardController.updateCachedOrder(orderId, { archived: true, archivedAt: new Date(), updatedAt: new Date() }, 'archive-orders');
+                const currentOrder = allOrders.find(order => order.id === orderId);
+                const previousStatus = currentOrder ? (currentOrder.previousStatus || currentOrder.status || '') : '';
+                dashboardController.updateCachedOrder(orderId, { archived: true, previousStatus, archivedAt: new Date(), updatedAt: new Date() }, 'archive-orders');
             });
             await gamificationService.awardAction('ordersArchived', ids.length);
             allOrders.forEach(order => {
                 if (selectedOrderIds.has(order.id)) {
+                    order.previousStatus = order.previousStatus || order.status || '';
                     order.archived = true;
                 }
             });
@@ -1472,7 +1493,9 @@ export const renderDashboard = async () => {
                     dashboardController.removeCachedOrder(id, 'remove-local-pending-order');
                     notificationService.success('Local pending order removed.');
                 } else {
-                    dashboardController.updateCachedOrder(id, { archived: true, archivedAt: new Date(), updatedAt: new Date() }, 'delete-order');
+                    const currentOrder = allOrders.find(order => order.id === id);
+                    const previousStatus = currentOrder ? (currentOrder.previousStatus || currentOrder.status || '') : '';
+                    dashboardController.updateCachedOrder(id, { archived: true, previousStatus, archivedAt: new Date(), updatedAt: new Date() }, 'delete-order');
                     notificationService.success('Order archived.');
                 }
                 renderDashboard();

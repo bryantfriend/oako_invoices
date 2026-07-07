@@ -513,6 +513,27 @@ textarea:focus {
     flex-wrap: wrap;
 }
 
+.dashboard-archive-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 38px;
+    padding: 0 10px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--color-gray-700);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.dashboard-archive-toggle input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-primary-700);
+}
+
 .dashboard-period-control,
 .compact-control {
     display: inline-flex;
@@ -1408,6 +1429,7 @@ table {
 
     .dashboard-period-control,
     .compact-control,
+    .dashboard-archive-toggle,
     .dashboard-new-order,
     .orders-table-tools,
     .orders-table-tools .btn,

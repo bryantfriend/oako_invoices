@@ -11,8 +11,28 @@ function hasOwnValue(source, key) {
         && source[key] !== '';
 }
 
+function normalizePriceFieldName(key) {
+    return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function buildNormalizedFieldSet(keys) {
+    return new Set(keys.map(normalizePriceFieldName));
+}
+
+function isFuzzyPriceFieldMatch(normalizedSourceKey, normalizedKeys) {
+    for (var key of normalizedKeys) {
+        if (key.length > 3 && normalizedSourceKey !== key && (normalizedSourceKey.startsWith(key) || normalizedSourceKey.endsWith(key))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 const RETAIL_PRICE_FIELDS = [
     'retailPrice',
+    'retail price',
+    'priceRetail',
+    'price_retail',
     'retail_price',
     'retail',
     'price',
@@ -30,6 +50,11 @@ const RETAIL_PRICE_FIELDS = [
 
 const BUSINESS_PRICE_FIELDS = [
     'businessPrice',
+    'business price',
+    'priceBusiness',
+    'price_business',
+    'businessUnitPrice',
+    'business_unit_price',
     'business_price',
     'business',
     'wholesalePrice',
@@ -73,6 +98,33 @@ function getFirstPriceField(source, keys, label) {
             };
         }
     }
+
+    var normalizedKeys = buildNormalizedFieldSet(keys);
+    var sourceKeys = source && typeof source === 'object' ? Object.keys(source) : [];
+    for (var sourceIndex = 0; sourceIndex < sourceKeys.length; sourceIndex += 1) {
+        var sourceKey = sourceKeys[sourceIndex];
+        if (normalizedKeys.has(normalizePriceFieldName(sourceKey)) && hasOwnValue(source, sourceKey)) {
+            return {
+                found: true,
+                price: toFinitePrice(source[sourceKey], label)
+            };
+        }
+    }
+
+    for (var fuzzyIndex = 0; fuzzyIndex < sourceKeys.length; fuzzyIndex += 1) {
+        var fuzzyKey = sourceKeys[fuzzyIndex];
+        if (isFuzzyPriceFieldMatch(normalizePriceFieldName(fuzzyKey), normalizedKeys) && hasOwnValue(source, fuzzyKey)) {
+            try {
+                return {
+                    found: true,
+                    price: toFinitePrice(source[fuzzyKey], label)
+                };
+            } catch (_) {
+                // Ignore non-price note fields that happen to include a price-like header.
+            }
+        }
+    }
+
     return {
         found: false,
         price: null
@@ -109,7 +161,17 @@ function resolveProductPrice(product, keys, label) {
 }
 
 export function toFinitePrice(value, label) {
-    var price = Number(value);
+    var rawValue = value;
+    if (typeof rawValue === 'string') {
+        var cleaned = rawValue.trim();
+        if (cleaned.indexOf(',') !== -1 && cleaned.indexOf('.') === -1) {
+            cleaned = /,\d{1,2}$/.test(cleaned) ? cleaned.replace(',', '.') : cleaned.replace(/,/g, '');
+        }
+        cleaned = cleaned.replace(/\s+/g, '').replace(/[^0-9.-]/g, '');
+        rawValue = cleaned === '' ? NaN : cleaned;
+    }
+
+    var price = Number(rawValue);
     if (!Number.isFinite(price) || price < 0) {
         throw new Error((label || 'Price') + ' must be a number greater than or equal to 0.');
     }

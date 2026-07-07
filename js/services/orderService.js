@@ -298,11 +298,13 @@ export const orderService = {
             });
             const now = new Date();
             const userId = getCurrentUserId();
+            const previousStatus = existingOrder ? (existingOrder.previousStatus || (existingOrder.status === 'archived' ? '' : existingOrder.status || '')) : '';
 
             if (isPendingLocalCreate(existingOrder)) {
                 const compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, {
                     archived: true,
                     status: 'archived',
+                    previousStatus: previousStatus,
                     archivedAt: now.toISOString(),
                     archivedAtLocal: now.getTime(),
                     archivedBy: userId,
@@ -310,7 +312,7 @@ export const orderService = {
                     syncAction: 'create',
                     syncState: 'offline_created'
                 });
-                return { local: true, archived: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: true, status: 'archived' }) };
+                return { local: true, archived: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: true, status: 'archived', previousStatus: previousStatus }) };
             }
 
             if (!offlineStatusService.isOnline()) {
@@ -318,6 +320,7 @@ export const orderService = {
                     id: id,
                     archived: true,
                     status: 'archived',
+                    previousStatus: previousStatus,
                     archivedAt: now.toISOString(),
                     archivedAtLocal: now.getTime(),
                     archivedBy: userId,
@@ -332,6 +335,7 @@ export const orderService = {
                     firestorePatch: {
                         archived: true,
                         status: 'archived',
+                        previousStatus: previousStatus,
                         archivedAt: now.toISOString(),
                         archivedBy: userId
                     },
@@ -347,6 +351,7 @@ export const orderService = {
             await this.updateOrder(id, {
                 archived: true,
                 status: 'archived',
+                previousStatus: previousStatus,
                 archivedAt: serverTimestamp(),
                 archivedBy: userId
             });

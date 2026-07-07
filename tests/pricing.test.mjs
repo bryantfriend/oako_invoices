@@ -34,6 +34,17 @@ test('product price resolver accepts nested pricing maps', function() {
     assert.equal(getProductPriceByMode(product, 'business'), 95);
 });
 
+test('product price resolver accepts spreadsheet-style price headers', function() {
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, 'Business Price': 95 }, 'business'), 95);
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, 'Price Business': '95 сом' }, 'business'), 95);
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, 'Business Price (KGS)': '95' }, 'business'), 95);
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, businessPriceSom: '95' }, 'business'), 95);
+    assert.equal(getProductPriceByMode({ id: 'bread', 'Retail Price': '1,200', 'Business Price': '950' }, 'retail'), 1200);
+    assert.throws(function() {
+        getProductPriceByMode({ id: 'bread', price: 120, 'Business Price': 'сом' }, 'business');
+    }, /Business Price/);
+});
+
 test('order item snapshots price metadata and recalculates non-overridden mode switches', function() {
     const item = buildPricedOrderItemFromProduct({ id: 'bread', displayName: 'Bread', retailPrice: 120, businessPrice: 95 }, 'retail', 2);
     assert.equal(item.priceMode, 'retail');
