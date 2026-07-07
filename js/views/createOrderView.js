@@ -34,31 +34,64 @@ function escapeHtml(value = '') {
         .replace(/'/g, '&#039;');
 }
 
+function withDependencyTimeout(promise, timeoutMs, label) {
+    return Promise.race([
+        promise,
+        new Promise(function(resolve) {
+            window.setTimeout(function() {
+                resolve({ status: 'rejected', reason: new Error(label + ' timed out after ' + timeoutMs + 'ms') });
+            }, timeoutMs);
+        })
+    ]);
+}
+
+function renderCreateOrderLoadingShell() {
+    return [
+        '<div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">',
+        '  <div class="dashboard-card" style="padding: var(--space-6);">',
+        '    <h2 style="margin: 0 0 8px; color: var(--color-gray-900);">Create New Order</h2>',
+        '    <p style="margin: 0; color: var(--color-gray-600);">Loading products, customers, and pricing settings...</p>',
+        '  </div>',
+        '</div>'
+    ].join('');
+}
+
 export const renderCreateOrder = async () => {
     layoutView.render();
     layoutView.updateTitle(t('order_create_title'));
 
     const container = document.getElementById('page-container');
+    console.info('[CREATE_ORDER] route mounted');
+    container.innerHTML = renderCreateOrderLoadingShell();
 
     // Fetch data independently so a weak connection on one dataset does not empty the others.
     let products = [];
     let categories = [];
     let customers = [];
-    const initialData = await Promise.allSettled([
-        productService.getAllProducts(),
-        productService.getAllCategories(),
-        customerController.loadAllCustomers(),
-        settingsService.getInvoiceSettings()
+    const dependencyNames = ['products', 'categories', 'customers', 'settings'];
+    const dependencyStartedAt = Date.now();
+    const initialData = await Promise.all([
+        withDependencyTimeout(productService.getAllProducts().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'products'),
+        withDependencyTimeout(productService.getAllCategories().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'categories'),
+        withDependencyTimeout(customerController.loadAllCustomers().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'customers'),
+        withDependencyTimeout(settingsService.getInvoiceSettings().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'settings')
     ]);
     products = initialData[0].status === 'fulfilled' ? initialData[0].value : [];
     categories = initialData[1].status === 'fulfilled' ? initialData[1].value : [];
     customers = initialData[2].status === 'fulfilled' ? initialData[2].value : [];
     const invoiceSettings = initialData[3].status === 'fulfilled' ? initialData[3].value : {};
+    const dependencyWarnings = [];
     initialData.forEach((result, index) => {
+        const dataset = dependencyNames[index];
         if (result.status === 'rejected') {
-            console.warn('Could not fetch create-order data', { dataset: ['products', 'categories', 'customers', 'settings'][index], error: result.reason });
+            dependencyWarnings.push(dataset);
+            console.warn('Could not fetch create-order data', { dataset: dataset, error: result.reason });
+            console.info('[CREATE_ORDER] failure reason: ' + dataset + ' - ' + (result.reason && result.reason.message ? result.reason.message : result.reason));
         }
     });
+    console.info('[CREATE_ORDER] dependencies loaded in ' + (Date.now() - dependencyStartedAt) + 'ms');
+    console.info('[CREATE_ORDER] products source: ' + (products.length ? 'service' : 'unavailable'));
+    console.info('[CREATE_ORDER] customers source: ' + (customers.length ? 'service' : 'unavailable'));
 
     let selectedPriceMode = normalizeDefaultOrderPriceMode(invoiceSettings.defaultOrderPriceMode);
     console.info('[PRICING] defaultOrderPriceMode loaded: ' + selectedPriceMode);
@@ -81,6 +114,7 @@ export const renderCreateOrder = async () => {
     container.innerHTML = `
         <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">
             <form id="create-order-form">
+                ${dependencyWarnings.length ? '<div class="dashboard-alert-strip" style="margin-bottom: var(--space-4);">Limited connection: ' + escapeHtml(dependencyWarnings.join(', ')) + ' did not finish loading. You can still create an order with available data.</div>' : ''}
                 ${createCard({
         title: 'Customer Information',
         content: `

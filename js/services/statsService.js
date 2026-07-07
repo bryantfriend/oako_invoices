@@ -1,4 +1,5 @@
 import { getReturnState } from "../core/returnStatus.js";
+import { getAnalyticsStatus, getMillis, getRevenueTrendTimestamp, isArchivedRecord } from "../core/orderRecordHelpers.js";
 
 function safeNumber(value, fallback = 0) {
     const number = Number(value);
@@ -30,14 +31,6 @@ function isDeletedOrCancelledRecord(record) {
         status === "cancelled" ||
         status === "canceled"
     );
-}
-
-function getAnalyticsStatus(record = {}) {
-    const status = String(record?.status || '').toLowerCase();
-    if (status === 'archived' && record?.previousStatus) {
-        return String(record.previousStatus).toLowerCase();
-    }
-    return status;
 }
 
 function getProductName(item = {}, parentItem = {}) {
@@ -447,8 +440,10 @@ export const statsService = {
     },
 
     _filterByDate(orders, start, end) {
-        return orders.filter(o => {
-            const date = o.orderDate ? new Date(o.orderDate) : (o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt));
+        return orders.filter(function(order) {
+            var millis = getRevenueTrendTimestamp(order) || getMillis(order && order.updatedAt) || getMillis(order && order.localUpdatedAt) || getMillis(order && order.archivedAt);
+            if (!millis) return false;
+            var date = new Date(millis);
             return date >= start && date <= end;
         });
     },
@@ -471,7 +466,8 @@ export const statsService = {
     },
 
     _getOrderDate(order) {
-        return order.orderDate ? new Date(order.orderDate) : (order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || Date.now()));
+        var millis = getRevenueTrendTimestamp(order);
+        return millis ? new Date(millis) : new Date();
     },
 
     _getReturnDate(returnRecord) {
@@ -549,8 +545,8 @@ export const statsService = {
                 const amount = o.totalAmount || 0;
                 const status = getAnalyticsStatus(o);
                 if (status === 'paid') groups[key].paid += amount;
-                else if (['confirmed', 'fulfilled', 'fullfilled'].includes(getAnalyticsStatus(o))) groups[key].outstanding += amount;
-                if (['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(getAnalyticsStatus(o))) {
+                else if (['confirmed', 'fulfilled', 'fullfilled'].includes(status)) groups[key].outstanding += amount;
+                if (['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(status)) {
                     groups[key].gross += amount;
                     groups[key].confirmedRevenue += amount;
                     groups[key].orders += 1;
@@ -617,7 +613,8 @@ export const statsService = {
             { key: 'partially_returned', label: 'Partially Returned' },
             { key: 'returned', label: 'Returned' },
             { key: 'fulfilled', label: 'Fulfilled' },
-            { key: 'paid', label: 'Paid' }
+            { key: 'paid', label: 'Paid' },
+            { key: 'archived', label: 'Archived' }
         ];
 
         const counts = {};
@@ -627,9 +624,9 @@ export const statsService = {
 
         orders.forEach(order => {
             const returnState = getReturnState(order);
-            const status = returnState === 'partial'
+            const status = isArchivedRecord(order) ? 'archived' : (returnState === 'partial'
                 ? 'partially_returned'
-                : (returnState === 'full' ? 'returned' : (getAnalyticsStatus(order) === 'fullfilled' ? 'fulfilled' : getAnalyticsStatus(order)));
+                : (returnState === 'full' ? 'returned' : (getAnalyticsStatus(order) === 'fullfilled' ? 'fulfilled' : getAnalyticsStatus(order))));
             if (counts[status] !== undefined) {
                 counts[status] += 1;
             }

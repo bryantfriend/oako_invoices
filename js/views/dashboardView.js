@@ -14,6 +14,15 @@ import { t } from "../core/i18n.js";
 import { notificationService } from "../core/notificationService.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
 import { isReturnFilterMatch } from "../core/returnStatus.js";
+import {
+    countArchivedRecords,
+    filterRecordsByArchivedMode,
+    getAnalyticsStatus,
+    getRecordActivityTimestamp,
+    isArchivedRecord,
+    normalizeArchivedFilter,
+    shouldIncludeRecordInAnalytics
+} from "../core/orderRecordHelpers.js";
 
 // Global chart registry to prevent "broken" graphs
 let chartInstances = {};
@@ -87,16 +96,17 @@ export const renderDashboard = async () => {
     let productChartMode = 'products';
     let selectedProductCategory = null;
     let showArchivedAnalytics = true;
+    let archivedFilter = 'all';
     let filters = { status: 'all', drill: null };
-    let sort = { key: 'orderDate', order: 'desc' };
+    let sort = { key: 'recent', order: 'desc' };
     let invoiceRefreshTimer = null;
     const pendingCheckmarkUpdates = new Set();
     const updatedCheckmarkUpdates = new Set();
-    const isArchivedRecord = (record = {}) => record.archived === true || record.status === 'archived';
     const getActiveOrders = (orders = []) => orders.filter(order => !isArchivedRecord(order));
-    const getAnalyticsOrders = () => showArchivedAnalytics ? allOrders : getActiveOrders(allOrders);
-    const getAnalyticsReturnOrders = () => showArchivedAnalytics ? returnOrders : returnOrders.filter(order => !isArchivedRecord(order));
-    const getAnalyticsReturnInvoices = () => showArchivedAnalytics ? returnInvoices : returnInvoices.filter(invoice => !isArchivedRecord(invoice));
+    const getAnalyticsOrders = () => allOrders.filter(order => shouldIncludeRecordInAnalytics(order, { includeArchived: showArchivedAnalytics }));
+    const getAnalyticsReturnOrders = () => returnOrders.filter(order => shouldIncludeRecordInAnalytics(order, { includeArchived: showArchivedAnalytics }));
+    const getAnalyticsReturnInvoices = () => returnInvoices.filter(invoice => shouldIncludeRecordInAnalytics(invoice, { includeArchived: showArchivedAnalytics }));
+    const getOrdersForArchivedFilter = () => filterRecordsByArchivedMode(allOrders, archivedFilter);
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
@@ -130,6 +140,16 @@ export const renderDashboard = async () => {
         requestAnimationFrame(() => {
             container.scrollTop = scrollTop;
         });
+    };
+
+    const scrollOrdersToTop = () => {
+        const card = document.querySelector('.recent-orders-card');
+        if (card && typeof card.scrollIntoView === 'function') {
+            card.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        } else {
+            container.scrollTop = 0;
+        }
+        console.info('[PIPELINE_FILTER] scrolledToTop: true');
     };
 
     const refreshDashboardDataPreservingState = async () => {
@@ -331,6 +351,11 @@ export const renderDashboard = async () => {
         const productChart = getProductChartData(stats.charts);
         const workQueueLanes = getWorkQueueLanes();
         const lowStockProducts = getLowStockProducts(inventoryCategories);
+        const archivedCount = countArchivedRecords(allOrders);
+        console.info('[ANALYTICS] includeArchived: ' + showArchivedAnalytics);
+        console.info('[ANALYTICS] source orders total: ' + allOrders.length);
+        console.info('[ANALYTICS] source archived total: ' + archivedCount);
+        console.info('[ANALYTICS] orders used: ' + analyticsOrders.length);
 
         container.innerHTML = `
             <div class="dashboard-v2 animate-fade-in">
@@ -343,7 +368,7 @@ export const renderDashboard = async () => {
                     <div class="dashboard-toolbar-actions">
                         <label class="dashboard-archive-toggle" for="show-archived-analytics">
                             <input type="checkbox" id="show-archived-analytics" ${showArchivedAnalytics ? 'checked' : ''}>
-                            <span>Show archived</span>
+                            <span>${showArchivedAnalytics ? 'Showing active + archived data' : 'Showing active data only'}</span>
                         </label>
                         <div class="segmented-control dashboard-period-control">
                             ${['today', '7d', '30d'].map(p => `
@@ -412,7 +437,14 @@ export const renderDashboard = async () => {
                             </div>
                             <div class="orders-table-tools">
                                 <span class="metric-pill visible-orders-count">${filteredOrders.length} visible</span>
+                                <span class="metric-pill archived-orders-count">${archivedCount} archived</span>
                                 <span id="selected-orders-count" class="metric-pill selected-count" style="display: none;">0 selected</span>
+                                <div class="segmented-control compact-control archived-filter-control" aria-label="Recent orders archive filter">
+                                    <button type="button" class="archived-filter-btn ${archivedFilter === 'active' ? 'active' : ''}" data-archived-filter="active">Active</button>
+                                    <button type="button" class="archived-filter-btn ${archivedFilter === 'archived' ? 'active' : ''}" data-archived-filter="archived">Archived</button>
+                                    <button type="button" class="archived-filter-btn ${archivedFilter === 'all' ? 'active' : ''}" data-archived-filter="all">All</button>
+                                </div>
+                                <button id="view-archived-orders" class="btn btn-secondary btn-sm" type="button">View Archived</button>
                                 <button id="archive-selected-orders" class="btn btn-secondary btn-sm" disabled>Archive Selected</button>
                                 <select id="filter-status" class="dashboard-select">
                                     <option value="all" ${filters.status === 'all' ? 'selected' : ''}>Status: All</option>
@@ -426,6 +458,7 @@ export const renderDashboard = async () => {
                                     <option value="returned" ${filters.status === 'returned' ? 'selected' : ''}>Returned</option>
                                     <option value="fulfilled" ${filters.status === 'fulfilled' ? 'selected' : ''}>Fulfilled</option>
                                     <option value="paid" ${filters.status === 'paid' ? 'selected' : ''}>Paid</option>
+                                    <option value="archived" ${filters.status === 'archived' ? 'selected' : ''}>Archived</option>
                                 </select>
                             </div>
                         </div>
@@ -622,7 +655,7 @@ export const renderDashboard = async () => {
             const key = label.toLowerCase().replace(/\s+/g, '-');
 
             return `
-                        <button type="button" class="pipeline-stage pipeline-${key}" data-pipeline-status="${key}">
+                        <button type="button" class="pipeline-stage pipeline-${key} ${filters.status === key || (filters.status === 'partially_returned' && key === 'partially-returned') || (archivedFilter === 'archived' && key === 'archived') ? 'active' : ''}" data-pipeline-status="${key}" aria-label="View ${escapeHtml(label)} orders">
                             <span class="pipeline-stage-top">
                                 <strong>${escapeHtml(label)}</strong>
                                 <span>${count}</span>
@@ -1031,36 +1064,38 @@ export const renderDashboard = async () => {
     };
 
     const applyFilters = () => {
-        filteredOrders = activeOrders.filter(o => {
+        const sourceOrders = getOrdersForArchivedFilter();
+        filteredOrders = sourceOrders.filter(o => {
+            const status = getAnalyticsStatus(o);
+            const payable = ['confirmed', 'fulfilled', 'fullfilled'].includes(status);
             const matchesStatus = filters.status === 'all' ? true :
-                filters.status === 'needs_invoice' ? ['draft', 'pending'].includes(o.status) :
-                filters.status === 'needs_printing' ? (!o.isPrinted && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
-                filters.status === 'ready_archive' ? (['paid', 'returned', 'fully_returned'].includes(o.status) || isReturnFilterMatch(o, 'returned')) :
-                filters.status === 'overdue' ? (o.agingDays >= 1 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
-                    filters.status === 'due-today' ? (o.agingDays === 0 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status)) :
+                filters.status === 'archived' ? isArchivedRecord(o) :
+                filters.status === 'needs_invoice' ? ['draft', 'pending'].includes(status) :
+                filters.status === 'needs_printing' ? (!o.isPrinted && payable) :
+                filters.status === 'ready_archive' ? (['paid', 'returned', 'fully_returned'].includes(status) || isReturnFilterMatch(o, 'returned')) :
+                filters.status === 'overdue' ? (o.agingDays >= 1 && payable) :
+                    filters.status === 'due-today' ? (o.agingDays === 0 && payable) :
                     ['returned', 'partially_returned', 'partial_return', 'fully_returned', 'any_return'].includes(filters.status) ? isReturnFilterMatch(o, filters.status) :
-                        o.status === filters.status;
+                        status === filters.status;
 
             const matchesDrill = !filters.drill ? true :
                 filters.drill.type === 'aging' ? (
                     filters.drill.value === 2 ? o.agingDays >= 30 :
                         filters.drill.value === 1 ? (o.agingDays >= 1 && o.agingDays < 30) :
-                            (o.agingDays === 0 && ['confirmed', 'fulfilled', 'fullfilled'].includes(o.status))
+                            (o.agingDays === 0 && payable)
                 ) : true;
 
             return matchesStatus && matchesDrill;
         });
 
-        // Apply Sorting
         filteredOrders.sort((a, b) => {
-            if (a.isPrinted !== b.isPrinted) {
+            if (a.isPrinted !== b.isPrinted && archivedFilter === 'active') {
                 return a.isPrinted ? 1 : -1;
             }
 
-            let valA = a[sort.key];
-            let valB = b[sort.key];
+            let valA = sort.key === 'recent' ? getRecordActivityTimestamp(a) : a[sort.key];
+            let valB = sort.key === 'recent' ? getRecordActivityTimestamp(b) : b[sort.key];
 
-            // Handle special cases (dates, nested objects)
             if (sort.key === 'orderDate') {
                 valA = valA?.toDate ? valA.toDate() : new Date(valA);
                 valB = valB?.toDate ? valB.toDate() : new Date(valB);
@@ -1126,7 +1161,7 @@ export const renderDashboard = async () => {
                         return `<span style="font-weight: 800; color: ${textColor};">${val}d Overdue</span>`;
                     }
                 },
-                { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => createStatusBadge(row) },
+                { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => (isArchivedRecord(row) ? '<span class="status-badge" style="background:#f1f5f9;color:#475569;margin-right:4px;">Archived</span>' : '') + createStatusBadge(row) },
                 { key: 'syncState', label: 'Sync', align: 'center', render: (val, row) => renderInvoiceSyncPill(row) }
             ],
             data: filteredOrders,
@@ -1151,6 +1186,7 @@ export const renderDashboard = async () => {
                             </span>
                         </label>
                         <span style="display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+                            ${isArchivedRecord(row) ? '<span class="status-badge" style="background:#f1f5f9;color:#475569;">Archived</span>' : ''}
                             ${createStatusBadge(row)}
                             ${renderInvoiceSyncPill(row)}
                         </span>
@@ -1161,25 +1197,26 @@ export const renderDashboard = async () => {
                         <div><span style="display: block; color: var(--color-gray-500);">Print</span><strong>${row.isPrinted ? 'Printed' : 'Needed'}</strong></div>
                     </div>
                     <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
-                        ${row.status === 'confirmed' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'fulfill'); window.markAsFulfilled('${row.id}')" title="Mark Fulfilled" style="color: #0f766e; background: #ecfdf5;">${icon('package', 'button-icon')}</button>` : ''}
-                        ${['confirmed', 'fulfilled', 'fullfilled'].includes(row.status) || pendingCheckmarkUpdates.has(row.id) || updatedCheckmarkUpdates.has(row.id) ? renderPayCheckmarkButton(row) : ''}
-                        <button class="btn-icon" onclick="event.stopPropagation(); window.printOrder('${row.id}')" title="Print Invoice">${icon('print', 'button-icon')}</button>
+                        ${!isArchivedRecord(row) && row.status === 'confirmed' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'fulfill'); window.markAsFulfilled('${row.id}')" title="Mark Fulfilled" style="color: #0f766e; background: #ecfdf5;">${icon('package', 'button-icon')}</button>` : ''}
+                        ${!isArchivedRecord(row) && (['confirmed', 'fulfilled', 'fullfilled'].includes(row.status) || pendingCheckmarkUpdates.has(row.id) || updatedCheckmarkUpdates.has(row.id)) ? renderPayCheckmarkButton(row) : ''}
+                        ${isArchivedRecord(row) ? `<button class="btn-icon" onclick="event.stopPropagation(); window.unarchiveOrder('${row.id}')" title="Unarchive">${icon('check', 'button-icon')}</button>` : `<button class="btn-icon" onclick="event.stopPropagation(); window.printOrder('${row.id}')" title="Print Invoice">${icon('print', 'button-icon')}</button>`}
                         <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">${icon('view', 'button-icon')}</button>
                     </div>
                 </div>
             `,
             actions: (row) => `
                 <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
-                    ${row.status === 'confirmed' ? `
+                    ${!isArchivedRecord(row) && row.status === 'confirmed' ? `
                         <button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'fulfill'); window.markAsFulfilled('${row.id}')" title="Mark Fulfilled" style="color: #0f766e; background: #ecfdf5;">
                             ${icon('package', 'button-icon')}
                         </button>
                     ` : ''}
-                    ${['confirmed', 'fulfilled', 'fullfilled'].includes(row.status) || pendingCheckmarkUpdates.has(row.id) || updatedCheckmarkUpdates.has(row.id) ? renderPayCheckmarkButton(row) : ''}
-                     <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">
+                    ${!isArchivedRecord(row) && (['confirmed', 'fulfilled', 'fullfilled'].includes(row.status) || pendingCheckmarkUpdates.has(row.id) || updatedCheckmarkUpdates.has(row.id)) ? renderPayCheckmarkButton(row) : ''}
+                    <button class="btn-icon" onclick="event.stopPropagation(); window.viewOrder('${row.id}')" title="View">
                          ${icon('view', 'button-icon')}
                     </button>
-                    ${row.status === 'draft' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteOrder('${row.id}')" title="Archive Draft">${icon('trash', 'button-icon')}</button>` : ''}
+                    ${isArchivedRecord(row) ? `<button class="btn-icon" onclick="event.stopPropagation(); window.unarchiveOrder('${row.id}')" title="Unarchive">${icon('check', 'button-icon')}</button>` : ''}
+                    ${!isArchivedRecord(row) && row.status === 'draft' ? `<button class="btn-icon" onclick="event.stopPropagation(); window.playClickAnimation(event, 'delete'); window.deleteOrder('${row.id}')" title="Archive Draft">${icon('trash', 'button-icon')}</button>` : ''}
                 </div>
             `
         });
@@ -1302,7 +1339,10 @@ export const renderDashboard = async () => {
 
         document.getElementById('show-archived-analytics')?.addEventListener('change', (event) => {
             showArchivedAnalytics = event.target.checked;
+            archivedFilter = showArchivedAnalytics ? 'all' : 'active';
+            selectedOrderIds.clear();
             selectedProductCategory = null;
+            console.info('[ANALYTICS] includeArchived toggled: ' + showArchivedAnalytics);
             renderUI();
         });
 
@@ -1335,8 +1375,38 @@ export const renderDashboard = async () => {
 
         document.getElementById('filter-status').addEventListener('change', (e) => {
             filters.status = e.target.value;
+            if (filters.status === 'archived') {
+                archivedFilter = 'archived';
+            }
             selectedOrderIds.clear();
             applyFilters();
+            if (filters.status === 'archived') {
+                scrollOrdersToTop();
+            }
+        });
+
+        document.querySelectorAll('.archived-filter-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                archivedFilter = normalizeArchivedFilter(button.dataset.archivedFilter, showArchivedAnalytics);
+                filters.status = 'all';
+                selectedOrderIds.clear();
+                const select = document.getElementById('filter-status');
+                if (select) select.value = 'all';
+                applyFilters();
+                document.querySelectorAll('.archived-filter-btn').forEach(entry => entry.classList.toggle('active', entry === button));
+                scrollOrdersToTop();
+            });
+        });
+
+        document.getElementById('view-archived-orders')?.addEventListener('click', () => {
+            archivedFilter = 'archived';
+            filters.status = 'all';
+            selectedOrderIds.clear();
+            const select = document.getElementById('filter-status');
+            if (select) select.value = 'all';
+            applyFilters();
+            document.querySelectorAll('.archived-filter-btn').forEach(entry => entry.classList.toggle('active', entry.dataset.archivedFilter === 'archived'));
+            scrollOrdersToTop();
         });
 
         document.querySelectorAll('.work-queue-lane').forEach(button => {
@@ -1362,11 +1432,22 @@ export const renderDashboard = async () => {
         document.querySelectorAll('.pipeline-stage').forEach(stage => {
             stage.addEventListener('click', () => {
                 const normalized = stage.dataset.pipelineStatus || 'all';
-                filters.status = normalized === 'partially-returned' ? 'partially_returned' : normalized;
+                const nextStatus = normalized === 'partially-returned' ? 'partially_returned' : normalized;
+                console.info('[PIPELINE_FILTER] clicked status: ' + nextStatus);
+                if (nextStatus === 'archived') {
+                    archivedFilter = 'archived';
+                    filters.status = 'all';
+                } else {
+                    filters.status = nextStatus;
+                    archivedFilter = showArchivedAnalytics ? 'all' : 'active';
+                }
                 selectedOrderIds.clear();
                 const select = document.getElementById('filter-status');
                 if (select) select.value = filters.status;
                 applyFilters();
+                console.info('[PIPELINE_FILTER] includeArchived: ' + (archivedFilter !== 'active'));
+                console.info('[PIPELINE_FILTER] records matched: ' + filteredOrders.length);
+                scrollOrdersToTop();
             });
         });
 
@@ -1411,6 +1492,7 @@ export const renderDashboard = async () => {
 
         document.getElementById('create-order-btn').addEventListener('click', function(event) {
             console.info('[OFFLINE_ORDER] create clicked');
+            console.info('[CREATE_ORDER] clicked');
             window.playClickAnimation(event, 'create');
             router.navigate(ROUTES.CREATE_ORDER);
         });
@@ -1483,6 +1565,32 @@ export const renderDashboard = async () => {
             await orderService.updateOrder(id, { isPrinted: isPrintedState });
             dashboardController.updateCachedOrder(id, { isPrinted: isPrintedState, updatedAt: new Date() }, 'toggle-printed');
             renderDashboard();
+        };
+
+        window.unarchiveOrder = async (id) => {
+            try {
+                const { orderService } = await import("../services/orderService.js");
+                const result = await orderService.unarchiveOrder(id);
+                const currentOrder = allOrders.find(order => order.id === id);
+                const restoredStatus = currentOrder ? (currentOrder.previousStatus || 'draft') : 'draft';
+                updateLocalOrder(id, {
+                    archived: false,
+                    status: restoredStatus,
+                    previousStatus: '',
+                    archivedAt: null,
+                    archivedBy: null,
+                    unarchivedAt: new Date(),
+                    updatedAt: new Date(),
+                    syncState: result && result.queued ? 'pending_sync' : undefined,
+                    syncStatus: result && result.queued ? 'pending' : undefined
+                });
+                dashboardController.updateCachedOrder(id, { archived: false, status: restoredStatus, previousStatus: '', archivedAt: null, archivedBy: null, unarchivedAt: new Date(), updatedAt: new Date() }, 'unarchive-order');
+                activeOrders = getActiveOrders(allOrders);
+                notificationService.success(result && result.queued ? 'Order unarchive queued.' : 'Order unarchived.');
+                renderUI();
+            } catch (error) {
+                notificationService.error(error.message || 'Could not unarchive order.');
+            }
         };
 
         window.deleteOrder = async (id) => {

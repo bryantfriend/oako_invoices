@@ -285,7 +285,8 @@ test('Create order customer picker survives weak product or customer network loa
     var createOrderSource = fs.readFileSync('js/views/createOrderView.js', 'utf8');
     var customerSource = fs.readFileSync('js/services/customerService.js', 'utf8');
 
-    assert.notEqual(createOrderSource.indexOf('Promise.allSettled'), -1);
+    assert.notEqual(createOrderSource.indexOf('renderCreateOrderLoadingShell'), -1);
+    assert.notEqual(createOrderSource.indexOf('withDependencyTimeout'), -1);
     assert.notEqual(createOrderSource.indexOf('Loading saved customers'), -1);
     assert.notEqual(createOrderSource.indexOf('No saved customers are available on this device yet'), -1);
     assert.notEqual(customerSource.indexOf("filterActiveCustomers(await readCachedRowsAsync('customers:all'))"), -1);

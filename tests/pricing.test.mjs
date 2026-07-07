@@ -45,6 +45,12 @@ test('product price resolver accepts spreadsheet-style price headers', function(
     }, /Business Price/);
 });
 
+test('product price resolver accepts localized business price headers', function() {
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, 'Бизнес цена': '95 сом' }, 'business'), 95);
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, 'Оптовая цена': '90' }, 'business'), 90);
+    assert.equal(getProductPriceByMode({ id: 'bread', price: 120, 'бизнес баасы': '88' }, 'business'), 88);
+    assert.equal(getProductPriceByMode({ id: 'bread', 'Розничная цена': '120', 'Цена для бизнеса': '91' }, 'retail'), 120);
+});
 test('order item snapshots price metadata and recalculates non-overridden mode switches', function() {
     const item = buildPricedOrderItemFromProduct({ id: 'bread', displayName: 'Bread', retailPrice: 120, businessPrice: 95 }, 'retail', 2);
     assert.equal(item.priceMode, 'retail');

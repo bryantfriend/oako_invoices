@@ -12,7 +12,7 @@ function hasOwnValue(source, key) {
 }
 
 function normalizePriceFieldName(key) {
-    return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return String(key || '').toLowerCase().replace(/[^\p{L}0-9]/gu, '');
 }
 
 function buildNormalizedFieldSet(keys) {
@@ -45,7 +45,17 @@ const RETAIL_PRICE_FIELDS = [
     'standardPrice',
     'standard_price',
     'unitPrice',
-    'unit_price'
+    'unit_price',
+    'retailUnitPrice',
+    'retail_unit_price',
+    'розничная цена',
+    'розничнаяЦена',
+    'цена розница',
+    'ценаРозница',
+    'розница',
+    'чекене баа',
+    'чекене баасы',
+    'баа'
 ];
 
 const BUSINESS_PRICE_FIELDS = [
@@ -78,7 +88,28 @@ const BUSINESS_PRICE_FIELDS = [
     'commercial',
     'resellerPrice',
     'reseller_price',
-    'reseller'
+    'reseller',
+    'businessPriceKgs',
+    'businessPriceSom',
+    'business price kgs',
+    'business price som',
+    'оптовая цена',
+    'оптоваяЦена',
+    'цена опт',
+    'ценаОпт',
+    'опт',
+    'цена бизнес',
+    'ценаБизнес',
+    'бизнес цена',
+    'бизнесЦена',
+    'цена для бизнеса',
+    'бизнес',
+    'бизнес баа',
+    'бизнес баасы',
+    'дун баа',
+    'дун баасы',
+    'дүң баа',
+    'дүң баасы'
 ];
 
 const NESTED_PRICE_FIELDS = [

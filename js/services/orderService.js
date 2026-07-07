@@ -373,6 +373,97 @@ export const orderService = {
         }
     },
 
+    async unarchiveOrder(id) {
+        try {
+            const existingOrder = await this.getOrderById(id).catch(function() {
+                return null;
+            });
+            const now = new Date();
+            const userId = getCurrentUserId();
+            const restoredStatus = existingOrder && existingOrder.previousStatus ? existingOrder.previousStatus : ORDER_STATUS.DRAFT;
+
+            if (isPendingLocalCreate(existingOrder)) {
+                const compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, {
+                    archived: false,
+                    status: restoredStatus,
+                    previousStatus: '',
+                    archivedAt: null,
+                    archivedAtLocal: null,
+                    archivedBy: null,
+                    unarchivedAt: now.toISOString(),
+                    unarchivedAtLocal: now.getTime(),
+                    unarchivedBy: userId,
+                    syncStatus: 'pending',
+                    syncAction: 'create',
+                    syncState: 'offline_created'
+                });
+                return { local: true, unarchived: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: false, status: restoredStatus, previousStatus: '' }) };
+            }
+
+            if (!offlineStatusService.isOnline()) {
+                const localSnapshot = Object.assign({}, existingOrder || { id: id }, {
+                    id: id,
+                    archived: false,
+                    status: restoredStatus,
+                    previousStatus: '',
+                    archivedAt: null,
+                    archivedAtLocal: null,
+                    archivedBy: null,
+                    unarchivedAt: now.toISOString(),
+                    unarchivedAtLocal: now.getTime(),
+                    unarchivedBy: userId,
+                    updatedAt: now.toISOString(),
+                    localUpdatedAt: now.toISOString(),
+                    localUpdatedAtMillis: now.getTime(),
+                    syncState: 'pending_sync',
+                    syncStatus: 'pending',
+                    syncAction: 'unarchive'
+                });
+                await offlineQueueService.enqueue('unarchiveOrder', 'order', id, {
+                    firestorePatch: {
+                        archived: false,
+                        status: restoredStatus,
+                        previousStatus: '',
+                        archivedAt: null,
+                        archivedBy: null,
+                        unarchivedAt: now.toISOString(),
+                        unarchivedBy: userId
+                    },
+                    localOrderSnapshot: localSnapshot,
+                    order: localSnapshot,
+                    localUpdatedAt: now.toISOString()
+                }, {
+                    storeId: localSnapshot.storeId || localSnapshot.companyId || 'KORG'
+                });
+                return { queued: true, unarchived: true, order: localSnapshot };
+            }
+
+            await this.updateOrder(id, {
+                archived: false,
+                status: restoredStatus,
+                previousStatus: '',
+                archivedAt: null,
+                archivedBy: null,
+                unarchivedAt: serverTimestamp(),
+                unarchivedBy: userId
+            });
+            await dataIntegrityService.recordAuditLogSafely({
+                type: 'ORDER_UNARCHIVED',
+                entityType: 'order',
+                entityId: id,
+                orderId: id,
+                storeId: existingOrder ? existingOrder.storeId || existingOrder.companyId || '' : '',
+                companyId: existingOrder ? existingOrder.companyId || existingOrder.storeId || '' : '',
+                details: buildOrderAuditDetails(existingOrder)
+            }, {
+                source: 'ui'
+            });
+            return { unarchived: true };
+        } catch (error) {
+            console.error("Error unarchiving order:", error);
+            throw error;
+        }
+    },
     async deleteOrder(id) {
         const existingOrder = await this.getOrderById(id).catch(function() {
             return null;

@@ -2,14 +2,7 @@ import sessionDataStore from "../services/sessionDataStore.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
-
-function getAnalyticsStatus(record = {}) {
-    const status = String(record?.status || '').toLowerCase();
-    if (status === 'archived' && record?.previousStatus) {
-        return String(record.previousStatus).toLowerCase();
-    }
-    return status;
-}
+import { getAnalyticsStatus } from "../core/orderRecordHelpers.js";
 
 function buildDashboardResult(loadResult) {
     var result = loadResult || {};

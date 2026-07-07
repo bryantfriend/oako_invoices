@@ -283,6 +283,7 @@ function prepareOrderPatchForSync(queueItem) {
     patch.syncError = null;
     patch.lastSyncAttemptAt = new Date().toISOString();
     restoreDateField(patch, 'archivedAt');
+    restoreDateField(patch, 'unarchivedAt');
     return patch;
 }
 
@@ -302,7 +303,7 @@ async function processOrderQueueItem(queueItem) {
         return;
     }
 
-    if (queueItem.actionType === 'archiveOrder') {
+    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder') {
         await writeOrderArchive(queueItem);
         return;
     }
