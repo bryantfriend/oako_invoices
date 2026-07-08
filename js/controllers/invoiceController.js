@@ -71,6 +71,20 @@ export const invoiceController = {
         };
     },
 
+    getCachedInvoice(id) {
+        var snapshot = sessionDataStore.getInvoicesSnapshot();
+        var records = snapshot && Array.isArray(snapshot.records) ? snapshot.records : [];
+        var invoice = records.find(function(record) {
+            return record && record.id === id;
+        });
+        return invoice ? Object.assign({}, invoice) : null;
+    },
+
+    getCachedInvoiceSettings() {
+        var snapshot = sessionDataStore.getInvoicesSnapshot();
+        var settings = snapshot && snapshot.extras ? snapshot.extras.invoiceSettings : null;
+        return settings ? Object.assign({}, settings) : null;
+    },
     async refreshInvoiceList(options) {
         try {
             var result = await sessionDataStore.refreshInvoices(options || {});

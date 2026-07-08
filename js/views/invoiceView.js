@@ -724,23 +724,22 @@ export const renderInvoiceDetail = async ({ id }) => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    let invoice, allProducts, liveSettings;
+    let invoice = invoiceController.getCachedInvoice(id);
+    const usedCachedInvoice = Boolean(invoice);
+    let allProducts = [];
+    let liveSettings = invoiceController.getCachedInvoiceSettings();
+    let openConflict = null;
+    let qrActivities = [];
+    let approvalLink = null;
+    let detailHydrationStarted = false;
+    let productLoadPromise = null;
+
     try {
-        [invoice, allProducts, liveSettings] = await Promise.all([
-            invoiceController.loadInvoice(id),
-            productService.getAllProducts().catch(error => {
-                console.warn("Could not load live products for invoice print names.", error);
-                return [];
-            }),
-            import("../services/settingsService.js")
-                .then(m => m.settingsService.getInvoiceSettings())
-                .catch(error => {
-                    console.warn("Could not load live invoice settings for print.", error);
-                    return { __fromFallback: true };
-                })
-        ]);
+        if (!invoice) {
+            invoice = await invoiceController.loadInvoice(id);
+        }
     } catch (e) {
-        console.error("error fetching invoice deps", e);
+        console.error("error fetching invoice", e);
         container.innerHTML = `<div class="p-8 text-center" style="color: #ef4444; font-weight: 500;">An error occurred while loading this invoice.</div>`;
         return;
     }
@@ -750,40 +749,12 @@ export const renderInvoiceDetail = async ({ id }) => {
         return;
     }
 
-    const openConflict = await import("../services/conflictService.js")
-        .then(function(module) {
-            return module.conflictService.getOpenConflictByEntityId(invoice.id);
-        })
-        .catch(function(error) {
-            console.warn("Could not load invoice conflict state.", error);
-            return null;
-        });
-
-    const qrActivities = await qrActivityService.getByInvoiceId(invoice.id).catch(error => {
-        console.warn("Could not load QR activity for invoice.", error);
-        return [];
-    });
-    let approvalLink = await invoiceController.loadApprovalLink(invoice.id);
-
-    if (!/^1\d{5}$/.test(String(invoice.customerPinCode || ''))) {
-        const customer = await customerService.getCustomerByName(invoice.customerName).catch(() => null);
-        if (customer?.pinCode) {
-            invoice.customerPinCode = customer.pinCode;
-        }
-    }
-    if (invoice.returnRequested && invoice.orderId) {
-        await import("../services/returnsService.js")
-            .then(m => m.returnsService.syncInvoiceReturnToOrder(invoice))
-            .catch(error => console.warn('Return mirror sync skipped while loading invoice.', error));
-    }
-    if (offlineStatusService.isOnline()) {
-        invoice = await qrService.ensureInvoiceToken(invoice).catch(error => {
-            console.warn("Could not publish invoice QR snapshot while rendering print view.", error);
-            return invoice;
-        });
+    if (!liveSettings && invoice.settings) {
+        liveSettings = invoice.settings;
     }
 
-    // (liveSettings fetched unconditionally to always overwrite visibility flags)
+    const invoiceRoutePath = ROUTES.INVOICE_DETAIL.replace(':id', id);
+    const isCurrentInvoiceRoute = () => window.location.hash.slice(1) === invoiceRoutePath;
 
     let currentLang = 'ru';
     let currentPage = 1;
@@ -812,6 +783,106 @@ export const renderInvoiceDetail = async ({ id }) => {
         const number = Number(value);
         return Number.isFinite(number) ? number : fallback;
     };
+
+    async function ensureProductsLoaded() {
+        if (allProducts.length) {
+            return allProducts;
+        }
+        if (!productLoadPromise) {
+            productLoadPromise = productService.getAllProducts().catch(error => {
+                console.warn("Could not load live products for invoice editing.", error);
+                return [];
+            });
+        }
+        allProducts = await productLoadPromise;
+        return allProducts;
+    }
+
+    async function hydrateInvoiceDetail() {
+        if (detailHydrationStarted) {
+            return;
+        }
+        detailHydrationStarted = true;
+
+        const hydrationTasks = [
+            settingsService.getInvoiceSettings()
+                .then(settings => {
+                    liveSettings = settings || liveSettings;
+                })
+                .catch(error => {
+                    console.warn("Could not load live invoice settings for print.", error);
+                }),
+            import("../services/conflictService.js")
+                .then(module => module.conflictService.getOpenConflictByEntityId(invoice.id))
+                .then(conflict => {
+                    openConflict = conflict || null;
+                })
+                .catch(error => {
+                    console.warn("Could not load invoice conflict state.", error);
+                }),
+            qrActivityService.getByInvoiceId(invoice.id)
+                .then(activities => {
+                    qrActivities = activities || [];
+                })
+                .catch(error => {
+                    console.warn("Could not load QR activity for invoice.", error);
+                }),
+            invoiceController.loadApprovalLink(invoice.id)
+                .then(link => {
+                    approvalLink = link || null;
+                })
+                .catch(error => {
+                    console.warn("Could not load invoice approval link.", error);
+                })
+        ];
+
+        if (usedCachedInvoice) {
+            hydrationTasks.push(
+                invoiceController.loadInvoice(id)
+                    .then(freshInvoice => {
+                        if (freshInvoice) {
+                            invoice = Object.assign({}, invoice, freshInvoice);
+                        }
+                    })
+                    .catch(error => {
+                        console.warn("Could not refresh invoice detail after cached render.", error);
+                    })
+            );
+        }
+
+        if (!/^1\d{5}$/.test(String(invoice.customerPinCode || ''))) {
+            hydrationTasks.push(
+                customerService.getCustomerByName(invoice.customerName)
+                    .then(customer => {
+                        if (customer && customer.pinCode) {
+                            invoice.customerPinCode = customer.pinCode;
+                        }
+                    })
+                    .catch(error => {
+                        console.warn("Could not load customer PIN for invoice QR.", error);
+                    })
+            );
+        }
+
+        await Promise.allSettled(hydrationTasks);
+
+        if (invoice.returnRequested && invoice.orderId) {
+            await import("../services/returnsService.js")
+                .then(module => module.returnsService.syncInvoiceReturnToOrder(invoice))
+                .catch(error => console.warn('Return mirror sync skipped while loading invoice.', error));
+        }
+
+        if (offlineStatusService.isOnline()) {
+            invoice = await qrService.ensureInvoiceToken(invoice).catch(error => {
+                console.warn("Could not publish invoice QR snapshot while rendering print view.", error);
+                return invoice;
+            });
+        }
+
+        if (isCurrentInvoiceRoute()) {
+            refreshBody();
+        }
+    }
 
     function getReturnQuantityFromRecordItem(item = {}) {
         if (item.returnedQuantity !== undefined) {
@@ -1263,6 +1334,8 @@ export const renderInvoiceDetail = async ({ id }) => {
             return;
         }
 
+        await ensureProductsLoaded();
+
         const { Modal } = await import("../components/modal.js");
         let productSearchTerm = '';
         let invoiceDraft = recalculateInvoiceDraftTotals({
@@ -1397,6 +1470,8 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 
     async function openAddProductModal() {
+        await ensureProductsLoaded();
+
         const { Modal } = await import("../components/modal.js");
         const modal = new Modal({
             title: 'Add Product',
@@ -1848,7 +1923,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     ${isInvoiceItemsEditable() ? '<button id="btn-edit-invoice-items" class="btn btn-secondary btn-sm">Edit Items</button>' : ''}
-                    <button id="btn-copy-qr" class="btn btn-secondary btn-sm">QR Link</button>
+                    <button id="btn-copy-qr" class="btn btn-secondary btn-sm" ${invoice.secureToken ? '' : 'disabled'}>${invoice.secureToken ? 'QR Link' : 'QR Loading'}</button>
                     ${canRecordInvoiceReturn(invoice) ? '<button id="btn-record-return-items" class="btn btn-secondary btn-sm">Record Return</button>' : ''}
                     ${canFulfillInvoice(invoice) ? '<button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>' : ''}
                     <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
@@ -2388,6 +2463,9 @@ export const renderInvoiceDetail = async ({ id }) => {
 
     try {
         refreshBody();
+        hydrateInvoiceDetail().catch(error => {
+            console.warn("Invoice detail background hydration failed.", error);
+        });
     } catch (err) {
         console.error("render invoice detail fail", err);
         container.innerHTML = `<div class="p-8 text-center" style="color: #ef4444; font-weight: 500;">Failed to render invoice. Some data may be missing or corrupt (possibly offline).</div>`;
