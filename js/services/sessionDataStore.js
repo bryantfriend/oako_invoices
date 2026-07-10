@@ -14,6 +14,7 @@ import { productService } from "./productService.js";
 import { settingsService } from "./settingsService.js";
 import { openOfflineDexieDatabase } from "./offlineDexieDb.js";
 import { runSingleFlight } from "../core/singleFlight.js";
+import { readCachedRowsAsync } from "../core/firestoreRead.js";
 
 var SESSION_REFRESH_AGE_MS = 20000;
 var SESSION_CACHE_SCHEMA = 'session-v1';
@@ -342,25 +343,32 @@ function assignCollectionData(state, records, extras, readCount, reason) {
 
 async function fetchOrdersData() {
     var startedAt = getPerformanceNow();
-    var queryCount = 5;
+    var queryCount = 3;
+    var referenceGroupsPromise = Promise.all([
+        readCachedRowsAsync('products:all').catch(function() { return []; }),
+        readCachedRowsAsync('categories:all').catch(function() { return []; })
+    ]);
     var groups = await Promise.all([
         orderService.getAllOrders(),
         customerService.getAllCustomers(),
-        productService.getAllProducts(),
-        productService.getAllCategories(),
-        invoiceService.getReturnedInvoicesForAnalytics()
+        invoiceService.getReturnedInvoicesForAnalytics(),
+        referenceGroupsPromise
     ]);
     var orders = groups[0] || [];
     var customers = groups[1] || [];
-    var products = groups[2] || [];
-    var productCategories = groups[3] || [];
-    var returnInvoices = groups[4] || [];
+    var returnInvoices = groups[2] || [];
+    var referenceGroups = groups[3] || [];
+    var products = referenceGroups[0] || [];
+    var productCategories = referenceGroups[1] || [];
     var enrichedOrders = buildOrdersWithContext(orders, customers, products, productCategories, returnInvoices);
 
     logPerf('Orders Firestore refresh', startedAt);
     logCache('Orders', 'Firestore queries initiated by view', {
         queries: queryCount,
-        records: enrichedOrders.length
+        records: enrichedOrders.length,
+        cachedProducts: products.length,
+        cachedCategories: productCategories.length,
+        skippedProductServerRead: true
     });
 
     return {

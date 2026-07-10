@@ -48,6 +48,27 @@ function withDependencyTimeout(promise, timeoutMs, label) {
     ]);
 }
 
+const PRODUCT_PICKER_PAGE_SIZE = 80;
+const PRODUCT_PICKER_SEARCH_PAGE_SIZE = 120;
+
+function normalizeProductSearchText(product, categoryName) {
+    return [
+        product.displayName,
+        product.name,
+        product.name_en,
+        product.name_ru,
+        product.name_kg,
+        product.sku,
+        product.barcode,
+        product.categoryName,
+        categoryName
+    ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function renderProductPickerEmptyState(message) {
+    return '<div style="grid-column: 1 / -1; padding: 36px 12px; text-align: center; color: var(--color-gray-500);">' + escapeHtml(message) + '</div>';
+}
+
 
 function normalizeCreateOrderProducts(rows) {
     return (Array.isArray(rows) ? rows : []).map(function(row) {
@@ -124,7 +145,7 @@ async function loadCreateOrderDependenciesOnce() {
     if (cachedRows[3] && cachedRows[3][0]) sources.settings = 'firestore-cache';
 
     var liveResults = await Promise.all([
-        products.length ? Promise.resolve({ status: 'fulfilled', value: products, source: sources.products }) : withDependencyTimeout(productService.getAllProducts().then(function(value) { return { status: 'fulfilled', value: value, source: 'firestore-server' }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'products'),
+        Promise.resolve({ status: 'fulfilled', value: products, source: sources.products }),
         Promise.resolve({ status: 'fulfilled', value: categories, source: sources.categories }),
         customers.length ? Promise.resolve({ status: 'fulfilled', value: customers, source: sources.customers }) : withDependencyTimeout(customerController.loadAllCustomers().then(function(value) { return { status: 'fulfilled', value: value, source: 'firestore-server' }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'customers'),
         Object.keys(invoiceSettings).length ? Promise.resolve({ status: 'fulfilled', value: invoiceSettings, source: sources.settings }) : Promise.resolve({ status: 'fulfilled', value: {}, source: 'default' })
@@ -158,7 +179,7 @@ async function loadCreateOrderDependenciesOnce() {
     window.setTimeout(function() {
         console.info('[CREATE_ORDER] server refresh background=true');
         Promise.all([
-            productService.getAllProducts().catch(function() { return []; }),
+            runSingleFlight('createOrder:products:refresh', function() { return productService.getAllProducts(); }).catch(function() { return []; }),
             productService.getAllCategories().catch(function() { return []; }),
             customerController.loadAllCustomers().catch(function() { return []; }),
             settingsService.getInvoiceSettings().catch(function() { return {}; })
@@ -229,6 +250,40 @@ export const renderCreateOrder = async (params, routeContext) => {
         map[category.id] = category.name || category.name_en || 'Uncategorized';
         return map;
     }, {});
+    let productById = {};
+    let productCatalogLoadPromise = null;
+    const applyProductCatalog = (catalog) => {
+        products = (Array.isArray(catalog) ? catalog : []).map(function(product) {
+            var categoryName = product.categoryName || product.category_name || categoryNameById[product.categoryId] || product.category || '';
+            return Object.assign({}, product, {
+                categoryName: categoryName,
+                searchText: normalizeProductSearchText(product, categoryName)
+            });
+        });
+        productById = products.reduce(function(map, product) {
+            if (product && product.id) map[product.id] = product;
+            return map;
+        }, {});
+    };
+    const refreshProductCatalog = () => {
+        if (!productCatalogLoadPromise) {
+            productCatalogLoadPromise = runSingleFlight('createOrder:products:refresh', function() {
+                return productService.getAllProducts();
+            }).then(function(freshProducts) {
+                if (Array.isArray(freshProducts) && freshProducts.length) {
+                    applyProductCatalog(freshProducts);
+                }
+                return products;
+            }).finally(function() {
+                productCatalogLoadPromise = null;
+            });
+        }
+        return productCatalogLoadPromise;
+    };
+    applyProductCatalog(products);
+    if (!products.length) {
+        window.setTimeout(refreshProductCatalog, 0);
+    }
 
     const customerDatalist = customers.map(c => `<option value="${c.companyName || c.name}">`).join('');
 
@@ -779,6 +834,8 @@ export const renderCreateOrder = async (params, routeContext) => {
     const openProductPicker = () => {
         let activeCategory = 'all';
         let searchQuery = '';
+        let visibleLimit = PRODUCT_PICKER_PAGE_SIZE;
+        let renderTimer = null;
 
         const modal = new Modal({
             title: 'Select Products',
@@ -797,6 +854,8 @@ export const renderCreateOrder = async (params, routeContext) => {
                         </select>
                     </div>
 
+                    <div id="product-grid-status" style="font-size: 12px; color: var(--color-gray-500); min-height: 18px;"></div>
+
                     <!-- Product Grid -->
                     <div id="product-grid" class="grid-cols-mobile-2" style="
                         display: grid;
@@ -807,6 +866,8 @@ export const renderCreateOrder = async (params, routeContext) => {
                     ">
                         <!-- Products rendered here -->
                     </div>
+
+                    <button type="button" id="product-show-more" class="btn btn-secondary btn-sm" style="display: none; align-self: center;">Show more</button>
                 </div>
             `,
             confirmText: 'Done',
@@ -819,73 +880,127 @@ export const renderCreateOrder = async (params, routeContext) => {
         modal.open();
 
         const grid = document.getElementById('product-grid');
+        const status = document.getElementById('product-grid-status');
+        const showMoreButton = document.getElementById('product-show-more');
         const searchInput = document.getElementById('product-search');
         const categorySelect = document.getElementById('category-picker-filter');
 
-        const filterAndRender = () => {
-            const filtered = products.filter(p => {
-                const matchesCat = activeCategory === 'all' || p.categoryId === activeCategory;
-                const name = p.displayName || '';
-                const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase());
-                return matchesCat && matchesSearch;
-            });
-
-            grid.innerHTML = filtered.map(p => {
-                const isSelected = selectedItems.some(item => item.productId === p.id);
-                return `
-                    <div class="product-card" data-id="${p.id}" style="
-                        border: 2px solid ${isSelected ? 'var(--color-primary-500)' : 'var(--color-gray-100)'};
-                        border-radius: var(--radius-lg);
-                        padding: var(--space-2);
-                        cursor: pointer;
-                        transition: all var(--transition-fast);
-                        background: white;
-                        display: flex;
-                        flex-direction: column;
-                        gap: var(--space-2);
-                    ">
-                        <img src="${p.imageUrl || ''}" onerror="this.src='https://placehold.co/150x150?text=📦'"
-                             style="width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-md); background: var(--color-gray-50);">
-                        <div style="font-weight: 600; font-size: 13px; line-height: 1.2; height: 32px; overflow: hidden; color: var(--color-gray-800);">${p.displayName || 'Unnamed Product'}</div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
-                            <span style="color: ${selectedPriceMode === ORDER_PRICE_MODES.BUSINESS ? 'var(--color-gray-500)' : 'var(--color-primary-600)'}; font-weight: 700; font-size: 12px;">Retail: ${formatCurrency(p.retailPrice || p.price || 0)}</span>
-                            <span style="color: ${selectedPriceMode === ORDER_PRICE_MODES.BUSINESS ? 'var(--color-primary-600)' : 'var(--color-gray-500)'}; font-weight: 700; font-size: 12px;">Business: ${p.businessPrice !== null && p.businessPrice !== undefined ? formatCurrency(p.businessPrice) : 'Unset'}</span>
-                            ${isSelected ? '<span style="font-size: 14px;">✅</span>' : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            // Card Click
-            grid.querySelectorAll('.product-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const id = card.dataset.id;
-                    const p = products.find(prod => prod.id === id);
-                    const idx = selectedItems.findIndex(item => item.productId === id);
-
-                    if (idx > -1) {
-                        selectedItems.splice(idx, 1);
-                    } else {
-                        addProductToDraft(p);
-                    }
-                    filterAndRender();
-                });
+        const ensureProductsAvailable = () => {
+            if (products.length) return;
+            if (status) status.textContent = 'Loading product catalog...';
+            grid.innerHTML = renderProductPickerEmptyState('Loading product catalog...');
+            refreshProductCatalog().then(function() {
+                if (!document.body.contains(grid)) return;
+                filterAndRender({ resetLimit: true });
+            }).catch(function(error) {
+                console.warn('[CREATE_ORDER] product picker catalog refresh failed.', error);
+                if (!document.body.contains(grid)) return;
+                if (status) status.textContent = 'Product catalog is not available yet.';
+                grid.innerHTML = renderProductPickerEmptyState('Product catalog is not available yet. Check the connection and try again.');
             });
         };
 
+        const filterProducts = () => {
+            const query = searchQuery.trim().toLowerCase();
+            return products.filter(p => {
+                const matchesCat = activeCategory === 'all' || p.categoryId === activeCategory;
+                const matchesSearch = !query || (p.searchText || '').includes(query);
+                return matchesCat && matchesSearch;
+            });
+        };
+
+        const filterAndRender = (options = {}) => {
+            if (options.resetLimit) {
+                visibleLimit = searchQuery.trim() ? PRODUCT_PICKER_SEARCH_PAGE_SIZE : PRODUCT_PICKER_PAGE_SIZE;
+            }
+
+            const filtered = filterProducts();
+            const selectedProductIds = new Set(selectedItems.map(item => item.productId));
+            const visibleProducts = filtered.slice(0, visibleLimit);
+
+            if (!products.length) {
+                grid.innerHTML = renderProductPickerEmptyState('No products are available on this device yet. Connect once to refresh the product catalog.');
+            } else if (!filtered.length) {
+                grid.innerHTML = renderProductPickerEmptyState('No products match this search.');
+            } else {
+                grid.innerHTML = visibleProducts.map(p => {
+                    const isSelected = selectedProductIds.has(p.id);
+                    return `
+                        <div class="product-card" data-id="${escapeHtml(p.id)}" style="
+                            border: 2px solid ${isSelected ? 'var(--color-primary-500)' : 'var(--color-gray-100)'};
+                            border-radius: var(--radius-lg);
+                            padding: var(--space-2);
+                            cursor: pointer;
+                            transition: all var(--transition-fast);
+                            background: white;
+                            display: flex;
+                            flex-direction: column;
+                            gap: var(--space-2);
+                        ">
+                            <img src="${escapeHtml(p.imageUrl || '')}" loading="lazy" decoding="async" onerror="this.src='https://placehold.co/150x150?text=📦'"
+                                 style="width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-md); background: var(--color-gray-50);">
+                            <div style="font-weight: 600; font-size: 13px; line-height: 1.2; height: 32px; overflow: hidden; color: var(--color-gray-800);">${escapeHtml(p.displayName || 'Unnamed Product')}</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; gap: 6px; flex-wrap: wrap;">
+                                <span style="color: ${selectedPriceMode === ORDER_PRICE_MODES.BUSINESS ? 'var(--color-gray-500)' : 'var(--color-primary-600)'}; font-weight: 700; font-size: 12px;">Retail: ${formatCurrency(p.retailPrice || p.price || 0)}</span>
+                                <span style="color: ${selectedPriceMode === ORDER_PRICE_MODES.BUSINESS ? 'var(--color-primary-600)' : 'var(--color-gray-500)'}; font-weight: 700; font-size: 12px;">Business: ${p.businessPrice !== null && p.businessPrice !== undefined ? formatCurrency(p.businessPrice) : 'Unset'}</span>
+                                ${isSelected ? '<span style="font-size: 14px;">✅</span>' : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            if (status) {
+                status.textContent = filtered.length
+                    ? 'Showing ' + visibleProducts.length.toLocaleString() + ' of ' + filtered.length.toLocaleString() + ' matching products.'
+                    : (products.length ? 'No matching products.' : 'No product catalog loaded.');
+            }
+            if (showMoreButton) {
+                showMoreButton.style.display = filtered.length > visibleProducts.length ? 'inline-flex' : 'none';
+            }
+        };
+
+        const scheduleFilterAndRender = (options = {}) => {
+            window.clearTimeout(renderTimer);
+            renderTimer = window.setTimeout(function() {
+                filterAndRender(options);
+            }, 80);
+        };
+
+        grid.addEventListener('click', (event) => {
+            const card = event.target.closest('.product-card');
+            if (!card || !grid.contains(card)) return;
+            const id = card.dataset.id;
+            const product = productById[id];
+            if (!product) return;
+
+            const idx = selectedItems.findIndex(item => item.productId === id);
+            if (idx > -1) {
+                selectedItems.splice(idx, 1);
+            } else {
+                addProductToDraft(product);
+            }
+            filterAndRender();
+        });
+
         searchInput.addEventListener('input', (e) => {
             searchQuery = e.target.value;
-            filterAndRender();
+            scheduleFilterAndRender({ resetLimit: true });
         });
 
         categorySelect.addEventListener('change', (e) => {
             activeCategory = e.target.value;
+            scheduleFilterAndRender({ resetLimit: true });
+        });
+
+        showMoreButton.addEventListener('click', () => {
+            visibleLimit += PRODUCT_PICKER_PAGE_SIZE;
             filterAndRender();
         });
 
-        filterAndRender();
+        filterAndRender({ resetLimit: true });
+        ensureProductsAvailable();
     };
-
     // Custom Item Logic
     document.getElementById('add-custom-item-btn').addEventListener('click', () => {
         const modal = new Modal({

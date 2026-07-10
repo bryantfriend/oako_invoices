@@ -26,6 +26,8 @@ import {
 } from "../core/orderRecordHelpers.js";
 
 // Global chart registry to prevent "broken" graphs
+const ORDERS_TABLE_PAGE_SIZE = 120;
+
 let chartInstances = {};
 
 const cleanupCharts = () => {
@@ -102,6 +104,7 @@ export const renderDashboard = async (params, routeContext) => {
     let archivedFilter = 'all';
     let filters = { status: 'all', drill: null };
     let sort = { key: 'recent', order: 'desc' };
+    let tableVisibleLimit = ORDERS_TABLE_PAGE_SIZE;
     let invoiceRefreshTimer = null;
     const pendingCheckmarkUpdates = new Set();
     const updatedCheckmarkUpdates = new Set();
@@ -459,7 +462,7 @@ export const renderDashboard = async (params, routeContext) => {
                                 <p>Sorted by date with the same view, print, pay, fulfill, and archive workflows.</p>
                             </div>
                             <div class="orders-table-tools">
-                                <span class="metric-pill visible-orders-count">${filteredOrders.length} visible</span>
+                                <span class="metric-pill visible-orders-count">${Math.min(filteredOrders.length, tableVisibleLimit)} of ${filteredOrders.length} visible</span>
                                 <span class="metric-pill archived-orders-count">${archivedCount} archived</span>
                                 <span id="selected-orders-count" class="metric-pill selected-count" style="display: none;">0 selected</span>
                                 <div class="segmented-control compact-control archived-filter-control" aria-label="Recent orders archive filter">
@@ -1087,6 +1090,7 @@ export const renderDashboard = async (params, routeContext) => {
     };
 
     const applyFilters = () => {
+        tableVisibleLimit = ORDERS_TABLE_PAGE_SIZE;
         const sourceOrders = getOrdersForArchivedFilter();
         filteredOrders = sourceOrders.filter(o => {
             const status = getAnalyticsStatus(o);
@@ -1133,6 +1137,8 @@ export const renderDashboard = async (params, routeContext) => {
     };
 
     const refreshTable = () => {
+        const visibleOrders = filteredOrders.slice(0, tableVisibleLimit);
+        const hiddenOrderCount = Math.max(0, filteredOrders.length - visibleOrders.length);
         const table = new DataTable({
             columns: [
                 {
@@ -1187,7 +1193,7 @@ export const renderDashboard = async (params, routeContext) => {
                 { key: 'status', label: t('table_status'), align: 'center', render: (val, row) => (isArchivedRecord(row) ? '<span class="status-badge" style="background:#f1f5f9;color:#475569;margin-right:4px;">Archived</span>' : '') + createStatusBadge(row) },
                 { key: 'syncState', label: 'Sync', align: 'center', render: (val, row) => renderInvoiceSyncPill(row) }
             ],
-            data: filteredOrders,
+            data: visibleOrders,
             sortKey: sort.key,
             sortOrder: sort.order,
             sortHandlerName: 'dashboardHandleTableSort',
@@ -1246,14 +1252,26 @@ export const renderDashboard = async (params, routeContext) => {
 
         const wrapper = document.getElementById('orders-table-wrapper');
         if (!wrapper) return;
-        wrapper.innerHTML = table.render();
+        wrapper.innerHTML = table.render() + (hiddenOrderCount > 0 ? `
+            <div style="display: flex; justify-content: center; padding: 14px; border: 1px solid var(--color-gray-200); border-top: 0; border-radius: 0 0 var(--radius-lg) var(--radius-lg); background: white;">
+                <button id="show-more-orders" class="btn btn-secondary btn-sm" type="button">Show ${Math.min(ORDERS_TABLE_PAGE_SIZE, hiddenOrderCount)} more of ${hiddenOrderCount}</button>
+            </div>
+        ` : '');
 
         const visibleCount = document.querySelector('.visible-orders-count');
         if (visibleCount) {
-            visibleCount.textContent = `${filteredOrders.length} visible`;
+            visibleCount.textContent = `${visibleOrders.length} of ${filteredOrders.length} visible`;
         }
 
-        const visibleIds = new Set(filteredOrders.map(order => order.id));
+        const showMoreOrders = wrapper.querySelector('#show-more-orders');
+        if (showMoreOrders) {
+            showMoreOrders.addEventListener('click', () => {
+                tableVisibleLimit += ORDERS_TABLE_PAGE_SIZE;
+                refreshTable();
+            });
+        }
+
+        const visibleIds = new Set(visibleOrders.map(order => order.id));
         selectedOrderIds = new Set([...selectedOrderIds].filter(id => visibleIds.has(id)));
 
         wrapper.querySelectorAll('.order-select-checkbox').forEach(checkbox => {
@@ -1275,7 +1293,7 @@ export const renderDashboard = async (params, routeContext) => {
 
         const selectAll = wrapper.querySelector('#select-all-orders');
         if (selectAll) {
-            selectAll.checked = filteredOrders.length > 0 && filteredOrders.every(order => selectedOrderIds.has(order.id));
+            selectAll.checked = visibleOrders.length > 0 && visibleOrders.every(order => selectedOrderIds.has(order.id));
             selectAll.indeterminate = selectedOrderIds.size > 0 && !selectAll.checked;
             selectAll.addEventListener('click', e => {
                 e.stopPropagation();
@@ -1283,7 +1301,7 @@ export const renderDashboard = async (params, routeContext) => {
             });
             selectAll.addEventListener('change', e => {
                 scheduleInvoiceListRefresh(6000);
-                filteredOrders.forEach(order => {
+                visibleOrders.forEach(order => {
                     if (e.target.checked) {
                         selectedOrderIds.add(order.id);
                     } else {
