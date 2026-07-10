@@ -1,6 +1,9 @@
 import { auth } from "./firebase.js";
 import { store } from "./store.js";
 
+var timeoutSummaryByScope = {};
+var TIMEOUT_SUMMARY_WINDOW_MS = 30000;
+
 export function getFirestoreAuthState() {
     const state = store.getState();
     const user = auth.currentUser;
@@ -42,5 +45,22 @@ export function logCollectionError(collectionName, error, action = 'fetch') {
         authState
     };
     const summary = details.message || details.code || 'unknown Firestore error';
+    const lowerSummary = String(summary || '').toLowerCase();
+    if (lowerSummary.indexOf('timeout') !== -1) {
+        const key = collectionName + ':' + action;
+        const now = Date.now();
+        const current = timeoutSummaryByScope[key] || { count: 0, startedAt: now, lastLoggedAt: 0 };
+        current.count = current.count + 1;
+        if (now - current.startedAt > TIMEOUT_SUMMARY_WINDOW_MS) {
+            console.warn('[NETWORK_TIMEOUT_SUMMARY] ' + collectionName + ' ' + action + ' timed out ' + current.count + ' times in 30s, using cache.', details);
+            timeoutSummaryByScope[key] = { count: 0, startedAt: now, lastLoggedAt: now };
+            return;
+        }
+        timeoutSummaryByScope[key] = current;
+        if (current.count === 1) {
+            console.warn('[NETWORK_TIMEOUT_SUMMARY] ' + collectionName + ' ' + action + ' timed out, using cache.', details);
+        }
+        return;
+    }
     console.error(`Error ${action} ${collectionName}: ${summary} (${authSummary})`, details);
 }

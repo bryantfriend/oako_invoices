@@ -10,7 +10,63 @@ const CACHE_PREFIX = 'kyrgyz-organics-read-cache:';
 const MAX_LOCAL_CACHE_ENTRY_BYTES = 180000;
 const MAX_LOCAL_CACHE_TOTAL_BYTES = 900000;
 const DEXIE_CACHE_PREFIX = 'firestore-read:';
+const MAX_SERVER_READS = 2;
+var activeServerReads = 0;
+var queuedServerReads = [];
 
+
+function getReadPriority(options) {
+    if (options && options.priority) {
+        return options.priority;
+    }
+    var collectionName = String(options && options.collectionName ? options.collectionName : '').toLowerCase();
+    if (collectionName === 'inventory' || collectionName.indexOf('analytics') !== -1) {
+        return 'low';
+    }
+    return 'current-route';
+}
+
+function compareReadPriority(a, b) {
+    var weights = {
+        'current-route': 0,
+        'medium': 1,
+        'low': 2
+    };
+    var left = weights[a.priority] === undefined ? 1 : weights[a.priority];
+    var right = weights[b.priority] === undefined ? 1 : weights[b.priority];
+    return left - right;
+}
+
+function pumpServerReadQueue() {
+    if (activeServerReads >= MAX_SERVER_READS || queuedServerReads.length === 0) {
+        return;
+    }
+    queuedServerReads.sort(compareReadPriority);
+    var next = queuedServerReads.shift();
+    activeServerReads = activeServerReads + 1;
+    Promise.resolve()
+        .then(next.worker)
+        .then(next.resolve)
+        .catch(next.reject)
+        .finally(function() {
+            activeServerReads = activeServerReads - 1;
+            pumpServerReadQueue();
+        });
+}
+
+function enqueueFirestoreRead(worker, options) {
+    var priority = getReadPriority(options || {});
+    console.info('[RECONNECT_SCHEDULER] running priority=' + priority);
+    return new Promise(function(resolve, reject) {
+        queuedServerReads.push({
+            worker: worker,
+            resolve: resolve,
+            reject: reject,
+            priority: priority
+        });
+        pumpServerReadQueue();
+    });
+}
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -310,7 +366,7 @@ export async function getDocsWithCache(queryRef, options = {}) {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
         try {
-            const snapshot = await withTimeout(getDocs(queryRef), collectionName, timeoutMs);
+            const snapshot = await withTimeout(enqueueFirestoreRead(function() { return getDocs(queryRef); }, options), collectionName, timeoutMs);
             const rows = mapSnapshotRows(snapshot);
             writeCachedRows(cacheKey, rows);
             return rows;

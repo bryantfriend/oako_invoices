@@ -2,6 +2,9 @@ import { ROUTES } from "../core/constants.js";
 import { authService } from "../core/authService.js";
 import { router } from "../router.js";
 import { t } from "../core/i18n.js";
+import sessionDataStore from "../services/sessionDataStore.js";
+import { readCachedRowsAsync } from "../core/firestoreRead.js";
+import { runSingleFlight } from "../core/singleFlight.js";
 
 const NAV_ICONS = {
     orders: '<path d="M6 2h9l3 3v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M14 2v4h4"/><path d="M8 11h8"/><path d="M8 15h6"/>',
@@ -88,37 +91,59 @@ export class Sidebar {
     }
 
     async loadBadges() {
-        const setBadge = (key, value) => {
-            const badge = this.element?.querySelector(`[data-badge-key="${key}"] .nav-badge`);
-            if (!badge || !value) return;
+        return runSingleFlight('sidebar:badges', this.loadBadgesOnce.bind(this));
+    }
+
+    async loadBadgesOnce() {
+        const sidebar = this;
+        console.info('[SIDEBAR_BADGES] blocking=false');
+        const setBadge = function(key, value) {
+            const badge = sidebar.element?.querySelector(`[data-badge-key="${key}"] .nav-badge`);
+            if (!badge) return;
+            if (!value) {
+                badge.hidden = true;
+                badge.textContent = '';
+                return;
+            }
             badge.textContent = value > 99 ? '99+' : String(value);
             badge.hidden = false;
         };
 
         try {
-            const [{ orderService }, { invoiceService }, { inventoryController }, { conflictService }] = await Promise.all([
-                import("../services/orderService.js"),
-                import("../services/invoiceService.js"),
-                import("../controllers/inventoryController.js"),
-                import("../services/conflictService.js")
-            ]);
+            const orderSnapshot = sessionDataStore.getOrdersSnapshot();
+            const invoiceSnapshot = sessionDataStore.getInvoicesSnapshot();
+            let orders = orderSnapshot && Array.isArray(orderSnapshot.records) ? orderSnapshot.records : null;
+            let invoices = invoiceSnapshot && Array.isArray(invoiceSnapshot.records) ? invoiceSnapshot.records : null;
+            let source = orders || invoices ? 'memory' : 'skipped';
 
-            const today = new Date().toISOString().split('T')[0];
-            const [orders, invoices, categories, conflicts] = await Promise.all([
-                orderService.getAllOrders().catch(() => []),
-                invoiceService.getAllInvoices().catch(() => []),
-                inventoryController.loadInventoryData(today).catch(() => []),
-                conflictService.getOpenConflicts().catch(() => [])
-            ]);
+            if (!orders) {
+                orders = await readCachedRowsAsync('orders:all:createdAt_desc');
+                if (orders.length) source = source === 'memory' ? source : 'dexie';
+            }
+            if (!invoices) {
+                const openInvoices = await readCachedRowsAsync('invoices:working:open');
+                const todayInvoices = await readCachedRowsAsync('invoices:working:today');
+                const recentInvoices = await readCachedRowsAsync('invoices:working:recent');
+                invoices = openInvoices.concat(todayInvoices).concat(recentInvoices);
+                if (invoices.length) source = source === 'memory' ? source : 'dexie';
+            }
 
-            setBadge('orders', orders.filter(order => order.archived !== true).length);
-            setBadge('invoices', invoices.length);
+            let conflicts = [];
+            try {
+                const conflictModule = await import("../services/conflictService.js");
+                conflicts = await conflictModule.conflictService.getOpenConflicts().catch(function() { return []; });
+            } catch (error) {
+                conflicts = [];
+            }
+
+            setBadge('orders', (orders || []).filter(function(order) { return order && order.archived !== true; }).length);
+            setBadge('invoices', (invoices || []).length);
             setBadge('conflicts', conflicts.length);
-            setBadge('lowStock', categories
-                .flatMap(category => category.products || [])
-                .filter(product => Number(product.left ?? 0) <= 5)
-                .length);
+            setBadge('lowStock', 0);
+            console.info('[SIDEBAR_BADGES] source=' + source);
+            console.info('[SIDEBAR_BADGES] updated counts only');
         } catch (error) {
+            console.info('[SIDEBAR_BADGES] source=skipped');
             console.warn('Sidebar badges unavailable.', error);
         }
     }

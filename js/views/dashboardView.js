@@ -12,6 +12,7 @@ import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
 import { notificationService } from "../core/notificationService.js";
+import { getCurrentNavigationId, isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
 import { isReturnFilterMatch } from "../core/returnStatus.js";
 import {
@@ -71,8 +72,10 @@ function icon(name, className = '') {
     `;
 }
 
-export const renderDashboard = async () => {
-    layoutView.render();
+export const renderDashboard = async (params, routeContext) => {
+    var navigationId = routeContext && routeContext.navigationId ? routeContext.navigationId : getCurrentNavigationId();
+    var expectedRoute = 'orders';
+    layoutView.render('route-change');
     layoutView.updateTitle(t("sidebar_orders"));
 
     const container = document.getElementById('page-container');
@@ -119,6 +122,10 @@ export const renderDashboard = async () => {
         console.info('[PERF] Orders first visible render: memory cache path selected');
     } else {
         const loadedDashboard = await dashboardController.loadDashboard({ source: 'orders-view' });
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('dashboard-initial-load', expectedRoute, navigationId);
+            return;
+        }
         initialDashboardResult = loadedDashboard;
         initialInventoryData = [];
         shouldRunBackgroundRefresh = loadedDashboard.meta && loadedDashboard.meta.shouldRefresh === true;
@@ -154,10 +161,17 @@ export const renderDashboard = async () => {
 
     const refreshDashboardDataPreservingState = async () => {
         const scrollTop = getScrollPosition();
+        console.info('[DASHBOARD_REFRESH] started navigationId=' + navigationId);
         const [{ orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [] }, refreshedInventoryData] = await Promise.all([
             dashboardController.refreshDashboard({ source: 'orders-background-refresh' }),
-            inventoryController.loadInventoryData(today)
+            inventoryController.loadInventoryData(today, { routeName: expectedRoute, navigationId: navigationId })
         ]);
+        console.info('[DASHBOARD_REFRESH] cache updated');
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            console.info('[DASHBOARD_REFRESH] render skipped stale route');
+            ignoreStaleRouteResult('dashboard-background-refresh', expectedRoute, navigationId);
+            return;
+        }
 
         allOrders = refreshedOrders;
         activeOrders = getActiveOrders(allOrders);
@@ -167,12 +181,17 @@ export const renderDashboard = async () => {
         pendingCheckmarkUpdates.clear();
         updatedCheckmarkUpdates.clear();
         renderUI();
+        console.info('[DASHBOARD_REFRESH] rendered current route');
         restoreScrollPosition(scrollTop);
     };
 
 
     const refreshInventoryStrip = async () => {
-        const refreshedInventoryData = await inventoryController.loadInventoryData(today);
+        const refreshedInventoryData = await inventoryController.loadInventoryData(today, { routeName: expectedRoute, navigationId: navigationId });
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('dashboard-inventory-strip', expectedRoute, navigationId);
+            return;
+        }
         inventoryCategories = refreshedInventoryData;
         renderUI();
     };
@@ -342,6 +361,10 @@ export const renderDashboard = async () => {
     window.dashboardHandleTableSort = handleSort;
 
     const renderUI = () => {
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('dashboard-render-ui', expectedRoute, navigationId);
+            return;
+        }
         cleanupCharts();
         const analyticsOrders = getAnalyticsOrders();
         const analyticsReturnOrders = getAnalyticsReturnOrders();

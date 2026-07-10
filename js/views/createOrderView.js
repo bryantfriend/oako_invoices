@@ -24,6 +24,9 @@ import { Modal } from "../components/modal.js";
 import { DataTable } from "../components/dataTable.js";
 import { formatCurrency, formatDate } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
+import { readCachedRowsAsync } from "../core/firestoreRead.js";
+import { getCurrentNavigationId, isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
+import { runSingleFlight } from "../core/singleFlight.js";
 
 function escapeHtml(value = '') {
     return String(value)
@@ -45,6 +48,134 @@ function withDependencyTimeout(promise, timeoutMs, label) {
     ]);
 }
 
+
+function normalizeCreateOrderProducts(rows) {
+    return (Array.isArray(rows) ? rows : []).map(function(row) {
+        var data = row || {};
+        var name = data.name || data.name_en || data.title || data.title_en || 'Unknown Product';
+        var retailPrice = tryGetProductPriceByMode(data, ORDER_PRICE_MODES.RETAIL);
+        var businessPrice = tryGetProductPriceByMode(data, ORDER_PRICE_MODES.BUSINESS);
+        return Object.assign({}, data, {
+            id: data.id,
+            displayName: name,
+            retailPrice: retailPrice.ok ? retailPrice.price : 0,
+            businessPrice: businessPrice.ok ? businessPrice.price : null,
+            price: retailPrice.ok ? retailPrice.price : 0
+        });
+    }).filter(function(product) {
+        return product.archived !== true && product.active !== false;
+    });
+}
+
+function normalizeCreateOrderCategories(rows) {
+    return (Array.isArray(rows) ? rows : []).map(function(row) {
+        var data = row || {};
+        return Object.assign({}, data, {
+            id: data.id,
+            name: data.name || data.name_en || 'Unknown Category'
+        });
+    }).filter(function(category) {
+        return category.archived !== true && category.active !== false;
+    });
+}
+
+function normalizeCreateOrderCustomers(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(function(customer) {
+        return customer && customer.archived !== true;
+    }).sort(function(a, b) {
+        return String(a.companyName || a.name || '').localeCompare(String(b.companyName || b.name || ''));
+    });
+}
+
+function getCreateOrderSettingsSource(settings) {
+    if (settings && settings.__fromCache) return 'firestore-cache';
+    if (settings && settings.__fromFallback) return 'default';
+    return settings ? 'memory' : 'default';
+}
+
+async function loadCreateOrderDependenciesOnce() {
+    var products = [];
+    var categories = [];
+    var customers = [];
+    var invoiceSettings = {};
+    var sources = {
+        products: 'unavailable',
+        categories: 'unavailable',
+        customers: 'unavailable',
+        settings: 'default'
+    };
+    var warnings = [];
+
+    var cachedRows = await Promise.all([
+        readCachedRowsAsync('products:all').catch(function() { return []; }),
+        readCachedRowsAsync('categories:all').catch(function() { return []; }),
+        readCachedRowsAsync('customers:all').catch(function() { return []; }),
+        readCachedRowsAsync('settings:invoice_config').catch(function() { return []; })
+    ]);
+
+    products = normalizeCreateOrderProducts(cachedRows[0]);
+    categories = normalizeCreateOrderCategories(cachedRows[1]);
+    customers = normalizeCreateOrderCustomers(cachedRows[2]);
+    invoiceSettings = cachedRows[3] && cachedRows[3][0] ? cachedRows[3][0] : {};
+
+    if (products.length) sources.products = 'dexie';
+    if (categories.length) sources.categories = 'dexie';
+    if (customers.length) sources.customers = 'dexie';
+    if (cachedRows[3] && cachedRows[3][0]) sources.settings = 'firestore-cache';
+
+    var liveResults = await Promise.all([
+        products.length ? Promise.resolve({ status: 'fulfilled', value: products, source: sources.products }) : withDependencyTimeout(productService.getAllProducts().then(function(value) { return { status: 'fulfilled', value: value, source: 'firestore-server' }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'products'),
+        Promise.resolve({ status: 'fulfilled', value: categories, source: sources.categories }),
+        customers.length ? Promise.resolve({ status: 'fulfilled', value: customers, source: sources.customers }) : withDependencyTimeout(customerController.loadAllCustomers().then(function(value) { return { status: 'fulfilled', value: value, source: 'firestore-server' }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'customers'),
+        Object.keys(invoiceSettings).length ? Promise.resolve({ status: 'fulfilled', value: invoiceSettings, source: sources.settings }) : Promise.resolve({ status: 'fulfilled', value: {}, source: 'default' })
+    ]);
+
+    if (liveResults[0].status === 'fulfilled') {
+        products = liveResults[0].value || [];
+        sources.products = liveResults[0].source || sources.products;
+    } else {
+        warnings.push('products');
+    }
+    if (liveResults[1].status === 'fulfilled') {
+        categories = liveResults[1].value || [];
+        sources.categories = liveResults[1].source || sources.categories;
+    } else {
+        warnings.push('categories');
+    }
+    if (liveResults[2].status === 'fulfilled') {
+        customers = liveResults[2].value || [];
+        sources.customers = liveResults[2].source || sources.customers;
+    } else {
+        warnings.push('customers');
+    }
+    if (liveResults[3].status === 'fulfilled') {
+        invoiceSettings = liveResults[3].value || {};
+        sources.settings = liveResults[3].source || getCreateOrderSettingsSource(invoiceSettings);
+    } else {
+        warnings.push('settings');
+    }
+
+    window.setTimeout(function() {
+        console.info('[CREATE_ORDER] server refresh background=true');
+        Promise.all([
+            productService.getAllProducts().catch(function() { return []; }),
+            productService.getAllCategories().catch(function() { return []; }),
+            customerController.loadAllCustomers().catch(function() { return []; }),
+            settingsService.getInvoiceSettings().catch(function() { return {}; })
+        ]).catch(function(error) {
+            console.warn('[CREATE_ORDER] background dependency refresh failed.', error);
+        });
+    }, 0);
+
+    return {
+        products: products,
+        categories: categories,
+        customers: customers,
+        invoiceSettings: invoiceSettings,
+        sources: sources,
+        warnings: warnings
+    };
+}
 function renderCreateOrderLoadingShell() {
     return [
         '<div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">',
@@ -56,43 +187,33 @@ function renderCreateOrderLoadingShell() {
     ].join('');
 }
 
-export const renderCreateOrder = async () => {
-    layoutView.render();
+export const renderCreateOrder = async (params, routeContext) => {
+    var navigationId = routeContext && routeContext.navigationId ? routeContext.navigationId : getCurrentNavigationId();
+    var expectedRoute = 'create-order';
+    layoutView.render('route-change');
     layoutView.updateTitle(t('order_create_title'));
 
     const container = document.getElementById('page-container');
     console.info('[CREATE_ORDER] route mounted');
     container.innerHTML = renderCreateOrderLoadingShell();
 
-    // Fetch data independently so a weak connection on one dataset does not empty the others.
-    let products = [];
-    let categories = [];
-    let customers = [];
-    const dependencyNames = ['products', 'categories', 'customers', 'settings'];
     const dependencyStartedAt = Date.now();
-    const initialData = await Promise.all([
-        withDependencyTimeout(productService.getAllProducts().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'products'),
-        withDependencyTimeout(productService.getAllCategories().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'categories'),
-        withDependencyTimeout(customerController.loadAllCustomers().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'customers'),
-        withDependencyTimeout(settingsService.getInvoiceSettings().then(function(value) { return { status: 'fulfilled', value: value }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'settings')
-    ]);
-    products = initialData[0].status === 'fulfilled' ? initialData[0].value : [];
-    categories = initialData[1].status === 'fulfilled' ? initialData[1].value : [];
-    customers = initialData[2].status === 'fulfilled' ? initialData[2].value : [];
-    const invoiceSettings = initialData[3].status === 'fulfilled' ? initialData[3].value : {};
-    const dependencyWarnings = [];
-    initialData.forEach((result, index) => {
-        const dataset = dependencyNames[index];
-        if (result.status === 'rejected') {
-            dependencyWarnings.push(dataset);
-            console.warn('Could not fetch create-order data', { dataset: dataset, error: result.reason });
-            console.info('[CREATE_ORDER] failure reason: ' + dataset + ' - ' + (result.reason && result.reason.message ? result.reason.message : result.reason));
-        }
-    });
-    console.info('[CREATE_ORDER] dependencies loaded in ' + (Date.now() - dependencyStartedAt) + 'ms');
-    console.info('[CREATE_ORDER] products source: ' + (products.length ? 'service' : 'unavailable'));
-    console.info('[CREATE_ORDER] customers source: ' + (customers.length ? 'service' : 'unavailable'));
-
+    const dependencyResult = await runSingleFlight('createOrder:dependencies', loadCreateOrderDependenciesOnce);
+    if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+        ignoreStaleRouteResult('create-order-dependencies', expectedRoute, navigationId);
+        return;
+    }
+    let products = dependencyResult.products || [];
+    let categories = dependencyResult.categories || [];
+    let customers = dependencyResult.customers || [];
+    const invoiceSettings = dependencyResult.invoiceSettings || {};
+    const dependencyWarnings = dependencyResult.warnings || [];
+    const dependencySources = dependencyResult.sources || {};
+    console.info('[CREATE_ORDER] products source=' + (dependencySources.products || 'unavailable'));
+    console.info('[CREATE_ORDER] customers source=' + (dependencySources.customers || 'unavailable'));
+    console.info('[CREATE_ORDER] categories source=' + (dependencySources.categories || 'unavailable'));
+    console.info('[CREATE_ORDER] settings source=' + (dependencySources.settings || 'default'));
+    console.info('[CREATE_ORDER] form ready ms=' + (Date.now() - dependencyStartedAt));
     let selectedPriceMode = normalizeDefaultOrderPriceMode(invoiceSettings.defaultOrderPriceMode);
     console.info('[PRICING] defaultOrderPriceMode loaded: ' + selectedPriceMode);
     let selectedItems = []; // { productId, name, unitPrice, priceMode, quantity, imageUrl }

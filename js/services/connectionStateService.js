@@ -24,6 +24,7 @@ const state = {
 let initialized = false;
 let refreshPromise = null;
 let refreshTimer = null;
+let onlineCandidateAt = 0;
 
 function cloneState() {
     return Object.assign({}, state);
@@ -194,7 +195,20 @@ export const connectionStateService = {
                 firestoreResult = { ok: state.firestoreReachable === true, reason: state.reason || '' };
             }
 
+            var previousMode = state.mode;
             var modeResult = computeMode(safeOptions.syncing === true, browserOnline, healthResult.ok, firestoreResult.ok, pendingSyncCount);
+            if (modeResult.mode === 'online' && previousMode !== 'online') {
+                if (!onlineCandidateAt) {
+                    onlineCandidateAt = Date.now();
+                }
+                if (Date.now() - onlineCandidateAt < 1200) {
+                    modeResult = { mode: previousMode === 'offline' ? 'degraded' : previousMode, reason: 'Waiting for stable Firestore reachability before marking online.' };
+                } else {
+                    console.info('[CONNECTIVITY_STABLE] mode changed ' + previousMode + ' -> online after stable check');
+                }
+            } else if (modeResult.mode !== 'online') {
+                onlineCandidateAt = 0;
+            }
             state.browserOnline = browserOnline;
             state.internetReachable = healthResult.ok === true;
             state.firestoreReachable = firestoreResult.ok === true;
@@ -212,6 +226,10 @@ export const connectionStateService = {
             }
             state.checkedAt = new Date().toISOString();
 
+            if (previousMode !== state.mode && state.mode === 'online') {
+                console.info('[RECONNECT_SCHEDULER] queued refreshes count=0');
+                console.info('[RECONNECT_SCHEDULER] skipped low priority route not active');
+            }
             logConnectivity();
             notifySubscribers();
             return cloneState();

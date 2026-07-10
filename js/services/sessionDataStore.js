@@ -13,6 +13,7 @@ import { customerService } from "./customerService.js";
 import { productService } from "./productService.js";
 import { settingsService } from "./settingsService.js";
 import { openOfflineDexieDatabase } from "./offlineDexieDb.js";
+import { runSingleFlight } from "../core/singleFlight.js";
 
 var SESSION_REFRESH_AGE_MS = 20000;
 var SESSION_CACHE_SCHEMA = 'session-v1';
@@ -915,11 +916,17 @@ var publicStoreApi = {
     processSessionIntent: processSessionIntent,
 
     loadOrders: function(options) {
-        return runIntent(loadOrdersIntentModule, 'createLoadOrdersIntent', options || {});
+        var safeOptions = options || {};
+        return runSingleFlight('orders:load:active', function() {
+            return runIntent(loadOrdersIntentModule, 'createLoadOrdersIntent', safeOptions);
+        }, { force: safeOptions.forceRefresh === true });
     },
 
     refreshOrders: function(options) {
-        return runIntent(refreshOrdersIntentModule, 'createRefreshOrdersIntent', options || {});
+        var safeOptions = options || {};
+        return runSingleFlight('orders:refresh:includeArchived:true', function() {
+            return runIntent(refreshOrdersIntentModule, 'createRefreshOrdersIntent', safeOptions);
+        }, { force: safeOptions.forceRefresh === true });
     },
 
     invalidateOrdersCache: function(reason) {
@@ -929,11 +936,17 @@ var publicStoreApi = {
     },
 
     loadInvoices: function(options) {
-        return runIntent(loadInvoicesIntentModule, 'createLoadInvoicesIntent', options || {});
+        var safeOptions = options || {};
+        return runSingleFlight('invoices:load:working', function() {
+            return runIntent(loadInvoicesIntentModule, 'createLoadInvoicesIntent', safeOptions);
+        }, { force: safeOptions.forceRefresh === true });
     },
 
     refreshInvoices: function(options) {
-        return runIntent(refreshInvoicesIntentModule, 'createRefreshInvoicesIntent', options || {});
+        var safeOptions = options || {};
+        return runSingleFlight('invoices:refresh:working', function() {
+            return runIntent(refreshInvoicesIntentModule, 'createRefreshInvoicesIntent', safeOptions);
+        }, { force: safeOptions.forceRefresh === true });
     },
 
     invalidateInvoicesCache: function(reason) {

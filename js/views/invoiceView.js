@@ -17,6 +17,7 @@ import { qrService } from "../services/qrService.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
+import { getCurrentNavigationId, isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
 import { getDisplayStatus, getReturnState, isReturnFilterMatch } from "../core/returnStatus.js";
 import {
     canEditInvoiceDate,
@@ -245,8 +246,10 @@ function renderInvoicesOfflineEmptyState(container) {
     }
 }
 
-export const renderInvoices = async () => {
-    layoutView.render();
+export const renderInvoices = async (params, routeContext) => {
+    var navigationId = routeContext && routeContext.navigationId ? routeContext.navigationId : getCurrentNavigationId();
+    var expectedRoute = 'invoices';
+    layoutView.render('route-change');
     layoutView.updateTitle(t('invoice_title'));
     const container = document.getElementById('page-container');
     const cachedInvoiceList = invoiceController.getCachedInvoiceList();
@@ -262,6 +265,10 @@ export const renderInvoices = async () => {
         console.info('[PERF] Invoices first visible render: memory cache path selected');
     } else {
         invoiceListData = await invoiceController.loadInvoiceList({ source: 'invoices-view' });
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('invoices-initial-load', expectedRoute, navigationId);
+            return;
+        }
     }
 
     if (!hasCachedInvoiceList && invoiceListData && invoiceListData.meta && invoiceListData.meta.error === true) {
@@ -383,6 +390,10 @@ export const renderInvoices = async () => {
     async function refreshInvoiceListPreservingState() {
         const scrollTop = container.scrollTop || 0;
         const refreshedData = await invoiceController.refreshInvoiceList({ source: 'invoices-background-refresh' });
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('invoices-background-refresh', expectedRoute, navigationId);
+            return;
+        }
         const didApply = applyInvoiceListData(refreshedData);
         if (didApply && activeInvoiceTab === 'active') {
             applyInvoicesFilters();
@@ -485,6 +496,10 @@ export const renderInvoices = async () => {
     }
 
     const renderTable = () => {
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('invoices-render-table', expectedRoute, navigationId);
+            return;
+        }
         const table = new DataTable({
             columns: [
                 { key: 'invoiceNumber', label: t('table_invoice_num'), render: (val) => `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${val}</span>` },

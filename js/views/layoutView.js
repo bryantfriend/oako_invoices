@@ -11,6 +11,7 @@ import { offlineStatusService } from "../services/offlineStatusService.js";
 import { syncService } from "../services/syncService.js";
 import { syncDiagnosticsService } from "../services/syncDiagnosticsService.js";
 import { Modal } from "../components/modal.js";
+import { getCurrentRoute } from "../core/routeGuard.js";
 
 
 function renderOfflineReadinessPanel(readiness) {
@@ -57,9 +58,19 @@ class LayoutView {
         this.sidebar = new Sidebar();
         this.unsubscribeI18n = null;
         this.unsubscribeSync = null;
+        this.lastRenderedRoute = '';
     }
 
-    render() {
+    render(reason) {
+        var renderReason = reason || 'child-refresh';
+        var currentRoute = getCurrentRoute();
+        if (currentRoute && this.lastRenderedRoute === currentRoute && renderReason !== 'route-change' && renderReason !== 'language-change') {
+            console.info('[LAYOUT_RENDER] blocked reason=' + renderReason + ' currentRoute=' + currentRoute);
+            return;
+        }
+        console.info('[LAYOUT_RENDER] called reason=' + renderReason);
+        this.lastRenderedRoute = currentRoute || this.lastRenderedRoute;
+
         // Show layout elements
         document.getElementById('sidebar')?.classList.remove('hidden');
         document.getElementById('top-bar')?.classList.remove('hidden');
@@ -207,7 +218,7 @@ class LayoutView {
         }
         this.unsubscribeI18n = i18n.subscribe(() => {
             // Re-render the Layout (Updates Globe and Sidebar)
-            this.render();
+            this.render('language-change');
             // Re-render whatever view we are currently on (hash reload)
             window.dispatchEvent(new CustomEvent('hashchange'));
         });

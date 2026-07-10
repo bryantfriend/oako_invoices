@@ -4,12 +4,24 @@ import { orderService } from "../services/orderService.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
+import sessionDataStore from "../services/sessionDataStore.js";
+import { runSingleFlight } from "../core/singleFlight.js";
+import { isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
 
 export const inventoryController = {
     /**
      * Loads all data needed for the inventory view for a specific date
      */
-    async loadInventoryData(date) {
+    async loadInventoryData(date, options) {
+        var safeOptions = options || {};
+        var key = 'inventory:daily:' + String(date || 'today');
+        return runSingleFlight(key, function() {
+            return inventoryController.loadInventoryDataOnce(date, safeOptions);
+        });
+    },
+
+    async loadInventoryDataOnce(date, options) {
+        var safeOptions = options || {};
         try {
             // 1. Fetch enabled categories
             const settings = await inventoryService.getInventorySettings();
@@ -29,7 +41,19 @@ export const inventoryController = {
 
             // 5. Fetch all orders to calculate sales
             // Note: For large datasets, this should be a scoped query by date & status
-            const allOrders = await orderService.getAllOrders();
+            const orderSnapshot = sessionDataStore.getOrdersSnapshot();
+            let allOrders = orderSnapshot && Array.isArray(orderSnapshot.records) ? orderSnapshot.records : null;
+            if (!allOrders && safeOptions.routeName && safeOptions.routeName !== 'inventory') {
+                console.info('[SINGLE_FLIGHT] ignored stale key=inventory:daily:' + date);
+                allOrders = [];
+            }
+            if (!allOrders) {
+                allOrders = await orderService.getAllOrders();
+            }
+            if (safeOptions.routeName && safeOptions.navigationId && !isNavigationStillCurrent(safeOptions.navigationId, safeOptions.routeName)) {
+                ignoreStaleRouteResult('inventory-load', safeOptions.routeName, safeOptions.navigationId);
+                return [];
+            }
             const fulfilledOrders = allOrders.filter(o =>
                 (o.status === ORDER_STATUS.FULFILLED || o.status === ORDER_STATUS.PAID) &&
                 o.fulfilledAt &&

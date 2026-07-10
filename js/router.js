@@ -1,6 +1,7 @@
 import { ROUTES } from "./core/constants.js";
 import { guardService } from "./core/guardService.js";
 import { authService } from "./core/authService.js";
+import { beginNavigation, isNavigationStillCurrent, ignoreStaleRouteResult, logAppliedRouteRender } from "./core/routeGuard.js";
 
 const PUBLIC_ROUTES = [ROUTES.LOGIN, ROUTES.MOBILE_INVOICE, ROUTES.MOBILE_INVOICE_MODE];
 
@@ -68,20 +69,20 @@ function renderRouteError(path, message) {
 class Router {
     constructor() {
         this.routes = {};
+        this.lastNavigateAt = 0;
+        this.lastNavigateRoute = '';
         window.addEventListener('hashchange', this.handleLocationChange.bind(this));
 
         // Intercept links starting with #/
-        document.addEventListener('click', (e) => {
+        const routerInstance = this;
+        document.addEventListener('click', function(e) {
             const link = e.target.closest('a');
             if (link) {
                 const href = link.getAttribute('href');
                 // Only intercept internal relative or hash links
                 if (href && (href.startsWith('#/') || (href.startsWith('/') && !href.startsWith('//')))) {
-                    // Normalize slash links to hash links
-                    if (href.startsWith('/')) {
-                        e.preventDefault();
-                        this.navigate(href);
-                    }
+                    e.preventDefault();
+                    routerInstance.navigate(href.startsWith('#') ? href.slice(1) : href);
                 }
             }
         });
@@ -91,9 +92,29 @@ class Router {
         this.routes[path] = viewHandler;
     }
 
-    async navigate(path) {
+    async navigate(path, options) {
+        var safeOptions = options || {};
+        var normalizedPath = normalizePath(path || '/');
+        var routeName = getRouteName(normalizedPath);
+        var currentPath = window.location.hash.slice(1) || '/';
+        var now = Date.now();
+
+        if (currentPath === normalizedPath && safeOptions.force !== true) {
+            console.info('[NAV_CLICK] route=' + routeName + ' ignored reason=already-active');
+            return;
+        }
+
+        if (this.lastNavigateRoute === routeName && now - this.lastNavigateAt < 300 && safeOptions.force !== true) {
+            console.info('[NAV_CLICK] route=' + routeName + ' ignored reason=debounced');
+            return;
+        }
+
+        this.lastNavigateRoute = routeName;
+        this.lastNavigateAt = now;
+        console.info('[NAV_CLICK] route=' + routeName + ' accepted=true');
+
         // Always navigate using hash for better subfolder support
-        window.location.hash = path;
+        window.location.hash = normalizedPath;
     }
 
     async handleLocationChange() {
@@ -167,13 +188,29 @@ class Router {
         // RENDER
         // =========================
         if (matchedRoute) {
+            var requestedRouteName = getRouteName(path);
+            var mountedRouteName = getRouteName(matchedRoute);
+            var navigationId = beginNavigation(requestedRouteName, path);
             try {
-                await this.routes[matchedRoute](params);
-                logRouteDiagnostics({ requested: getRouteName(path), mounted: getRouteName(matchedRoute), redirected: false, fallbackUsed: false, source: 'real-view' });
+                await this.routes[matchedRoute](params, {
+                    navigationId: navigationId,
+                    routeName: requestedRouteName,
+                    path: path
+                });
+                if (!isNavigationStillCurrent(navigationId, requestedRouteName)) {
+                    ignoreStaleRouteResult('route-handler-finished-after-navigation', requestedRouteName, navigationId);
+                    return;
+                }
+                logAppliedRouteRender(requestedRouteName, navigationId);
+                logRouteDiagnostics({ requested: requestedRouteName, mounted: mountedRouteName, redirected: false, fallbackUsed: false, source: 'real-view' });
             } catch (err) {
                 console.error("View Render Error:", err);
+                if (!isNavigationStillCurrent(navigationId, requestedRouteName)) {
+                    ignoreStaleRouteResult('route-error-after-navigation', requestedRouteName, navigationId);
+                    return;
+                }
                 renderRouteError(path, 'This page could not finish loading. Cached data stays visible when available; retry when the connection improves.');
-                logRouteDiagnostics({ requested: getRouteName(path), mounted: 'error', redirected: false, fallbackUsed: false, source: 'route-error', reason: err && err.message ? err.message : 'render failed' });
+                logRouteDiagnostics({ requested: requestedRouteName, mounted: 'error', redirected: false, fallbackUsed: false, source: 'route-error', reason: err && err.message ? err.message : 'render failed' });
             }
         } else {
             console.warn("No route found for", path);
