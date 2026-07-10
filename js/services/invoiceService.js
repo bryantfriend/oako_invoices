@@ -1,7 +1,6 @@
 import { auth, db } from "../core/firebase.js";
 import {
     collection,
-    getDocs,
     getDoc,
     getDocFromCache,
     doc,
@@ -432,28 +431,17 @@ async function queueInvoiceMutation(actionType, invoiceId, firestorePatch, local
 export const invoiceService = {
     async createInvoice(orderId, adjustments = {}, orderSnapshot = null) {
         try {
-            if (offlineStatusService.isOnline()) {
-                const existingQuery = query(collection(db, COLLECTION), where('orderId', '==', orderId));
-                const existing = await getDocs(existingQuery).catch(function() {
-                    return { empty: true, docs: [] };
-                });
-
-                if (!existing.empty) {
-                    const existingInvoice = Object.assign({ id: existing.docs[0].id }, existing.docs[0].data());
-                    await this.syncInvoiceWithOrder(orderId, existingInvoice).catch(function() {
-                        return null;
-                    });
-                    return existingInvoice.id;
-                }
-            }
-
-            const localExistingInvoice = await this.getInvoiceByOrderId(orderId).catch(function() {
+            const existingInvoice = await this.getInvoiceByOrderId(orderId).catch(function() {
                 return null;
             });
-            if (localExistingInvoice) {
-                return localExistingInvoice.id;
+            if (existingInvoice) {
+                if (offlineStatusService.isOnline()) {
+                    this.syncInvoiceWithOrder(orderId, existingInvoice).catch(function() {
+                        return null;
+                    });
+                }
+                return existingInvoice.id;
             }
-
             const order = orderSnapshot || await orderService.getOrderById(orderId);
 
             if (!order) {

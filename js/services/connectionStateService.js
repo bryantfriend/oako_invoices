@@ -2,8 +2,8 @@ import { db } from "../core/firebase.js";
 import { doc, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 
-const HEALTH_TIMEOUT_MS = 4500;
-const FIRESTORE_TIMEOUT_MS = 6500;
+const HEALTH_TIMEOUT_MS = 1600;
+const FIRESTORE_TIMEOUT_MS = 2200;
 const REFRESH_INTERVAL_MS = 30000;
 
 const subscribers = [];

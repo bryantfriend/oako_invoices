@@ -69,14 +69,14 @@ export function renderSyncStatusBadge(snapshot) {
             font-weight: 900;
             white-space: nowrap;
         ">
-            <span>${safeSnapshot.label || 'Online'}${detail}</span>
-            <button id="sync-details-btn" type="button" class="btn btn-secondary btn-sm" style="
+            <span class="sync-status-label">${safeSnapshot.label || 'Online'}${detail}</span>
+            <button id="sync-details-btn" type="button" class="btn btn-secondary btn-sm sync-status-action" style="
                 font-size: 10px;
                 padding: 3px 8px;
                 border-radius: 999px;
                 background: white;
             ">Details</button>
-            <button id="sync-now-btn" type="button" class="btn btn-secondary btn-sm" style="
+            <button id="sync-now-btn" type="button" class="btn btn-secondary btn-sm sync-status-action" style="
                 font-size: 10px;
                 padding: 3px 8px;
                 border-radius: 999px;

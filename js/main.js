@@ -96,7 +96,6 @@ async function initApp() {
         // Preload Core Data for Offline Caching (async, non-blocking)
         setTimeout(async () => {
             try {
-                const { productService } = await import("./services/productService.js");
                 const logPreloadError = (collectionName) => (error) => {
                     const message = error?.message || '';
                     const isTimeout = message.toLowerCase().includes('timeout');
@@ -108,9 +107,6 @@ async function initApp() {
                     });
                 };
 
-                productService.getAllProducts().catch(logPreloadError('products'));
-                productService.getAllCategories().catch(logPreloadError('categories'));
-
                 const authState = authService.getAuthDebugState();
                 if (!authState.signedIn || !authState.isAdmin) {
                     console.info('[preload] Skipping admin collections until auth has a verified admin profile.', {
@@ -119,10 +115,13 @@ async function initApp() {
                     return;
                 }
 
+                const { productService } = await import("./services/productService.js");
                 const { dashboardController } = await import("./controllers/dashboardController.js");
                 const { invoiceController } = await import("./controllers/invoiceController.js");
                 const { customerService } = await import("./services/customerService.js");
 
+                productService.getAllProducts().catch(logPreloadError('products'));
+                productService.getAllCategories().catch(logPreloadError('categories'));
                 customerService.getAllCustomers().catch(logPreloadError('customers'));
                 dashboardController.loadDashboard({ source: 'startup-preload' }).catch(logPreloadError('orders'));
                 invoiceController.loadInvoiceList({ source: 'startup-preload' }).catch(logPreloadError('invoices'));

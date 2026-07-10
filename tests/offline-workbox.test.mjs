@@ -475,14 +475,15 @@ test('Settings saves cache locally and retry when cloud writes are unavailable',
 });
 
 
-test('Reference data reads try cloud when the browser is online even if Firestore health is degraded', function() {
+test('Reference data reads use cache-first mode when Firestore health is degraded', function() {
     var offlineStatusSource = fs.readFileSync('js/services/offlineStatusService.js', 'utf8');
     var customerSource = fs.readFileSync('js/services/customerService.js', 'utf8');
     var productSource = fs.readFileSync('js/services/productService.js', 'utf8');
     var offlineCacheSource = fs.readFileSync('js/services/offlineCacheService.js', 'utf8');
 
     assert.notEqual(offlineStatusSource.indexOf('canAttemptCloudRead()'), -1);
-    assert.notEqual(offlineStatusSource.indexOf('return connection.browserOnline !== false;'), -1);
+    assert.notEqual(offlineStatusSource.indexOf('connection.firestoreReachable === true'), -1);
+    assert.notEqual(offlineStatusSource.indexOf('!connection.checkedAt'), -1);
     assert.notEqual(customerSource.indexOf('!offlineStatusService.canAttemptCloudRead()'), -1);
     assert.notEqual(productSource.indexOf('!offlineStatusService.canAttemptCloudRead()'), -1);
     assert.notEqual(offlineCacheSource.indexOf('!offlineStatusService.canAttemptCloudRead()'), -1);

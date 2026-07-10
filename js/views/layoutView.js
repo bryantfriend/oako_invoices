@@ -95,7 +95,7 @@ class LayoutView {
             </div>
             </div>
             <div style="display: flex; align-items: center; gap: var(--space-4);">
-                <div id="sync-status-mount"></div>
+                <div id="sync-status-mount" class="sync-status-mount"></div>
                 <!-- Language Selector -->
                 <div class="language-selector">
                     <button class="language-btn" title="Change Language">

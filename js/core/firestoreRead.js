@@ -1,9 +1,11 @@
 import { getDocs, getDocsFromCache } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "./firestoreDiagnostics.js";
 import { openOfflineDexieDatabase } from "../services/offlineDexieDb.js";
+import { connectionStateService } from "../services/connectionStateService.js";
 
-const DEFAULT_TIMEOUT_MS = 45000;
-const DEFAULT_ATTEMPTS = 2;
+const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_ATTEMPTS = 1;
+const DEGRADED_TIMEOUT_MS = 2200;
 const CACHE_PREFIX = 'kyrgyz-organics-read-cache:';
 const MAX_LOCAL_CACHE_ENTRY_BYTES = 180000;
 const MAX_LOCAL_CACHE_TOTAL_BYTES = 900000;
@@ -237,12 +239,74 @@ function mapSnapshotRows(snapshot) {
     }));
 }
 
+function getConnectionSnapshot() {
+    try {
+        return connectionStateService.getSnapshot();
+    } catch (_) {
+        return { browserOnline: true, firestoreReachable: false, mode: 'unknown', checkedAt: '' };
+    }
+}
+
+function shouldReadCacheFirst(options = {}) {
+    if (options.preferServer === true) {
+        return false;
+    }
+    const connection = getConnectionSnapshot();
+    return connection.browserOnline === false
+        || connection.mode === 'offline'
+        || connection.mode === 'degraded'
+        || (connection.checkedAt && connection.firestoreReachable !== true);
+}
+
+function shouldSkipServerRead(options = {}) {
+    if (options.allowServerWhenDegraded === true || options.preferServer === true) {
+        return false;
+    }
+    const connection = getConnectionSnapshot();
+    return Boolean(connection.checkedAt && connection.firestoreReachable !== true);
+}
+
+async function readRowsFromAnyCache(queryRef, collectionName, cacheKey, reason) {
+    const cachedRows = await readCachedRowsAsync(cacheKey);
+    if (cachedRows.length > 0) {
+        console.warn('[firestore-read] Using cached rows before server read.', {
+            collection: collectionName,
+            cacheKey,
+            rows: cachedRows.length,
+            reason: reason || ''
+        });
+        return { hit: true, rows: cachedRows };
+    }
+
+    try {
+        const cachedSnapshot = await getDocsFromCache(queryRef);
+        const rows = mapSnapshotRows(cachedSnapshot);
+        if (rows.length > 0) {
+            writeCachedRows(cacheKey, rows);
+        }
+        return { hit: rows.length > 0, rows };
+    } catch (cacheError) {
+        return { hit: false, rows: [], error: cacheError };
+    }
+}
 export async function getDocsWithCache(queryRef, options = {}) {
     const collectionName = options.collectionName || options.cacheKey || 'collection';
     const cacheKey = options.cacheKey || collectionName;
-    const timeoutMs = Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS;
-    const attempts = Math.max(1, Number(options.attempts) || DEFAULT_ATTEMPTS);
+    const cacheFirst = shouldReadCacheFirst(options);
+    const skipServerRead = shouldSkipServerRead(options);
+    const requestedTimeoutMs = Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS;
+    const timeoutMs = cacheFirst
+        ? Math.min(requestedTimeoutMs, DEGRADED_TIMEOUT_MS)
+        : Math.min(requestedTimeoutMs, DEFAULT_TIMEOUT_MS);
+    const attempts = cacheFirst ? 1 : Math.max(1, Math.min(Number(options.attempts) || DEFAULT_ATTEMPTS, DEFAULT_ATTEMPTS));
     let lastError = null;
+
+    if (cacheFirst) {
+        const cached = await readRowsFromAnyCache(queryRef, collectionName, cacheKey, 'connection-not-ready');
+        if (cached.hit || skipServerRead) {
+            return cached.rows;
+        }
+    }
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
         try {
