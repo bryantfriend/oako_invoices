@@ -8,6 +8,13 @@ import generateInvoiceApprovalLinkIntentModule from "./GenerateInvoiceApprovalLi
 import submitInvoiceApprovalResponseIntentModule from "./SubmitInvoiceApprovalResponseIntent.js";
 import updateInvoiceItemsIntentModule from "./UpdateInvoiceItemsIntent.js";
 import recordInvoiceReturnIntentModule from "./RecordInvoiceReturnIntent.js";
+import updateOrderStatusIntentModule from "./UpdateOrderStatusIntent.js";
+import invalidateInvoicesCacheIntentModule from "./InvalidateInvoicesCacheIntent.js";
+import refreshInvoicesIntentModule from "./RefreshInvoicesIntent.js";
+import loadInvoicesIntentModule from "./LoadInvoicesIntent.js";
+import invalidateOrdersCacheIntentModule from "./InvalidateOrdersCacheIntent.js";
+import refreshOrdersIntentModule from "./RefreshOrdersIntent.js";
+import loadOrdersIntentModule from "./LoadOrdersIntent.js";
 
 /**
  * Registers all project Intents.
@@ -27,6 +34,8 @@ function registerProjectIntents() {
       updateInvoiceItemsIntentModule.createUpdateInvoiceItemsIntent,
     RecordInvoiceReturnIntent:
       recordInvoiceReturnIntentModule.createRecordInvoiceReturnIntent,
+    UpdateOrderStatusIntent:
+      updateOrderStatusIntentModule.createUpdateOrderStatusIntent,
     LoadOrdersIntent: loadOrdersIntentModule.createLoadOrdersIntent,
     RefreshOrdersIntent: refreshOrdersIntentModule.createRefreshOrdersIntent,
     InvalidateOrdersCacheIntent:

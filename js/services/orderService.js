@@ -20,11 +20,49 @@ import { getDocsWithCache } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { deviceIdService } from "./deviceIdService.js";
+import { store } from "../core/store.js";
+import icfPipeline from "../ICF/engine/pipeline.js";
+import updateOrderStatusIntentModule from "../ICF/Intents/UpdateOrderStatusIntent.js";
 
 const COLLECTION = 'orders';
 
 function getCurrentUserId() {
     return auth.currentUser && auth.currentUser.uid ? auth.currentUser.uid : '';
+}
+
+function getCurrentActor() {
+    const state = store.getState ? store.getState() : {};
+    const user = auth.currentUser || state.currentUser || null;
+    const profile = state.adminProfile || {};
+    const isAdmin = !!state.isAdmin;
+
+    if (!user && !isAdmin) {
+        return {
+            id: 'anonymous',
+            role: 'anonymous'
+        };
+    }
+
+    return {
+        id: (user && (user.email || user.uid)) || 'admin',
+        role: profile.role || (isAdmin ? 'admin' : 'anonymous')
+    };
+}
+
+function getPipelineErrorMessage(result) {
+    if (!result) {
+        return 'Unknown pipeline failure.';
+    }
+
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+        return result.errors.join(' ');
+    }
+
+    if (result.reason) {
+        return result.reason;
+    }
+
+    return 'Unknown pipeline failure.';
 }
 
 function isPendingLocalCreate(order) {
@@ -270,7 +308,7 @@ export const orderService = {
         }
     },
 
-    async updateOrderStatus(id, status) {
+    async _updateOrderStatusDirect(id, status) {
         const updates = { status };
         if (status === ORDER_STATUS.FULFILLED) {
             updates.fulfilledAt = serverTimestamp();
@@ -279,6 +317,25 @@ export const orderService = {
             updates.paidAt = serverTimestamp();
         }
         return this.updateOrder(id, updates);
+    },
+
+    async updateOrderStatus(id, status) {
+        const intent = updateOrderStatusIntentModule.createUpdateOrderStatusIntent(getCurrentActor(), {
+            orderId: id,
+            status,
+            orderApi: {
+                updateOrderStatusDirect: this._updateOrderStatusDirect.bind(this)
+            }
+        }, {
+            source: 'order-service'
+        });
+        const result = await icfPipeline.run(intent);
+        if (!result || result.ok !== true) {
+            throw new Error('UpdateOrderStatusIntent failed: ' + getPipelineErrorMessage(result));
+        }
+        return result.intent && result.intent.context && result.intent.context.resultData
+            ? result.intent.context.resultData.updateResult
+            : true;
     },
 
     async archiveOrders(ids) {

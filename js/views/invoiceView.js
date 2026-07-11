@@ -29,6 +29,8 @@ import {
     isInvoiceReadOnly
 } from "../core/invoiceWorkflow.js";
 
+const INVOICE_TABLE_PAGE_SIZE = 120;
+
 function escapeAttribute(value = '') {
     return escapeHtml(value).replace(/"/g, '&quot;');
 }
@@ -292,6 +294,7 @@ export const renderInvoices = async (params, routeContext) => {
     let customers = [...new Set(allInvoices.map(i => i.customerName).filter(Boolean))].sort();
 
     let filtered = [...allInvoices];
+    let invoiceVisibleLimit = INVOICE_TABLE_PAGE_SIZE;
     let sort = { key: 'createdAt', order: 'desc' };
     let filters = { customer: 'all', period: 'all', status: 'all' };
     let historyLimit = 50;
@@ -309,6 +312,7 @@ export const renderInvoices = async (params, routeContext) => {
     }
 
     const applyInvoicesFilters = () => {
+        invoiceVisibleLimit = INVOICE_TABLE_PAGE_SIZE;
         if (activeInvoiceTab === 'archived') {
             renderArchivedTable();
             return;
@@ -496,6 +500,8 @@ export const renderInvoices = async (params, routeContext) => {
     }
 
     const renderTable = () => {
+        const visibleInvoices = filtered.slice(0, invoiceVisibleLimit);
+        const hiddenInvoiceCount = Math.max(0, filtered.length - visibleInvoices.length);
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             ignoreStaleRouteResult('invoices-render-table', expectedRoute, navigationId);
             return;
@@ -519,7 +525,7 @@ export const renderInvoices = async (params, routeContext) => {
                 { key: 'status', label: 'Status', align: 'center', render: (val, row) => createStatusBadge(row) },
                 { key: 'syncState', label: 'Sync', align: 'center', render: (val, row) => renderInvoiceSyncPill(row) },
             ],
-            data: filtered,
+            data: visibleInvoices,
             sortKey: sort.key,
             sortOrder: sort.order,
             onRowClick: true,
@@ -605,12 +611,24 @@ export const renderInvoices = async (params, routeContext) => {
 
                 ${createCard({
             title: t('invoice_title') + ' · working set',
-            content: table.render()
+            content: table.render() + (hiddenInvoiceCount > 0 ? `
+                <div style="display: flex; justify-content: center; padding: 14px; border: 1px solid var(--color-gray-200); border-top: 0; border-radius: 0 0 var(--radius-lg) var(--radius-lg); background: white;">
+                    <button id="show-more-invoices" class="btn btn-secondary btn-sm" type="button">Show ${Math.min(INVOICE_TABLE_PAGE_SIZE, hiddenInvoiceCount)} more of ${hiddenInvoiceCount}</button>
+                </div>
+            ` : '')
         })}
             </div>
         `;
 
         attachInvoiceTabListeners();
+
+        const showMoreInvoices = document.getElementById('show-more-invoices');
+        if (showMoreInvoices) {
+            showMoreInvoices.addEventListener('click', () => {
+                invoiceVisibleLimit += INVOICE_TABLE_PAGE_SIZE;
+                renderTable();
+            });
+        }
 
         // Row Click Listeners
         container.querySelectorAll('.data-row').forEach(row => {

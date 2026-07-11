@@ -196,7 +196,12 @@ export const renderDashboard = async (params, routeContext) => {
             return;
         }
         inventoryCategories = refreshedInventoryData;
-        renderUI();
+        const inventoryMount = document.getElementById('inventory-strip-wrapper');
+        if (inventoryMount) {
+            inventoryMount.innerHTML = renderInventoryStrip(inventoryCategories);
+        } else {
+            renderUI();
+        }
     };
 
     const scheduleInvoiceListRefresh = (delayMs = 6000) => {
@@ -452,7 +457,7 @@ export const renderDashboard = async (params, routeContext) => {
                     ${renderAttentionPanel(workQueueLanes, lowStockProducts)}
                 </div>
 
-                ${renderInventoryStrip(inventoryCategories)}
+                <div id="inventory-strip-wrapper">${renderInventoryStrip(inventoryCategories)}</div>
 
                 <div class="dashboard-lower-grid">
                     <section class="dashboard-card recent-orders-card">
@@ -1657,9 +1662,11 @@ export const renderDashboard = async (params, routeContext) => {
     renderUI();
     console.info('[PERF] Orders first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');
 
-    refreshInventoryStrip().catch(function(error) {
-        console.warn('Inventory strip refresh failed.', error);
-    });
+    window.setTimeout(function() {
+        refreshInventoryStrip().catch(function(error) {
+            console.warn('Inventory strip refresh failed.', error);
+        });
+    }, 0);
 
     if (shouldRunBackgroundRefresh) {
         refreshDashboardDataPreservingState().catch(function(error) {

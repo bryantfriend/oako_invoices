@@ -10,6 +10,7 @@ import authorizeArchiveInvoiceModule from "./Invoices/authorizeArchiveInvoice.js
 import authorizeGenerateInvoiceApprovalLinkModule from "./Invoices/authorizeGenerateInvoiceApprovalLink.js";
 import authorizeSubmitInvoiceApprovalResponseModule from "./Invoices/authorizeSubmitInvoiceApprovalResponse.js";
 import authorizeInvoiceMutationModule from "./Invoices/authorizeInvoiceMutation.js";
+import authorizeOrderMutationModule from "./Orders/authorizeOrderMutation.js";
 
 /**
  * Authorizers
@@ -33,6 +34,8 @@ var authorizers = {
     authorizeSubmitInvoiceApprovalResponseModule.authorizeSubmitInvoiceApprovalResponse,
   authorizeInvoiceMutation:
     authorizeInvoiceMutationModule.authorizeInvoiceMutation,
+  authorizeOrderMutation:
+    authorizeOrderMutationModule.authorizeOrderMutation,
 
   createRequireActorRoleAuthorizer:
     requireActorRoleModule.createRequireActorRoleAuthorizer,

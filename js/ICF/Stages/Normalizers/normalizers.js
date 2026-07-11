@@ -12,6 +12,7 @@ import normalizeGenerateInvoiceApprovalLinkPayloadModule from "./Invoices/normal
 import normalizeSubmitInvoiceApprovalResponsePayloadModule from "./Invoices/normalizeSubmitInvoiceApprovalResponsePayload.js";
 import normalizeUpdateInvoiceItemsPayloadModule from "./Invoices/normalizeUpdateInvoiceItemsPayload.js";
 import normalizeRecordInvoiceReturnPayloadModule from "./Invoices/normalizeRecordInvoiceReturnPayload.js";
+import normalizeUpdateOrderStatusPayloadModule from "./Orders/normalizeUpdateOrderStatusPayload.js";
 
 /**
  * Normalizers
@@ -36,6 +37,8 @@ var normalizers = {
     normalizeUpdateInvoiceItemsPayloadModule.normalizeUpdateInvoiceItemsPayload,
   normalizeRecordInvoiceReturnPayload:
     normalizeRecordInvoiceReturnPayloadModule.normalizeRecordInvoiceReturnPayload,
+  normalizeUpdateOrderStatusPayload:
+    normalizeUpdateOrderStatusPayloadModule.normalizeUpdateOrderStatusPayload,
 
   createTrimPayloadStringFieldNormalizer:
     trimPayloadStringFieldModule.createTrimPayloadStringFieldNormalizer,

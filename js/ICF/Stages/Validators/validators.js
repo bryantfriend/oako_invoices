@@ -14,6 +14,7 @@ import validateGenerateInvoiceApprovalLinkPayloadModule from "./Invoices/validat
 import validateSubmitInvoiceApprovalResponsePayloadModule from "./Invoices/validateSubmitInvoiceApprovalResponsePayload.js";
 import validateUpdateInvoiceItemsPayloadModule from "./Invoices/validateUpdateInvoiceItemsPayload.js";
 import validateRecordInvoiceReturnPayloadModule from "./Invoices/validateRecordInvoiceReturnPayload.js";
+import validateUpdateOrderStatusPayloadModule from "./Orders/validateUpdateOrderStatusPayload.js";
 
 /**
  * Validators
@@ -51,6 +52,8 @@ var validators = {
     validateUpdateInvoiceItemsPayloadModule.validateUpdateInvoiceItemsPayload,
   validateRecordInvoiceReturnPayload:
     validateRecordInvoiceReturnPayloadModule.validateRecordInvoiceReturnPayload,
+  validateUpdateOrderStatusPayload:
+    validateUpdateOrderStatusPayloadModule.validateUpdateOrderStatusPayload,
 
   createRequireActorRoleValidator: requireActorRoleModule.createRequireActorRoleValidator
 };
