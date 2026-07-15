@@ -976,6 +976,20 @@ var publicStoreApi = {
         return cloneRecords(sessionDataStore.invoices.records);
     },
 
+    getKnownPrintableInvoiceReferences: function() {
+        ensureOwner();
+        return sessionDataStore.invoices.records.reduce(function(references, invoice) {
+            if (invoice && invoice.id && invoice.orderId && invoice.invoiceNumber) {
+                references.push({
+                    invoiceId: invoice.id,
+                    orderId: invoice.orderId,
+                    invoiceNumber: invoice.invoiceNumber
+                });
+            }
+            return references;
+        }, []);
+    },
+
     updateOrderRecord: function(id, patch, reason) {
         updateRecord('orders', id, patch, reason);
     },
