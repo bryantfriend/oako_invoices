@@ -8,8 +8,8 @@ const vendorDir = path.join(root, 'vendor');
 const tempDir = path.join(root, '.workbox');
 const bundledWorker = path.join(tempDir, 'sw-bundled.js');
 const deploymentVersion = {
-    appVersion: '2.29',
-    serviceWorkerVersion: '2.29',
+    appVersion: '2.30',
+    serviceWorkerVersion: '2.30',
     dexieSchemaVersion: 3
 };
 
@@ -22,6 +22,28 @@ function copyFile(source, destination) {
     fs.copyFileSync(source, destination);
 }
 
+async function buildBrowserVendorLibraries() {
+    copyFile(
+        path.join(root, 'node_modules/jspdf/dist/jspdf.umd.min.js'),
+        path.join(vendorDir, 'jspdf.umd.min.js')
+    );
+    copyFile(
+        path.join(root, 'node_modules/html2canvas/dist/html2canvas.min.js'),
+        path.join(vendorDir, 'html2canvas.min.js')
+    );
+
+    await esbuild.build({
+        entryPoints: [path.join(root, 'node_modules/qrcode/lib/browser.js')],
+        bundle: true,
+        outfile: path.join(vendorDir, 'qrcode.min.js'),
+        format: 'iife',
+        globalName: 'QRCode',
+        platform: 'browser',
+        target: ['chrome100', 'firefox100', 'safari15'],
+        minify: true,
+        sourcemap: false
+    });
+}
 function replaceInFile(filePath, replacements) {
     let source = fs.readFileSync(filePath, 'utf8');
     for (const replacement of replacements) {
@@ -99,6 +121,7 @@ async function main() {
     updateRuntimeVersions();
     copyFile(path.join(root, 'node_modules/dexie/dist/dexie.mjs'), path.join(vendorDir, 'dexie.mjs'));
     copyFile(path.join(root, 'node_modules/workbox-window/build/workbox-window.prod.mjs'), path.join(vendorDir, 'workbox-window.prod.mjs'));
+    await buildBrowserVendorLibraries();
     fs.writeFileSync(path.join(root, 'deployment-version.json'), JSON.stringify(deploymentVersion, null, 2) + '\n');
     await buildServiceWorker();
 }

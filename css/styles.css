@@ -1579,3 +1579,47 @@ table {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+.bulk-invoice-action-bar {
+    position: sticky;
+    bottom: 16px;
+    z-index: 120;
+    margin: 16px auto;
+    width: min(920px, calc(100% - 24px));
+    padding: 12px 16px;
+    border: 1px solid #cbd8c6;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 14px 36px rgba(30, 51, 24, 0.2);
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.bulk-invoice-action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.bulk-invoice-render-host .invoice-page {
+    box-shadow: none !important;
+}
+
+@media (max-width: 720px) {
+    .bulk-invoice-action-bar {
+        align-items: stretch;
+        flex-direction: column;
+        bottom: 8px;
+    }
+
+    .bulk-invoice-action-buttons {
+        justify-content: stretch;
+    }
+
+    .bulk-invoice-action-buttons .btn {
+        flex: 1 1 150px;
+    }
+}

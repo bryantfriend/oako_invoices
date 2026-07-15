@@ -14,6 +14,7 @@ import { ROUTES } from "../core/constants.js";
 import { productService } from "../services/productService.js";
 import { qrActivityService } from "../services/qrActivityService.js";
 import { qrService } from "../services/qrService.js";
+import { buildInvoicePrintPages } from "../services/invoicePrintTemplate.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
@@ -784,6 +785,18 @@ export const renderInvoiceDetail = async ({ id }) => {
 
     if (!liveSettings && invoice.settings) {
         liveSettings = invoice.settings;
+    }
+
+    try {
+        if (!invoice.secureToken) {
+            invoice = await qrService.ensureInvoiceToken(invoice);
+        }
+        invoice.invoiceQrDataUrl = await qrService.generateQrDataUrl(invoice, 300);
+        invoiceController.getCachedInvoice(invoice.id);
+    } catch (qrError) {
+        console.error('Invoice QR preparation failed.', qrError);
+        container.innerHTML = `<div class="p-8 text-center" style="color:#991b1b;font-weight:700;">Invoice ${escapeHtml(invoice.invoiceNumber || invoice.id)} cannot be rendered because its QR code failed: ${escapeHtml(qrError.message)}</div>`;
+        return;
     }
 
     const invoiceRoutePath = ROUTES.INVOICE_DETAIL.replace(':id', id);
@@ -1609,293 +1622,20 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 
     const renderDocument = (lang, isCopy = false) => {
-        // Never let fallback defaults overwrite the saved invoice snapshot.
         const hasReliableLiveSettings = liveSettings && liveSettings.__fromFallback !== true;
-        const s = hasReliableLiveSettings
-            ? { ...(invoice.settings || {}), ...liveSettings }
-            : { ...(invoice.settings || {}) };
-        const itemsPerPage = Math.min(30, Math.max(1, parseInt(s.invoiceItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE));
-
-        const defaultBankInfo = lang === 'en'
-            ? "Bank of Kyrgyzstan,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Account To: KG12346712345789901<br>SWIFT: KGZBBBBB"
-            : (lang === 'kg' ? "Кыргызстан Банкы,<br>Кыргыз Органикс ЖЧКсы, KG12346712345789901<br>Эсеп: KG12346712345789901<br>SWIFT: KGZBBBBB" : "Банк Кыргызстана,<br>Kyrgyzz Organics Ltd, KG12346712345789901<br>Счет: KG12346712345789901<br>SWIFT: KGZBBBBB");
-
-        const paymentTerms = lang === 'en'
-            ? "Payment due within 30 days. Please transfer to account:"
-            : (lang === 'kg' ? "Төлөм 30 күндүн ичинде. Сураныч, эсепке которуңуз:" : "Оплата в течение 30 дней. Перевод на счет:");
-
-        const notesText = lang === 'en' ? (s.notesEn || paymentTerms) : (lang === 'kg' ? (s.notesKg || paymentTerms) : (s.notesRu || paymentTerms));
-        const bannerFootText = s.footerText || t('print_thanks', lang);
-        const logoUrl = safeImageUrl(s.logoUrl);
-        const paymentQrImageUrl = safeImageUrl(s.paymentQrImageUrl);
-        const invoiceNumber = escapeHtml(invoice.invoiceNumber || '');
-        const companyPhone = escapeHtml(s.phone || '');
-        const customerName = escapeHtml(invoice.customerName || '');
-        const customerAddress = escapeHtml(invoice.customerAddress || 'Republic of Kyrgyzstan');
-        const renderedNotesText = escapeHtml(notesText);
-        const renderedBankInfo = renderBankInfo(s.bankInfo || defaultBankInfo);
-        const renderedBannerFootText = escapeHtml(bannerFootText);
-        const invoiceQrImageUrl = invoice.secureToken ? safeImageUrl(qrService.buildQrImageUrl(invoice, 240)) : '';
-        const displayStatus = escapeHtml(getDisplayStatus(invoice));
-
-        const items = (invoice.items || []).map(item => normalizeInvoiceItemReturnFields(item, invoice));
-        const invoiceHasReturns = hasInvoiceReturns(invoice);
-        const returnSummary = calculateInvoiceReturnSummary(invoice);
-        const pages = [];
-
-        // Keep invoice pagination predictable: each page gets the configured item count.
-        let currentItemIndex = 0;
-        while (currentItemIndex < items.length) {
-            const pageItems = items.slice(currentItemIndex, currentItemIndex + itemsPerPage);
-            pages.push(pageItems);
-            currentItemIndex += itemsPerPage;
-        }
-        if (pages.length === 0) pages.push([]);
-
-        const totalPages = pages.length;
-
-        let calculatedSubtotal = 0;
-        items.forEach(item => {
-            calculatedSubtotal += getItemOriginalTotal(item);
-        });
-
-        const subtotal = calculatedSubtotal;
-        const taxRate = invoice.taxRate || 0;
-        const taxAmount = (subtotal * taxRate) / 100;
-
-        let discountAmount = invoice.discountAmount || 0;
-        // recalculate discount if percent
-        if (invoice.discountType === 'percent' && invoice.discountValue) {
-            discountAmount = (subtotal * invoice.discountValue) / 100;
-        }
-
-        const grandTotal = subtotal + taxAmount - discountAmount;
-        const displayGrandTotal = invoiceHasReturns ? returnSummary.adjustedTotalAmount : grandTotal;
-
-        return pages.map((pageItems, index) => {
-            const pageNum = index + 1;
-            const isFirst = pageNum === 1;
-            const isLast = pageNum === totalPages;
-
-            return `
-                <div class="invoice-page ${pageNum === currentPage ? 'active-page' : ''}" data-page="${pageNum}" style="
-                    background: white; 
-                    padding: 30px 40px; 
-                    height: 296mm;
-                    width: 210mm;
-                    margin: 0 auto;
-                    color: #1e3318;
-                    font-family: 'Inter', -apple-system, sans-serif;
-                    position: relative;
-                    box-sizing: border-box;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                    display: ${pageNum === currentPage ? 'block' : 'none'};
-                    transform: scale(${invoiceScale});
-                    transform-origin: top center;
-                    transition: transform 0.2s ease;
-                    --zoom-scale: ${invoiceScale};
-                    ${pageNum === currentPage ? '' : 'position: absolute; top: -10000px;'}
-                ">
-                    <!-- Header (Only on Page 1 or reduced on others) -->
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 24px;">
-                        <div style="flex: 1;">
-                             <div style="width: 180px; min-height: 40px;">
-                                 ${logoUrl ? `<img src="${logoUrl}" style="max-width: 100%; height: auto; display: block;">` : '<div style="background: #ebf0e9; border-radius: 6px; padding: 10px; color: #5a7052; font-size: 10px;">LOGO</div>'}
-                             </div>
-                        </div>
-                        <div style="flex: 1; text-align: center; min-height: 190px; display: flex; align-items: center; justify-content: center;">
-                            ${(isFirst && s.showQrCode !== false && paymentQrImageUrl) ? `
-                            <div style="text-align: center;">
-                                <div style="display: inline-flex; align-items: center; justify-content: center; width: 150px; height: 150px; margin-bottom: 4px;">
-                                    <img src="${paymentQrImageUrl}" alt="Payment QR" style="width: 150px; height: 150px; object-fit: contain; display: block;">
-                                </div>
-                                <div style="font-size: 8px; font-weight: 800; color: #2e4a23; text-transform: uppercase; letter-spacing: 0.04em;">Payment</div>
-                                <div style="font-size: 7px; color: #5a7052;">Scan to pay</div>
-                            </div>
-                            ` : ''}
-                        </div>
-                        <div style="text-align: right; flex: 1;">
-                             <div style="display: inline-block; text-align: left;">
-                             <div style="font-size: 14px; font-weight: 600; color: #1e3318; margin-bottom: 2px;">${t('print_invoice', lang)} #${invoiceNumber} ${isCopy ? '(Copy)' : ''}</div>
-                                 <div style="font-size: 11px; color: #5a7052;">${t('print_date', lang)}: ${formatDate(invoice.createdAt)}</div>
-                                 <div style="font-size: 11px; color: #5a7052;">Status: ${displayStatus}</div>
-                                 ${isFirst ? `<div style="font-size: 11px; color: #5a7052;">${t('table_phone', lang)}: ${companyPhone}</div>` : `<div style="font-size: 11px; color: #5a7052;">Page ${pageNum} / ${totalPages} ${isCopy ? '(Copy)' : ''}</div>`}
-                             </div>
-                        </div>
-                    </div>
-
-                    ${isFirst ? `
-                    <h2 style="font-size: 20px; font-weight: 500; color: #2e4a23; margin: 0 0 10px 0; border-bottom: 2px solid #ebf0e9; padding-bottom: 4px; letter-spacing: -0.5px;">${t('print_invoice', lang)}</h2>
-
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 20px;">
-                        <div style="flex: 1.2;">
-                            <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; margin-bottom: 6px;">${t('print_bill_to', lang)}</div>
-                            <div style="font-size: 15px; font-weight: 700; color: #1e3318; margin-bottom: 4px;">${customerName}</div>
-                            <div style="color: #435a3c; line-height: 1.5; font-size: 12px; max-width: 300px;">
-                                 ${customerAddress}
-                            </div>
-                        </div>
-                        <div style="text-align: right; flex: 0.8;">
-                             <div style="background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #d8e2d4; display: inline-block; min-width: 200px; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-                                <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">${t('print_date', lang).toUpperCase()}:</div>
-                                <div style="font-size: 13px; color: #1e3318; margin-bottom: 8px; font-weight: 500;">${formatDate(invoice.createdAt)}</div>
-                                <div style="font-size: 8px; color: #5a7052; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0;">TOTAL DUE:</div>
-                                <div style="font-size: 22px; font-weight: 800; color: #1e3318; letter-spacing: -1px;">${formatCurrency(displayGrandTotal).replace('$', '')} <span style="font-size: 11px; font-weight: 400; color: #5a7052;">SOM</span></div>
-                             </div>
-                        </div>
-                    </div>
-                    ` : ''}
-
-                    <!-- Product Table -->
-                    ${invoiceHasReturns ? `
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
-                        <thead>
-                            <tr style="background: #f8faf6; color: #5a7052; font-size: 8px; text-transform: uppercase; letter-spacing: 0.04em;">
-                                <th style="padding: 6px 8px; text-align: left;">Product</th>
-                                <th style="padding: 6px 8px; text-align: center; width: 62px;">Qty Original</th>
-                                <th style="padding: 6px 8px; text-align: center; width: 62px;">Qty Returned</th>
-                                <th style="padding: 6px 8px; text-align: center; width: 68px;">Qty Remaining</th>
-                                <th style="padding: 6px 8px; text-align: right; width: 78px;">Price</th>
-                                <th style="padding: 6px 8px; text-align: right; width: 105px;">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody style="font-size: 11px;">
-                            ${pageItems.map((item, idx) => {
-                const normalizedItem = normalizeInvoiceItemReturnFields(item);
-                const returnedQuantity = getItemReturnedQuantity(normalizedItem);
-                const remainingQuantity = getItemRemainingQuantity(normalizedItem);
-                const originalQuantity = getItemOriginalQuantity(normalizedItem);
-                const originalAmount = getItemOriginalTotal(normalizedItem);
-                const adjustedAmount = getItemAdjustedTotal(normalizedItem);
-                let itemName = item.name;
-
-                if (lang === 'ru') {
-                    itemName = item.name_ru || item.name_en || item.displayName || item.name;
-                } else if (lang === 'kg') {
-                    itemName = item.name_kg || item.name_en || item.displayName || item.name;
-                } else {
-                    itemName = item.name_en || item.displayName || item.name;
-                }
-
-                return `
-                                <tr style="background: ${returnedQuantity > 0 ? '#fff7f7' : (idx % 2 === 0 ? '#fafaf8' : '#fff')}; border-bottom: 1px solid #e2e8e0;">
-                                    <td style="padding: 6px 8px;">
-                                        <div style="font-weight: 700; color: #1e3318; overflow-wrap: anywhere;">${escapeHtml(itemName || 'Product')}</div>
-                                        ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${escapeHtml(item.weight)}</div>` : ''}
-                                        ${renderInvoiceReturnBadge(normalizedItem, lang)}
-                                    </td>
-                                    <td style="padding: 6px 8px; text-align: center; color: #1e3318;">${originalQuantity}</td>
-                                    <td class="invoice-returned-quantity" style="padding: 6px 8px; text-align: center; color: ${returnedQuantity > 0 ? '#991b1b' : '#94a3b8'}; font-weight: ${returnedQuantity > 0 ? '900' : '500'};">${returnedQuantity > 0 ? returnedQuantity : '-'}</td>
-                                    <td style="padding: 6px 8px; text-align: center; color: #166534; font-weight: 800;">${remainingQuantity}</td>
-                                    <td style="padding: 6px 8px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
-                                    <td style="padding: 6px 8px; text-align: right;">
-                                        ${returnedQuantity > 0 ? `
-                                            <div class="invoice-original-amount is-struck" style="font-size: 9px; color: #991b1b; text-decoration: line-through;">${formatCurrency(originalAmount)}</div>
-                                            <div class="invoice-adjusted-amount" style="font-weight: 900; color: #166534;">${formatCurrency(adjustedAmount)}</div>
-                                        ` : `<span style="font-weight: 800; color: #1e3318;">${formatCurrency(originalAmount)}</span>`}
-                                    </td>
-                                </tr>
-                            `;
-            }).join('')}
-                        </tbody>
-                    </table>
-                    ` : `
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-top: 1px solid #e2e8e0;">
-                        <tbody style="font-size: 12px;">
-                            ${pageItems.map((item, idx) => {
-                let itemName = item.name;
-
-                if (lang === 'ru') {
-                    itemName = item.name_ru || item.name_en || item.displayName || item.name;
-                } else if (lang === 'kg') {
-                    itemName = item.name_kg || item.name_en || item.displayName || item.name;
-                } else {
-                    itemName = item.name_en || item.displayName || item.name;
-                }
-
-                const finalQty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
-
-                return `
-                                    <tr style="background: ${idx % 2 === 0 ? '#fafaf8' : '#fff'}; border-bottom: 1px solid #e2e8e0;">
-                                        <td style="padding: 6px 10px;">
-                                        <div style="font-weight: 600; color: #1e3318; overflow-wrap: anywhere;">${escapeHtml(itemName || 'Product')}</div>
-                                            ${item.weight ? `<div style="font-size: 9px; color: #5a7052; margin-top: 1px;">${escapeHtml(item.weight)}</div>` : ''}
-                                        </td>
-                                        <td style="padding: 6px 10px; text-align: center; color: #1e3318;">${finalQty}</td>
-                                        <td style="padding: 6px 10px; text-align: right; color: #1e3318;">${formatCurrency(item.price)}</td>
-                                        <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: #1e3318;">${formatCurrency(item.price * finalQty)}</td>
-                                    </tr>
-                                `;
-            }).join('')}
-                        </tbody>
-                    </table>
-                    `}
-
-                    ${isLast ? `
-                    <!-- Summary Section -->
-                    <div style="display: flex; justify-content: flex-end; margin-bottom: 25px; page-break-inside: avoid;">
-                        ${invoiceHasReturns ? renderInvoiceTotalsWithReturns(invoice, lang) : `<div style="width: 280px;">
-                            <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
-                                <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t('print_subtotal', lang)}</span>
-                                <span style="font-weight: 600; color: #1e3318; font-size: 11px;">${formatCurrency(subtotal)}</span>
-                            </div>
-                            ${taxAmount > 0 ? `
-                            <div style="display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid #e2e8e0;">
-                                <span style="color: #5a7052; font-size: 11px; font-weight: 500;">${t('print_vat', lang)} (${taxRate}%)</span>
-                                <span style="font-weight: 600; color: #1e3318; font-size: 11px;">${formatCurrency(taxAmount)}</span>
-                            </div>` : ''}
-                            <div style="margin-top: 10px; background: #2e4a23; color: #fff; padding: 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: baseline;">
-                                <span style="font-size: 10px; font-weight: 700; text-transform: uppercase;">${t('print_grand_total', lang)}</span>
-                                <span style="font-size: 20px; font-weight: 800;">${formatCurrency(grandTotal)}</span>
-                            </div>
-                        </div>`}
-                    </div>
-
-                    ${invoiceHasReturns ? renderInvoiceReturnDetails(invoice, lang) : ''}
-
-                    <!-- Footer -->
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; border-top: 1px solid #e2e8e0; padding-top: 15px; margin-bottom: 20px; page-break-inside: avoid;">
-                        <div style="flex: 1;">
-                            ${(s.showNotes !== false) ? `
-                            <div style="font-weight: 700; color: #5a7052; text-transform: uppercase; font-size: 9px; margin-bottom: 8px;">${t('print_notes', lang)}</div>
-                            <div style="font-size: 11px; color: #5a7052; line-height: 1.5;">
-                                <div style="margin-bottom: 2px;">${renderedNotesText}</div>
-                                <div style="font-weight: 500; font-family: monospace; background: #fafbf9; padding: 12px; border: 1px solid #ebf0e9; border-radius: 6px; font-size: 10px; line-height: 1.6;">
-                                    ${renderedBankInfo}
-                                </div>
-                            </div>
-                            ` : ''}
-                        </div>
-                        <div style="display: flex; gap: 12px; align-items: center;">
-                            <div style="display: flex; flex-direction: column; gap: 14px; min-width: 78px; text-align: left;">
-                                <div>
-                                    <div style="font-size: 10px; font-weight: 800; color: #2e4a23; text-transform: uppercase;">Invoice QR</div>
-                                    <div style="font-size: 8px; color: #5a7052;">${invoiceQrImageUrl ? '0 courier &middot; 1 customer' : 'Unavailable'}</div>
-                                </div>
-                            </div>
-                            ${invoiceQrImageUrl ? `
-                            <div style="text-align: center;">
-                                <div style="display: inline-block; padding: 10px; background: #fff; border: 2px solid #2e4a23; border-radius: 10px; margin-bottom: 6px;">
-                                    <img src="${invoiceQrImageUrl}" alt="Invoice QR" style="width: 128px; height: 128px; display: block;">
-                                </div>
-                            </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                    ` : ''}
-
-                    <!-- Banner Foot -->
-                    ${(s.showFooter !== false) ? `
-                    <div style="position: absolute; bottom: 20px; left: 0; right: 0; padding: 12px; text-align: center; color: #5a7052; font-size: 10px;">
-                        &mdash; ${renderedBannerFootText} &mdash;
-                    </div>
-                    ` : ''}
-                </div>
-            `;
+        const sharedSettings = hasReliableLiveSettings
+            ? Object.assign({}, invoice.settings || {}, liveSettings)
+            : Object.assign({}, invoice.settings || {});
+        return buildInvoicePrintPages({
+            invoice: invoice,
+            settings: sharedSettings,
+            language: lang,
+            currentPage: currentPage,
+            scale: invoiceScale,
+            showAllPages: false,
+            isCopy: isCopy
         });
     };
-
     const refreshBody = () => {
 
         let finalHtml = '';
@@ -2449,7 +2189,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }, 500);
             };
 
-            const printWithAfterprint = (afterPrint) => {
+            const printWithAfterprint = async (afterPrint) => {
                 let handled = false;
                 let fallbackTimer = null;
                 const finish = () => {
@@ -2462,7 +2202,24 @@ export const renderInvoiceDetail = async ({ id }) => {
                     afterPrint();
                 };
                 window.addEventListener('afterprint', finish, { once: true });
-                try {
+try {
+                    const printableImages = Array.from(document.querySelectorAll('#invoice-doc-container img'));
+                    await Promise.all(printableImages.map(function(image) {
+                        if (image.complete && image.naturalWidth > 0) {
+                            return typeof image.decode === 'function' ? image.decode().catch(function() { return undefined; }) : Promise.resolve();
+                        }
+                        return new Promise(function(resolve, reject) {
+                            image.addEventListener('load', resolve, { once: true });
+                            image.addEventListener('error', function() { reject(new Error('An invoice image failed to load.')); }, { once: true });
+                        });
+                    }));
+                    if (document.fonts && document.fonts.ready) {
+                        await document.fonts.ready;
+                    }
+                    const invoiceQr = document.querySelector('#invoice-doc-container .invoice-qr-image');
+                    if (!invoiceQr || !invoiceQr.complete || invoiceQr.naturalWidth < 40) {
+                        throw new Error('The invoice QR code is missing or blank.');
+                    }
                     window.print();
                     fallbackTimer = setTimeout(finish, 1500);
                 } catch (error) {

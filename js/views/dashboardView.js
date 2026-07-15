@@ -24,6 +24,12 @@ import {
     normalizeArchivedFilter,
     shouldIncludeRecordInAnalytics
 } from "../core/orderRecordHelpers.js";
+import { auth } from "../core/firebase.js";
+import { store } from "../core/store.js";
+import icfPipeline from "../ICF/engine/pipeline.js";
+import quickPrintSelectedInvoicesIntentModule from "../ICF/Intents/QuickPrintSelectedInvoicesIntent.js";
+import sessionDataStore from "../services/sessionDataStore.js";
+import { invoiceService } from "../services/invoiceService.js";
 
 // Global chart registry to prevent "broken" graphs
 const ORDERS_TABLE_PAGE_SIZE = 120;
@@ -96,6 +102,8 @@ export const renderDashboard = async (params, routeContext) => {
     let filteredOrders = [];
     let inventoryCategories = [];
     let selectedOrderIds = new Set();
+    let printableInvoiceByOrderId = {};
+    let bulkPrintActive = false;
     let currentPeriod = '30d';
     let revenueGranularity = 'day';
     let productChartMode = 'products';
@@ -113,6 +121,57 @@ export const renderDashboard = async (params, routeContext) => {
     const getAnalyticsReturnOrders = () => returnOrders.filter(order => shouldIncludeRecordInAnalytics(order, { includeArchived: showArchivedAnalytics }));
     const getAnalyticsReturnInvoices = () => returnInvoices.filter(invoice => shouldIncludeRecordInAnalytics(invoice, { includeArchived: showArchivedAnalytics }));
     const getOrdersForArchivedFilter = () => filterRecordsByArchivedMode(allOrders, archivedFilter);
+
+    function isOrderPrintable(order) {
+        return Boolean(order && order.id && printableInvoiceByOrderId[order.id]);
+    }
+
+    function getOrderedSelectedOrderIds() {
+        const orderedIds = [];
+        filteredOrders.forEach(function(order) {
+            if (order && selectedOrderIds.has(order.id)) {
+                orderedIds.push(order.id);
+            }
+        });
+        selectedOrderIds.forEach(function(orderId) {
+            if (orderedIds.indexOf(orderId) === -1) {
+                orderedIds.push(orderId);
+            }
+        });
+        return orderedIds;
+    }
+
+    async function refreshPrintableInvoiceMap() {
+        const snapshot = sessionDataStore.getInvoicesSnapshot();
+        const cachedInvoices = snapshot && Array.isArray(snapshot.records)
+            ? snapshot.records
+            : sessionDataStore.getKnownInvoiceRecords();
+        const nextMap = {};
+        cachedInvoices.forEach(function(invoice) {
+            if (invoice && invoice.orderId && invoice.id && invoice.invoiceNumber) {
+                nextMap[invoice.orderId] = invoice;
+            }
+        });
+        const missingOrderIds = allOrders.map(function(order) {
+            return order.id;
+        }).filter(function(orderId) {
+            return orderId && !nextMap[orderId];
+        });
+        if (missingOrderIds.length > 0) {
+            const loadedInvoices = await invoiceService.getInvoicesByOrderIds(missingOrderIds);
+            loadedInvoices.forEach(function(invoice) {
+                if (invoice && invoice.orderId && invoice.id && invoice.invoiceNumber) {
+                    nextMap[invoice.orderId] = invoice;
+                    sessionDataStore.updateInvoiceRecord(invoice.id, invoice, 'orders-printable-map');
+                }
+            });
+        }
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            return;
+        }
+        printableInvoiceByOrderId = nextMap;
+        refreshTable();
+    }
 
     // Initial Fetch
     const today = new Date().toISOString().split('T')[0];
@@ -184,6 +243,9 @@ export const renderDashboard = async (params, routeContext) => {
         pendingCheckmarkUpdates.clear();
         updatedCheckmarkUpdates.clear();
         renderUI();
+        refreshPrintableInvoiceMap().catch(function(error) {
+            console.warn('Printable invoice map refresh failed after Orders refresh.', error);
+        });
         console.info('[DASHBOARD_REFRESH] rendered current route');
         restoreScrollPosition(scrollTop);
     };
@@ -526,6 +588,14 @@ export const renderDashboard = async (params, routeContext) => {
                 </div>
 
                 ${renderReturnAnalytics(stats.charts.returnedItems)}
+            </div>
+            <div id="bulk-invoice-action-bar" class="bulk-invoice-action-bar" style="display:none;">
+                <strong id="bulk-invoice-selected-label">0 invoices selected</strong>
+                <div class="bulk-invoice-action-buttons">
+                    <button id="clear-invoice-selection" class="btn btn-secondary btn-sm" type="button">Clear selection</button>
+                    <button id="quick-print-full" class="btn btn-primary btn-sm" type="button" disabled>Quick Print — Full</button>
+                    <button id="quick-print-two-up" class="btn btn-secondary btn-sm" type="button" disabled>Quick Print — 2-Up Portrait</button>
+                </div>
             </div>
         `;
 
@@ -1148,7 +1218,7 @@ export const renderDashboard = async (params, routeContext) => {
             columns: [
                 {
                     key: 'select',
-                    label: `<input type="checkbox" id="select-all-orders" title="Select visible orders" style="cursor: pointer;">`,
+                    label: `<input type="checkbox" id="select-all-orders" title="Select all shown printable invoices" aria-label="Select all shown printable invoices" style="cursor: pointer;">`,
                     sortable: false,
                     align: 'center',
                     render: (val, row) => `
@@ -1157,8 +1227,10 @@ export const renderDashboard = async (params, routeContext) => {
                             class="order-select-checkbox"
                             data-id="${row.id}"
                             ${selectedOrderIds.has(row.id) ? 'checked' : ''}
+                            ${isOrderPrintable(row) ? '' : 'disabled'}
+                            title="${isOrderPrintable(row) ? 'Select invoice for Quick Print' : 'No printable invoice has been created.'}"
                             onclick="event.stopPropagation();"
-                            style="cursor: pointer;"
+                            style="cursor: ${isOrderPrintable(row) ? 'pointer' : 'not-allowed'};"
                         >
                     `
                 },
@@ -1212,6 +1284,8 @@ export const renderDashboard = async (params, routeContext) => {
                                 class="order-select-checkbox"
                                 data-id="${row.id}"
                                 ${selectedOrderIds.has(row.id) ? 'checked' : ''}
+                                ${isOrderPrintable(row) ? '' : 'disabled'}
+                                title="${isOrderPrintable(row) ? 'Select invoice for Quick Print' : 'No printable invoice has been created.'}"
                                 onclick="event.stopPropagation();"
                             >
                             <span style="min-width: 0;">
@@ -1276,9 +1350,6 @@ export const renderDashboard = async (params, routeContext) => {
             });
         }
 
-        const visibleIds = new Set(visibleOrders.map(order => order.id));
-        selectedOrderIds = new Set([...selectedOrderIds].filter(id => visibleIds.has(id)));
-
         wrapper.querySelectorAll('.order-select-checkbox').forEach(checkbox => {
             checkbox.addEventListener('click', e => {
                 e.stopPropagation();
@@ -1298,15 +1369,17 @@ export const renderDashboard = async (params, routeContext) => {
 
         const selectAll = wrapper.querySelector('#select-all-orders');
         if (selectAll) {
-            selectAll.checked = visibleOrders.length > 0 && visibleOrders.every(order => selectedOrderIds.has(order.id));
-            selectAll.indeterminate = selectedOrderIds.size > 0 && !selectAll.checked;
+            const printableVisibleOrders = visibleOrders.filter(function(order) { return isOrderPrintable(order); });
+            selectAll.disabled = printableVisibleOrders.length === 0;
+            selectAll.checked = printableVisibleOrders.length > 0 && printableVisibleOrders.every(function(order) { return selectedOrderIds.has(order.id); });
+            selectAll.indeterminate = printableVisibleOrders.some(function(order) { return selectedOrderIds.has(order.id); }) && !selectAll.checked;
             selectAll.addEventListener('click', e => {
                 e.stopPropagation();
                 scheduleInvoiceListRefresh(6000);
             });
             selectAll.addEventListener('change', e => {
                 scheduleInvoiceListRefresh(6000);
-                visibleOrders.forEach(order => {
+                printableVisibleOrders.forEach(order => {
                     if (e.target.checked) {
                         selectedOrderIds.add(order.id);
                     } else {
@@ -1330,19 +1403,147 @@ export const renderDashboard = async (params, routeContext) => {
         const count = selectedOrderIds.size;
         const countEl = document.getElementById('selected-orders-count');
         const archiveBtn = document.getElementById('archive-selected-orders');
+        const actionBar = document.getElementById('bulk-invoice-action-bar');
+        const actionLabel = document.getElementById('bulk-invoice-selected-label');
+        const fullButton = document.getElementById('quick-print-full');
+        const twoUpButton = document.getElementById('quick-print-two-up');
 
         if (countEl) {
             countEl.style.display = count > 0 ? 'inline-flex' : 'none';
             countEl.textContent = `${count} selected`;
         }
-
         if (archiveBtn) {
-            archiveBtn.disabled = count === 0;
+            archiveBtn.disabled = count === 0 || bulkPrintActive;
             archiveBtn.textContent = count > 0 ? `Archive ${count} Selected` : 'Archive Selected';
+        }
+        if (actionBar) {
+            actionBar.style.display = count > 0 ? 'flex' : 'none';
+        }
+        if (actionLabel) {
+            actionLabel.textContent = `${count} invoice${count === 1 ? '' : 's'} selected`;
+        }
+        if (fullButton) {
+            fullButton.disabled = count === 0 || bulkPrintActive;
+        }
+        if (twoUpButton) {
+            twoUpButton.disabled = count === 0 || bulkPrintActive;
+        }
+    };
+
+    function getQuickPrintActor() {
+        const state = store.getState();
+        const profile = state && state.adminProfile ? state.adminProfile : {};
+        const user = auth.currentUser;
+        return {
+            id: user ? (user.email || user.uid || 'admin') : 'anonymous',
+            role: profile.role || (user ? 'admin' : 'anonymous')
+        };
+    }
+
+    function openPreparingPreview() {
+        const previewWindow = window.open('', '_blank');
+        if (!previewWindow) {
+            throw new Error('The print-preview tab was blocked. Allow pop-ups for this site and try again.');
+        }
+        previewWindow.document.open();
+        previewWindow.document.write('<!doctype html><html><head><title>Preparing combined invoice PDF</title></head><body style="font-family:Arial,sans-serif;background:#f7faf6;color:#1e3318;"><main style="max-width:640px;margin:80px auto;padding:32px;background:#fff;border:1px solid #d8e2d4;border-radius:14px;text-align:center;"><h1 style="font-size:24px;">Preparing your combined invoice PDF…</h1><p>This tab will update when every invoice and QR code is ready.</p></main></body></html>');
+        previewWindow.document.close();
+        return previewWindow;
+    }
+
+    async function quickPrintSelectedInvoices(layout) {
+        if (bulkPrintActive || selectedOrderIds.size === 0) {
+            return;
+        }
+        const orderedOrderIds = getOrderedSelectedOrderIds();
+        let previewWindow = null;
+        let progressModal = null;
+        try {
+            previewWindow = openPreparingPreview();
+            bulkPrintActive = true;
+            updateBulkArchiveControls();
+            progressModal = new Modal({
+                title: 'Preparing combined invoice PDF',
+                footer: false,
+                closeOnBackdrop: false,
+                closeOnEsc: false,
+                content: '<div id="bulk-print-progress" style="display:grid;gap:10px;"><strong>Preparing 0 of ' + orderedOrderIds.length + ' invoices…</strong><span style="color:var(--color-gray-600);">Loading printable invoice data</span></div>'
+            });
+            progressModal.open();
+
+            const intent = quickPrintSelectedInvoicesIntentModule.createQuickPrintSelectedInvoicesIntent(
+                getQuickPrintActor(),
+                {
+                    orderIds: orderedOrderIds,
+                    layout: layout
+                },
+                {
+                    source: 'orders-tab',
+                    printOptions: {
+                        previewWindow: previewWindow,
+                        onProgress: function(progress) {
+                            if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+                                return;
+                            }
+                            const progressElement = document.getElementById('bulk-print-progress');
+                            if (progressElement) {
+                                progressElement.innerHTML = '<strong>Preparing ' + progress.completed + ' of ' + progress.total + ' invoices…</strong><span style="color:var(--color-gray-600);">' + escapeHtml(progress.message) + (progress.invoiceNumber ? ' — ' + escapeHtml(progress.invoiceNumber) : '') + '</span>';
+                            }
+                        }
+                    }
+                }
+            );
+            const result = await icfPipeline.run(intent);
+            if (!result || result.ok !== true) {
+                const message = result && result.errors && result.errors.length > 0 ? result.errors.join('; ') : 'Combined invoice PDF preparation failed.';
+                throw new Error(message);
+            }
+            progressModal.close();
+            progressModal = null;
+            notificationService.success('Combined invoice PDF is ready in one preview tab.');
+        } catch (error) {
+            if (progressModal) {
+                progressModal.close();
+            }
+            if (previewWindow && !previewWindow.closed && previewWindow.location.href === 'about:blank') {
+                previewWindow.close();
+            }
+            const failureModal = new Modal({
+                title: 'Quick Print failed',
+                content: '<p style="color:#991b1b;font-weight:700;">' + escapeHtml(error.message || 'Combined invoice PDF preparation failed.') + '</p><p>Your invoice selection has been kept. No invoice was silently omitted.</p>',
+                confirmText: 'Close',
+                cancelText: 'Close'
+            });
+            failureModal.open();
+            notificationService.error(error.message || 'Combined invoice PDF preparation failed.');
+        } finally {
+            bulkPrintActive = false;
+            if (isNavigationStillCurrent(navigationId, expectedRoute)) {
+                updateBulkArchiveControls();
+            }
         }
     };
 
     const attachListeners = () => {
+        const clearSelectionButton = document.getElementById('clear-invoice-selection');
+        if (clearSelectionButton) {
+            clearSelectionButton.addEventListener('click', function() {
+                selectedOrderIds.clear();
+                refreshTable();
+            });
+        }
+        const quickPrintFullButton = document.getElementById('quick-print-full');
+        if (quickPrintFullButton) {
+            quickPrintFullButton.addEventListener('click', function() {
+                quickPrintSelectedInvoices('full');
+            });
+        }
+        const quickPrintTwoUpButton = document.getElementById('quick-print-two-up');
+        if (quickPrintTwoUpButton) {
+            quickPrintTwoUpButton.addEventListener('click', function() {
+                quickPrintSelectedInvoices('two-up-portrait');
+            });
+        }
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 if (btn.dataset.period) {
@@ -1386,7 +1587,6 @@ export const renderDashboard = async (params, routeContext) => {
         document.getElementById('show-archived-analytics')?.addEventListener('change', (event) => {
             showArchivedAnalytics = event.target.checked;
             archivedFilter = showArchivedAnalytics ? 'all' : 'active';
-            selectedOrderIds.clear();
             selectedProductCategory = null;
             console.info('[ANALYTICS] includeArchived toggled: ' + showArchivedAnalytics);
             renderUI();
@@ -1424,7 +1624,6 @@ export const renderDashboard = async (params, routeContext) => {
             if (filters.status === 'archived') {
                 archivedFilter = 'archived';
             }
-            selectedOrderIds.clear();
             applyFilters();
             if (filters.status === 'archived') {
                 scrollOrdersToTop();
@@ -1435,7 +1634,6 @@ export const renderDashboard = async (params, routeContext) => {
             button.addEventListener('click', () => {
                 archivedFilter = normalizeArchivedFilter(button.dataset.archivedFilter, showArchivedAnalytics);
                 filters.status = 'all';
-                selectedOrderIds.clear();
                 const select = document.getElementById('filter-status');
                 if (select) select.value = 'all';
                 applyFilters();
@@ -1447,7 +1645,6 @@ export const renderDashboard = async (params, routeContext) => {
         document.getElementById('view-archived-orders')?.addEventListener('click', () => {
             archivedFilter = 'archived';
             filters.status = 'all';
-            selectedOrderIds.clear();
             const select = document.getElementById('filter-status');
             if (select) select.value = 'all';
             applyFilters();
@@ -1458,7 +1655,6 @@ export const renderDashboard = async (params, routeContext) => {
         document.querySelectorAll('.work-queue-lane').forEach(button => {
             button.addEventListener('click', () => {
                 filters.status = button.dataset.workFilter || 'all';
-                selectedOrderIds.clear();
                 const select = document.getElementById('filter-status');
                 if (select) select.value = filters.status;
                 applyFilters();
@@ -1468,7 +1664,6 @@ export const renderDashboard = async (params, routeContext) => {
 
         document.querySelector('.work-queue-lane-reset')?.addEventListener('click', () => {
             filters.status = 'all';
-            selectedOrderIds.clear();
             const select = document.getElementById('filter-status');
             if (select) select.value = 'all';
             applyFilters();
@@ -1487,7 +1682,6 @@ export const renderDashboard = async (params, routeContext) => {
                     filters.status = nextStatus;
                     archivedFilter = showArchivedAnalytics ? 'all' : 'active';
                 }
-                selectedOrderIds.clear();
                 const select = document.getElementById('filter-status');
                 if (select) select.value = filters.status;
                 applyFilters();
@@ -1523,7 +1717,6 @@ export const renderDashboard = async (params, routeContext) => {
                 }
             });
             activeOrders = activeOrders.filter(order => !selectedOrderIds.has(order.id));
-            selectedOrderIds.clear();
             renderUI();
         });
 
@@ -1661,6 +1854,12 @@ export const renderDashboard = async (params, routeContext) => {
     const visibleRenderStartedAt = performance.now();
     renderUI();
     console.info('[PERF] Orders first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');
+
+    window.setTimeout(function() {
+        refreshPrintableInvoiceMap().catch(function(error) {
+            console.warn('Printable invoice map refresh failed.', error);
+        });
+    }, 0);
 
     window.setTimeout(function() {
         refreshInventoryStrip().catch(function(error) {

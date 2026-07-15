@@ -971,6 +971,11 @@ var publicStoreApi = {
         return getSnapshot('invoices');
     },
 
+    getKnownInvoiceRecords: function() {
+        ensureOwner();
+        return cloneRecords(sessionDataStore.invoices.records);
+    },
+
     updateOrderRecord: function(id, patch, reason) {
         updateRecord('orders', id, patch, reason);
     },

@@ -15,6 +15,7 @@ import validateSubmitInvoiceApprovalResponsePayloadModule from "./Invoices/valid
 import validateUpdateInvoiceItemsPayloadModule from "./Invoices/validateUpdateInvoiceItemsPayload.js";
 import validateRecordInvoiceReturnPayloadModule from "./Invoices/validateRecordInvoiceReturnPayload.js";
 import validateUpdateOrderStatusPayloadModule from "./Orders/validateUpdateOrderStatusPayload.js";
+import validateQuickPrintSelectedInvoicesPayloadModule from "./Invoices/validateQuickPrintSelectedInvoicesPayload.js";
 
 /**
  * Validators
@@ -54,6 +55,9 @@ var validators = {
     validateRecordInvoiceReturnPayloadModule.validateRecordInvoiceReturnPayload,
   validateUpdateOrderStatusPayload:
     validateUpdateOrderStatusPayloadModule.validateUpdateOrderStatusPayload,
+
+  validateQuickPrintSelectedInvoicesPayload:
+    validateQuickPrintSelectedInvoicesPayloadModule.validateQuickPrintSelectedInvoicesPayload,
 
   createRequireActorRoleValidator: requireActorRoleModule.createRequireActorRoleValidator
 };

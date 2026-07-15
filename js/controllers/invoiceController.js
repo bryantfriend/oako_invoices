@@ -142,7 +142,17 @@ export const invoiceController = {
     async generateForOrder(orderId, orderSnapshot) {
         try {
             const invoiceId = await invoiceService.createInvoice(orderId, {}, orderSnapshot);
-            await sessionDataStore.invalidateInvoicesCache('create-invoice');
+            try {
+                const createdInvoice = await invoiceService.getInvoice(invoiceId);
+                if (createdInvoice) {
+                    sessionDataStore.updateInvoiceRecord(invoiceId, createdInvoice, 'create-invoice');
+                } else {
+                    await sessionDataStore.invalidateInvoicesCache('create-invoice-missing-record');
+                }
+            } catch (cacheError) {
+                console.warn('Created invoice could not be seeded into the session cache.', cacheError);
+                await sessionDataStore.invalidateInvoicesCache('create-invoice-cache-fallback');
+            }
             return invoiceId;
         } catch (error) {
             notificationService.error(t('msg_save_fail'));
