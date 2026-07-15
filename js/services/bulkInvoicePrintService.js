@@ -209,7 +209,9 @@ function validateInvoice(invoice, orderId) {
 
 async function loadPrintableInvoices(orderIds) {
     var snapshot = sessionDataStore.getInvoicesSnapshot();
-    var cachedInvoices = snapshot && Array.isArray(snapshot.records) ? snapshot.records : [];
+    var cachedInvoices = snapshot && Array.isArray(snapshot.records)
+        ? snapshot.records
+        : sessionDataStore.getKnownInvoiceRecords();
     var byOrderId = {};
     var index = 0;
     while (index < cachedInvoices.length) {

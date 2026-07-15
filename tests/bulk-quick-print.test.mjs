@@ -34,6 +34,19 @@ test('Orders Quick Print selection survives rerenders and filters', () => {
     assert.match(source, /quickPrintSelectedInvoices\('two-up-portrait'\)/);
 });
 
+test('Newly created invoices are immediately available to Orders Quick Print', () => {
+    const controllerSource = read('js/controllers/invoiceController.js');
+    const sessionSource = read('js/services/sessionDataStore.js');
+    const dashboardSource = read('js/views/dashboardView.js');
+    const bulkServiceSource = read('js/services/bulkInvoicePrintService.js');
+
+    assert.match(controllerSource, /const createdInvoice = await invoiceService\.getInvoice\(invoiceId\)/);
+    assert.match(controllerSource, /sessionDataStore\.updateInvoiceRecord\(invoiceId, createdInvoice, 'create-invoice'\)/);
+    assert.match(sessionSource, /getKnownInvoiceRecords: function\(\)/);
+    assert.match(dashboardSource, /sessionDataStore\.getKnownInvoiceRecords\(\)/);
+    assert.match(bulkServiceSource, /sessionDataStore\.getKnownInvoiceRecords\(\)/);
+});
+
 test('Bulk PDF service uses one PDF, sequential rendering, and odd 2-up blank half handling', () => {
     const source = read('js/services/bulkInvoicePrintService.js');
     assert.match(source, /var pdf = createPdf/);

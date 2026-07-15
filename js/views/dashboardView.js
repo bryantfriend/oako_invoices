@@ -143,7 +143,9 @@ export const renderDashboard = async (params, routeContext) => {
 
     async function refreshPrintableInvoiceMap() {
         const snapshot = sessionDataStore.getInvoicesSnapshot();
-        const cachedInvoices = snapshot && Array.isArray(snapshot.records) ? snapshot.records : [];
+        const cachedInvoices = snapshot && Array.isArray(snapshot.records)
+            ? snapshot.records
+            : sessionDataStore.getKnownInvoiceRecords();
         const nextMap = {};
         cachedInvoices.forEach(function(invoice) {
             if (invoice && invoice.orderId && invoice.id && invoice.invoiceNumber) {
