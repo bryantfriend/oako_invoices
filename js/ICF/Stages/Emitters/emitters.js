@@ -11,6 +11,7 @@ import emitSubmitInvoiceApprovalResponseResultModule from "./Invoices/emitSubmit
 import emitUpdateInvoiceItemsResultModule from "./Invoices/emitUpdateInvoiceItemsResult.js";
 import emitRecordInvoiceReturnResultModule from "./Invoices/emitRecordInvoiceReturnResult.js";
 import emitUpdateOrderStatusResultModule from "./Orders/emitUpdateOrderStatusResult.js";
+import emitQuickPrintSelectedInvoicesResultModule from "./Invoices/emitQuickPrintSelectedInvoicesResult.js";
 
 /**
  * Emitters
@@ -38,6 +39,9 @@ var emitters = {
     emitRecordInvoiceReturnResultModule.emitRecordInvoiceReturnResult,
   emitUpdateOrderStatusResult:
     emitUpdateOrderStatusResultModule.emitUpdateOrderStatusResult,
+
+  emitQuickPrintSelectedInvoicesResult:
+    emitQuickPrintSelectedInvoicesResultModule.emitQuickPrintSelectedInvoicesResult,
 
   createAddSuccessMessageEmitter:
     addSuccessMessageModule.createAddSuccessMessageEmitter,

@@ -11,6 +11,7 @@ import authorizeGenerateInvoiceApprovalLinkModule from "./Invoices/authorizeGene
 import authorizeSubmitInvoiceApprovalResponseModule from "./Invoices/authorizeSubmitInvoiceApprovalResponse.js";
 import authorizeInvoiceMutationModule from "./Invoices/authorizeInvoiceMutation.js";
 import authorizeOrderMutationModule from "./Orders/authorizeOrderMutation.js";
+import authorizeQuickPrintSelectedInvoicesModule from "./Invoices/authorizeQuickPrintSelectedInvoices.js";
 
 /**
  * Authorizers
@@ -36,6 +37,9 @@ var authorizers = {
     authorizeInvoiceMutationModule.authorizeInvoiceMutation,
   authorizeOrderMutation:
     authorizeOrderMutationModule.authorizeOrderMutation,
+
+  authorizeQuickPrintSelectedInvoices:
+    authorizeQuickPrintSelectedInvoicesModule.authorizeQuickPrintSelectedInvoices,
 
   createRequireActorRoleAuthorizer:
     requireActorRoleModule.createRequireActorRoleAuthorizer,

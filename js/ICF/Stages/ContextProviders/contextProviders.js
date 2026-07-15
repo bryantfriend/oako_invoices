@@ -10,6 +10,7 @@ import addArchiveInvoiceContextModule from "./Invoices/addArchiveInvoiceContext.
 import addGenerateInvoiceApprovalLinkContextModule from "./Invoices/addGenerateInvoiceApprovalLinkContext.js";
 import addSubmitInvoiceApprovalResponseContextModule from "./Invoices/addSubmitInvoiceApprovalResponseContext.js";
 import addInvoiceMutationContextModule from "./Invoices/addInvoiceMutationContext.js";
+import addQuickPrintSelectedInvoicesContextModule from "./Invoices/addQuickPrintSelectedInvoicesContext.js";
 
 /**
  * Context Providers
@@ -38,6 +39,9 @@ var contextProviders = {
     addSubmitInvoiceApprovalResponseContextModule.addSubmitInvoiceApprovalResponseContext,
   addInvoiceMutationContext:
     addInvoiceMutationContextModule.addInvoiceMutationContext,
+
+  addQuickPrintSelectedInvoicesContext:
+    addQuickPrintSelectedInvoicesContextModule.addQuickPrintSelectedInvoicesContext,
 
   createAddStaticContextValueProvider:
     addStaticContextValueModule.createAddStaticContextValueProvider

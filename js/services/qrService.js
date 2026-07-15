@@ -37,7 +37,8 @@ export const qrService = {
     buildPayload(invoice) {
         return {
             invoiceId: invoice.id,
-            token: invoice.secureToken
+            token: invoice.secureToken,
+            invoiceNumber: String(invoice.invoiceNumber || '')
         };
     },
 
@@ -57,15 +58,42 @@ export const qrService = {
     },
 
     buildQrImageUrl(invoice, size = 140) {
+        if (invoice && invoice.invoiceQrDataUrl) {
+            return invoice.invoiceQrDataUrl;
+        }
         const qrData = this.buildMobileUrl(invoice);
         return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(qrData)}`;
+    },
+
+    async generateQrDataUrl(invoice, size = 240) {
+        if (!invoice || !invoice.id || !invoice.secureToken || !invoice.invoiceNumber) {
+            throw new Error('Invoice QR requires an invoice ID, secure token, and canonical invoice number.');
+        }
+        if (!window.QRCode || typeof window.QRCode.toDataURL !== 'function') {
+            throw new Error('The local QR renderer is not available.');
+        }
+
+        const qrData = this.buildMobileUrl(invoice);
+        const dataUrl = await window.QRCode.toDataURL(qrData, {
+            errorCorrectionLevel: 'M',
+            margin: 2,
+            width: size,
+            color: {
+                dark: '#1e3318',
+                light: '#ffffff'
+            }
+        });
+        if (!dataUrl || dataUrl.indexOf('data:image/') !== 0) {
+            throw new Error('Invoice QR generation returned an invalid image.');
+        }
+        return dataUrl;
     },
 
     buildPublicInvoiceSnapshot(invoice) {
         return {
             invoiceId: invoice.id,
             token: invoice.secureToken,
-            invoiceNumber: invoice.invoiceNumber || '',
+            invoiceNumber: String(invoice.invoiceNumber || ''),
             customerName: invoice.customerName || '',
             customerPinCode: invoice.customerPinCode || invoice.pinCode || '',
             items: invoice.items || [],
@@ -106,7 +134,8 @@ export const qrService = {
         if (publicSnap.exists()) {
             const invoice = { id: publicSnap.data().invoiceId, ...publicSnap.data() };
             const matchesInvoice = invoice.invoiceId === payload.invoiceId || invoice.id === payload.invoiceId;
-            if (matchesInvoice && invoice.token === payload.token) {
+            const matchesNumber = !payload.invoiceNumber || invoice.invoiceNumber === payload.invoiceNumber;
+            if (matchesInvoice && matchesNumber && invoice.token === payload.token) {
                 return invoice;
             }
         }
@@ -116,6 +145,7 @@ export const qrService = {
 
         const invoice = { id: invoiceSnap.id, ...invoiceSnap.data() };
         if (invoice.secureToken !== payload.token) return null;
+        if (payload.invoiceNumber && invoice.invoiceNumber !== payload.invoiceNumber) return null;
 
         await this.publishPublicInvoiceSnapshot(invoice);
         return invoice;

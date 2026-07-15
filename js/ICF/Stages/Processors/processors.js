@@ -12,6 +12,7 @@ import processSubmitInvoiceApprovalResponseModule from "./Invoices/processSubmit
 import processUpdateInvoiceItemsModule from "./Invoices/processUpdateInvoiceItems.js";
 import processRecordInvoiceReturnModule from "./Invoices/processRecordInvoiceReturn.js";
 import processUpdateOrderStatusModule from "./Orders/processUpdateOrderStatus.js";
+import processQuickPrintSelectedInvoicesModule from "./Invoices/processQuickPrintSelectedInvoices.js";
 
 /**
  * Processors
@@ -40,6 +41,9 @@ var processors = {
     processRecordInvoiceReturnModule.processRecordInvoiceReturn,
   processUpdateOrderStatus:
     processUpdateOrderStatusModule.processUpdateOrderStatus,
+
+  processQuickPrintSelectedInvoices:
+    processQuickPrintSelectedInvoicesModule.processQuickPrintSelectedInvoices,
 
   createSetResultDataProcessor:
     setResultDataModule.createSetResultDataProcessor,

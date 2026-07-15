@@ -625,6 +625,45 @@ export const invoiceService = {
         });
     },
 
+    async getInvoicesByOrderIds(orderIds) {
+        const sourceIds = Array.isArray(orderIds) ? orderIds : [];
+        const uniqueIds = sourceIds.map(function(orderId) {
+            return String(orderId || '').trim();
+        }).filter(function(orderId, index, allIds) {
+            return orderId && allIds.indexOf(orderId) === index;
+        });
+        const invoicesByOrderId = {};
+        let startIndex = 0;
+
+        while (startIndex < uniqueIds.length) {
+            const chunk = uniqueIds.slice(startIndex, startIndex + 30);
+            const invoiceQuery = query(
+                collection(db, COLLECTION),
+                where('orderId', 'in', chunk)
+            );
+            const rows = await getDocsWithCache(invoiceQuery, {
+                collectionName: COLLECTION,
+                cacheKey: 'invoices:orders:' + chunk.join(','),
+                timeoutMs: 45000,
+                attempts: 2
+            });
+            let rowIndex = 0;
+            while (rowIndex < rows.length) {
+                const invoice = rows[rowIndex];
+                if (invoice && invoice.orderId && !invoicesByOrderId[invoice.orderId]) {
+                    invoicesByOrderId[invoice.orderId] = invoice;
+                }
+                rowIndex = rowIndex + 1;
+            }
+            startIndex = startIndex + 30;
+        }
+
+        return uniqueIds.map(function(orderId) {
+            return invoicesByOrderId[orderId] || null;
+        }).filter(function(invoice) {
+            return invoice !== null;
+        });
+    },
     async getInvoicesByCustomerNames(customerNames) {
         const names = Array.isArray(customerNames) ? customerNames : [];
         const uniqueNames = names
