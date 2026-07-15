@@ -34,6 +34,21 @@ test('Orders Quick Print selection survives rerenders and filters', () => {
     assert.match(source, /quickPrintSelectedInvoices\('two-up-portrait'\)/);
 });
 
+test('Orders Quick Print eligibility avoids eager full-invoice loading', () => {
+    const dashboardSource = read('js/views/dashboardView.js');
+    const sessionSource = read('js/services/sessionDataStore.js');
+
+    assert.match(dashboardSource, /getKnownPrintableInvoiceReferences\(\)/);
+    assert.match(dashboardSource, /invoiceService\.getInvoiceByOrderId\(orderId\)/);
+    assert.match(dashboardSource, /Select to verify invoice for Quick Print/);
+    assert.match(dashboardSource, /orders-printable-check/);
+    assert.doesNotMatch(dashboardSource, /getInvoicesByOrderIds\(missingOrderIds\)/);
+    assert.doesNotMatch(dashboardSource, /orders-printable-map/);
+    assert.equal((dashboardSource.match(/scheduleInvoiceListRefresh\(6000\)/g) || []).length, 1);
+    assert.match(sessionSource, /getKnownPrintableInvoiceReferences: function\(\)/);
+    assert.match(sessionSource, /invoiceId: invoice\.id/);
+});
+
 test('Newly created invoices are immediately available to Orders Quick Print', () => {
     const controllerSource = read('js/controllers/invoiceController.js');
     const sessionSource = read('js/services/sessionDataStore.js');
@@ -43,7 +58,7 @@ test('Newly created invoices are immediately available to Orders Quick Print', (
     assert.match(controllerSource, /const createdInvoice = await invoiceService\.getInvoice\(invoiceId\)/);
     assert.match(controllerSource, /sessionDataStore\.updateInvoiceRecord\(invoiceId, createdInvoice, 'create-invoice'\)/);
     assert.match(sessionSource, /getKnownInvoiceRecords: function\(\)/);
-    assert.match(dashboardSource, /sessionDataStore\.getKnownInvoiceRecords\(\)/);
+    assert.match(dashboardSource, /sessionDataStore\.getKnownPrintableInvoiceReferences\(\)/);
     assert.match(bulkServiceSource, /sessionDataStore\.getKnownInvoiceRecords\(\)/);
 });
 
