@@ -33,16 +33,23 @@ function notifySubscribers() {
 }
 
 async function refreshQueueStatus() {
-    await offlineQueueService.init().catch(function(error) {
-        state.warning = error && error.message ? error.message : 'Offline storage is unavailable.';
-    });
-    const summary = await offlineQueueService.getSummary();
-    state.pendingCount = summary.pending + summary.syncing + summary.retry_wait;
-    state.failedCount = summary.failed + summary.failed_terminal;
-    state.conflictCount = summary.conflict;
-    state.authenticationBlockedCount = summary.blocked_authentication;
-    if (state.failedCount === 0) {
-        state.syncError = false;
+    try {
+        await offlineQueueService.init();
+        const summary = await offlineQueueService.getSummary();
+        state.pendingCount = summary.pending + summary.syncing + summary.retry_wait;
+        state.failedCount = summary.failed + summary.failed_terminal;
+        state.conflictCount = summary.conflict;
+        state.authenticationBlockedCount = summary.blocked_authentication;
+        state.warning = offlinePersistenceState.warning || '';
+        if (state.failedCount === 0) {
+            state.syncError = false;
+        }
+    } catch (error) {
+        // IndexedDB can be disabled or temporarily unavailable in some browsers.
+        // Queue status is diagnostic data, so startup must continue without turning
+        // this expected storage limitation into an unhandled promise rejection.
+        state.warning = 'Offline storage is unavailable in this browser session.';
+        console.warn('Could not refresh offline queue status.', error);
     }
     notifySubscribers();
 }
