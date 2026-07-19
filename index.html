@@ -25,6 +25,8 @@
     <link rel="icon" href="data:,">
 
     <script>
+        var indexedDbWarningShown = false;
+
         function showDismissibleErrorBanner(title, details, backgroundColor) {
             var errDiv = document.createElement('div');
             var content = document.createElement('div');
@@ -83,6 +85,30 @@
             (document.body || document.documentElement).appendChild(errDiv);
         }
 
+        function isIndexedDbBackingStoreError(reason) {
+            var errorName = reason && reason.name ? String(reason.name).toLowerCase() : '';
+            var errorMessage = reason && reason.message ? String(reason.message) : String(reason || '');
+            var normalizedMessage = errorMessage.toLowerCase();
+            var mentionsIndexedDb = normalizedMessage.indexOf('indexeddb') !== -1;
+            var mentionsBackingStore = normalizedMessage.indexOf('backing store') !== -1;
+            var mentionsOpenFailure = normalizedMessage.indexOf('internal error opening') !== -1;
+
+            return errorName === 'unknownerror' && mentionsIndexedDb && (mentionsBackingStore || mentionsOpenFailure);
+        }
+
+        function showIndexedDbWarning(reason) {
+            if (indexedDbWarningShown) {
+                return;
+            }
+            indexedDbWarningShown = true;
+            console.warn('Offline storage is unavailable in this browser session.', reason);
+            showDismissibleErrorBanner(
+                'OFFLINE STORAGE UNAVAILABLE:',
+                'The app can continue online, but offline changes may not be saved on this device. Close other OAKO tabs and restart the browser before working offline.',
+                '#92400e'
+            );
+        }
+
         window.onerror = function (msg, url, line, col, error) {
             showDismissibleErrorBanner(
                 'JS ERROR:',
@@ -93,6 +119,13 @@
         };
         window.addEventListener('unhandledrejection', function (event) {
             var reason = event && event.reason ? event.reason : 'Unknown promise rejection';
+            if (isIndexedDbBackingStoreError(reason)) {
+                if (event && typeof event.preventDefault === 'function') {
+                    event.preventDefault();
+                }
+                showIndexedDbWarning(reason);
+                return;
+            }
             showDismissibleErrorBanner(
                 'PROMISE REJECTION:',
                 String(reason) + '\nStack: ' + (reason && reason.stack ? reason.stack : 'N/A'),
@@ -133,7 +166,7 @@
     <script src="./vendor/jspdf.umd.min.js"></script>
 
     <!-- Application Logic -->
-    <script type="module" src="./js/main.js?v=2.31"></script>
+    <script type="module" src="./js/main.js?v=2.32"></script>
 </body>
 
 </html>

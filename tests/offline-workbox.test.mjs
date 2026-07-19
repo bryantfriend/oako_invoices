@@ -357,6 +357,30 @@ test('Emergency error banners and notifications can be dismissed', function() {
 
 
 
+test('IndexedDB backing-store failures degrade safely without an unhandled rejection banner', function() {
+    var indexSource = fs.readFileSync('index.html', 'utf8');
+    var offlineStatusSource = fs.readFileSync('js/services/offlineStatusService.js', 'utf8');
+    var refreshStart = offlineStatusSource.indexOf('async function refreshQueueStatus()');
+    var refreshEnd = offlineStatusSource.indexOf('function applyConnectionSnapshot');
+    var refreshSource = offlineStatusSource.slice(refreshStart, refreshEnd);
+
+    assert.notEqual(refreshStart, -1);
+    assert.notEqual(refreshSource.indexOf('await offlineQueueService.getSummary()'), -1);
+    assert.notEqual(refreshSource.indexOf("state.warning = 'Offline storage is unavailable in this browser session.'"), -1);
+    assert.notEqual(refreshSource.indexOf('catch (error)'), -1);
+    assert.notEqual(indexSource.indexOf('isIndexedDbBackingStoreError'), -1);
+    assert.notEqual(indexSource.indexOf('event.preventDefault()'), -1);
+    assert.notEqual(indexSource.indexOf('OFFLINE STORAGE UNAVAILABLE:'), -1);
+});
+
+test('Firestore uses memory cache so an IndexedDB failure cannot poison cloud reads', function() {
+    var firebaseSource = fs.readFileSync('js/core/firebase.js', 'utf8');
+
+    assert.notEqual(firebaseSource.indexOf('localCache: memoryLocalCache()'), -1);
+    assert.equal(firebaseSource.indexOf('persistentLocalCache'), -1);
+    assert.equal(firebaseSource.indexOf('persistentMultipleTabManager'), -1);
+});
+
 test('Orders and Invoices loading states use centralized loading quotes', function() {
     var indexSource = fs.readFileSync('index.html', 'utf8');
     var quotesSource = fs.readFileSync('js/components/loadingQuotes.js', 'utf8');
