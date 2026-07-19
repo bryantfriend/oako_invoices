@@ -7,6 +7,7 @@ import { t } from "../core/i18n.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { runSingleFlight } from "../core/singleFlight.js";
 import { isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
+import { productBelongsToCategory } from "../core/productCategories.js";
 
 export const inventoryController = {
     /**
@@ -33,8 +34,15 @@ export const inventoryController = {
                 productService.getAllCategories()
             ]);
 
-            // 3. Filter products based on enabled categories
-            const inventoryProducts = allProducts.filter(p => enabledCatIds.includes(p.categoryId));
+            // 3. Resolve enabled categories while preserving legacy category field compatibility.
+            var enabledCategories = allCategories.filter(function(category) {
+                return enabledCatIds.indexOf(category.id) !== -1;
+            });
+            if (!enabledCategories.length && enabledCatIds.length) {
+                enabledCategories = enabledCatIds.map(function(categoryId) {
+                    return { id: categoryId, name: categoryId };
+                });
+            }
 
             // 4. Fetch daily record (baked totals, lock status)
             const dailyRecords = await inventoryService.getDailyInventory(date);
@@ -69,31 +77,31 @@ export const inventoryController = {
             });
 
             // 7. Group products by category
-            const categoriesWithProducts = allCategories
-                .filter(cat => enabledCatIds.includes(cat.id))
-                .map(cat => ({
-                    ...cat,
-                    products: inventoryProducts
-                        .filter(p => p.categoryId === cat.id)
-                        .map(p => {
-                            const record = dailyRecords[p.id] || { totalBaked: 0, locked: false };
-                            const automaticSold = record.invoiceQuantity !== undefined ? Number(record.invoiceQuantity) || 0 : null;
-                            const returned = Number(record.returnedQuantity || 0);
-                            const sold = automaticSold !== null ? automaticSold : (salesMap[p.id] || 0);
-                            const left = record.availableQuantity !== undefined
-                                ? Number(record.availableQuantity) || 0
-                                : record.totalBaked - sold + returned;
-                            return {
-                                ...p,
-                                totalBaked: record.totalBaked,
-                                locked: record.locked,
-                                sold: sold,
-                                returned: returned,
-                                left: left
-                            };
-                        })
-                }))
-                .filter(cat => cat.products.length > 0);
+            const categoriesWithProducts = enabledCategories
+                .map(function(category) {
+                    var categoryProducts = allProducts.filter(function(product) {
+                        return productBelongsToCategory(product, category);
+                    }).map(function(product) {
+                        const record = dailyRecords[product.id] || { totalBaked: 0, locked: false };
+                        const automaticSold = record.invoiceQuantity !== undefined ? Number(record.invoiceQuantity) || 0 : null;
+                        const returned = Number(record.returnedQuantity || 0);
+                        const sold = automaticSold !== null ? automaticSold : (salesMap[product.id] || 0);
+                        const left = record.availableQuantity !== undefined
+                            ? Number(record.availableQuantity) || 0
+                            : record.totalBaked - sold + returned;
+                        return Object.assign({}, product, {
+                            totalBaked: record.totalBaked,
+                            locked: record.locked,
+                            sold: sold,
+                            returned: returned,
+                            left: left
+                        });
+                    });
+                    return Object.assign({}, category, { products: categoryProducts });
+                })
+                .filter(function(category) {
+                    return category.products.length > 0;
+                });
 
             return categoriesWithProducts;
         } catch (error) {
