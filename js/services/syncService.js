@@ -349,7 +349,9 @@ export const syncService = {
                 synced: 0,
                 failed: 0,
                 failureReason: 'firestore_unreachable',
-                message: 'Cannot reach Firestore yet. Your ' + (snapshot.pendingCount || 0) + ' changes are still saved locally.'
+                message: snapshot.pendingCount > 0
+                    ? 'Cannot reach Firestore yet. Your ' + snapshot.pendingCount + ' changes are still saved locally.'
+                    : 'Cannot reach Firestore yet. No local changes are waiting to sync.'
             };
             if (manual) {
                 console.warn('[SYNC_NOW] stopped', offlineResult);

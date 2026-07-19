@@ -99,7 +99,7 @@ export const offlineStatusService = {
 
     canAttemptCloudRead() {
         const connection = connectionStateService.getSnapshot();
-        return connection.firestoreReachable === true || (!connection.checkedAt && connection.browserOnline !== false);
+        return connection.browserOnline !== false && connection.mode !== 'offline';
     },
 
     setSyncing(value) {
