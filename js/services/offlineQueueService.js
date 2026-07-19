@@ -449,19 +449,28 @@ export const offlineQueueService = {
     },
 
     async getLocalInvoiceSnapshot(entityId) {
-        var database = await openOfflineDexieDatabase();
-        var projection = await database.invoiceProjections.get(entityId);
-        if (!projection || !projection.invoice) {
+        try {
+            var database = await openOfflineDexieDatabase();
+            var projection = await database.invoiceProjections.get(entityId);
+            if (!projection || !projection.invoice) {
+                return null;
+            }
+            return cloneData(projection.invoice);
+        } catch (error) {
+            console.warn('Could not read local invoice snapshot; continuing without offline data.', error);
             return null;
         }
-        return cloneData(projection.invoice);
     },
 
     async getLocalInvoiceSnapshots() {
-        var database = await openOfflineDexieDatabase();
-        var projections = await database.invoiceProjections.toArray().catch(function() {
-            return [];
-        });
+        var projections = [];
+        try {
+            var database = await openOfflineDexieDatabase();
+            projections = await database.invoiceProjections.toArray();
+        } catch (error) {
+            console.warn('Could not read local invoice snapshots; continuing without offline data.', error);
+            return {};
+        }
         var snapshots = {};
 
         for (var index = 0; index < projections.length; index += 1) {

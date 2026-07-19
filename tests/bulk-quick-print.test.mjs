@@ -70,6 +70,7 @@ test('Bulk PDF service uses one PDF, sequential rendering, and odd 2-up blank ha
     assert.match(source, /addTwoUpSheet\(pdf, pendingHalf, null, hasPdfPage\)/);
     assert.match(source, /previewWindow\.location\.replace\(blobUrl\)/);
     assert.doesNotMatch(source, /router\.navigate|window\.print\(/);
+    assert.doesNotMatch(source, /indexedDB|openOfflineDexieDatabase|localStorage/);
 });
 
 test('Invoice QR payload and renderer are invoice-number-specific data URLs', () => {
