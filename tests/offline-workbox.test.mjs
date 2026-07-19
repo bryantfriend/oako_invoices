@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
 import fs from 'node:fs';
+import { normalizeProductCategory, productBelongsToCategory } from '../js/core/productCategories.js';
 
 import {
     OFFLINE_DATABASE_NAME,
@@ -288,12 +289,30 @@ test('Create order customer picker survives weak product or customer network loa
 
     assert.notEqual(createOrderSource.indexOf('renderCreateOrderLoadingShell'), -1);
     assert.notEqual(createOrderSource.indexOf('withDependencyTimeout'), -1);
+    assert.notEqual(createOrderSource.indexOf('loadCatalogDependency(products'), -1);
+    assert.notEqual(createOrderSource.indexOf('loadCatalogDependency(categories'), -1);
+    assert.notEqual(createOrderSource.indexOf('return productService.getAllProducts();'), -1);
+    assert.notEqual(createOrderSource.indexOf('return productService.getAllCategories();'), -1);
     assert.notEqual(createOrderSource.indexOf('Loading saved customers'), -1);
     assert.notEqual(createOrderSource.indexOf('No saved customers are available on this device yet'), -1);
     assert.notEqual(customerSource.indexOf("filterActiveCustomers(await readCachedRowsAsync('customers:all'))"), -1);
     assert.notEqual(customerSource.indexOf('Using cached customers after live customer load failed'), -1);
 });
 
+
+test('Legacy product category fields match current category documents', function() {
+    var category = { id: 'bread', name: 'Fresh Bread' };
+
+    assert.equal(productBelongsToCategory({ categoryId: 'bread' }, category), true);
+    assert.equal(productBelongsToCategory({ category_id: 'bread' }, category), true);
+    assert.equal(productBelongsToCategory({ category: 'Fresh Bread' }, category), true);
+    assert.equal(productBelongsToCategory({ category: { id: 'bread', name: 'Fresh Bread' } }, category), true);
+    assert.deepEqual(normalizeProductCategory({ category_name: 'Fresh Bread' }, [category]), {
+        category_name: 'Fresh Bread',
+        categoryId: 'bread',
+        categoryName: 'Fresh Bread'
+    });
+});
 
 test('health.json is never treated as a cacheable runtime asset', function() {
     var cacheRulesSource = fs.readFileSync('js/service-worker/cacheRules.js', 'utf8');

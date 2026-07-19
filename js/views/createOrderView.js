@@ -27,6 +27,7 @@ import { t } from "../core/i18n.js";
 import { readCachedRowsAsync } from "../core/firestoreRead.js";
 import { getCurrentNavigationId, isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
 import { runSingleFlight } from "../core/singleFlight.js";
+import { normalizeProductCategory } from "../core/productCategories.js";
 
 function escapeHtml(value = '') {
     return String(value)
@@ -114,6 +115,19 @@ function getCreateOrderSettingsSource(settings) {
     return settings ? 'memory' : 'default';
 }
 
+function loadCatalogDependency(cachedRows, cachedSource, loadCatalog, label) {
+    if (cachedRows.length) {
+        return Promise.resolve({ status: 'fulfilled', value: cachedRows, source: cachedSource });
+    }
+
+    var liveLoad = loadCatalog().then(function(value) {
+        return { status: 'fulfilled', value: value, source: 'firestore-server' };
+    }).catch(function(error) {
+        return { status: 'rejected', reason: error };
+    });
+    return withDependencyTimeout(liveLoad, 13000, label);
+}
+
 async function loadCreateOrderDependenciesOnce() {
     var products = [];
     var categories = [];
@@ -145,8 +159,8 @@ async function loadCreateOrderDependenciesOnce() {
     if (cachedRows[3] && cachedRows[3][0]) sources.settings = 'firestore-cache';
 
     var liveResults = await Promise.all([
-        Promise.resolve({ status: 'fulfilled', value: products, source: sources.products }),
-        Promise.resolve({ status: 'fulfilled', value: categories, source: sources.categories }),
+        loadCatalogDependency(products, sources.products, function() { return productService.getAllProducts(); }, 'products'),
+        loadCatalogDependency(categories, sources.categories, function() { return productService.getAllCategories(); }, 'categories'),
         customers.length ? Promise.resolve({ status: 'fulfilled', value: customers, source: sources.customers }) : withDependencyTimeout(customerController.loadAllCustomers().then(function(value) { return { status: 'fulfilled', value: value, source: 'firestore-server' }; }).catch(function(error) { return { status: 'rejected', reason: error }; }), 12000, 'customers'),
         Object.keys(invoiceSettings).length ? Promise.resolve({ status: 'fulfilled', value: invoiceSettings, source: sources.settings }) : Promise.resolve({ status: 'fulfilled', value: {}, source: 'default' })
     ]);
@@ -254,10 +268,11 @@ export const renderCreateOrder = async (params, routeContext) => {
     let productCatalogLoadPromise = null;
     const applyProductCatalog = (catalog) => {
         products = (Array.isArray(catalog) ? catalog : []).map(function(product) {
-            var categoryName = product.categoryName || product.category_name || categoryNameById[product.categoryId] || product.category || '';
-            return Object.assign({}, product, {
+            var normalizedProduct = normalizeProductCategory(product, categories);
+            var categoryName = normalizedProduct.categoryName || categoryNameById[normalizedProduct.categoryId] || '';
+            return Object.assign({}, normalizedProduct, {
                 categoryName: categoryName,
-                searchText: normalizeProductSearchText(product, categoryName)
+                searchText: normalizeProductSearchText(normalizedProduct, categoryName)
             });
         });
         productById = products.reduce(function(map, product) {
