@@ -5,7 +5,7 @@ import { connectionStateService } from "../services/connectionStateService.js";
 
 const DEFAULT_TIMEOUT_MS = 12000;
 const DEFAULT_ATTEMPTS = 1;
-const DEGRADED_TIMEOUT_MS = 2200;
+
 const CACHE_PREFIX = 'kyrgyz-organics-read-cache:';
 const MAX_LOCAL_CACHE_ENTRY_BYTES = 180000;
 const MAX_LOCAL_CACHE_TOTAL_BYTES = 900000;
@@ -319,7 +319,7 @@ function shouldSkipServerRead(options = {}) {
         return false;
     }
     const connection = getConnectionSnapshot();
-    return Boolean(connection.checkedAt && connection.firestoreReachable !== true);
+    return connection.browserOnline === false || connection.mode === 'offline';
 }
 
 async function readRowsFromAnyCache(queryRef, collectionName, cacheKey, reason) {
@@ -351,9 +351,7 @@ export async function getDocsWithCache(queryRef, options = {}) {
     const cacheFirst = shouldReadCacheFirst(options);
     const skipServerRead = shouldSkipServerRead(options);
     const requestedTimeoutMs = Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS;
-    const timeoutMs = cacheFirst
-        ? Math.min(requestedTimeoutMs, DEGRADED_TIMEOUT_MS)
-        : Math.min(requestedTimeoutMs, DEFAULT_TIMEOUT_MS);
+    const timeoutMs = Math.min(requestedTimeoutMs, DEFAULT_TIMEOUT_MS);
     const attempts = cacheFirst ? 1 : Math.max(1, Math.min(Number(options.attempts) || DEFAULT_ATTEMPTS, DEFAULT_ATTEMPTS));
     let lastError = null;
 
