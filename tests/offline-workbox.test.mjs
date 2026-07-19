@@ -380,6 +380,7 @@ test('Emergency error banners and notifications can be dismissed', function() {
 test('IndexedDB backing-store failures degrade safely without an unhandled rejection banner', function() {
     var indexSource = fs.readFileSync('index.html', 'utf8');
     var offlineStatusSource = fs.readFileSync('js/services/offlineStatusService.js', 'utf8');
+    var offlineQueueSource = fs.readFileSync('js/services/offlineQueueService.js', 'utf8');
     var refreshStart = offlineStatusSource.indexOf('async function refreshQueueStatus()');
     var refreshEnd = offlineStatusSource.indexOf('function applyConnectionSnapshot');
     var refreshSource = offlineStatusSource.slice(refreshStart, refreshEnd);
@@ -389,8 +390,13 @@ test('IndexedDB backing-store failures degrade safely without an unhandled rejec
     assert.notEqual(refreshSource.indexOf("state.warning = 'Offline storage is unavailable in this browser session.'"), -1);
     assert.notEqual(refreshSource.indexOf('catch (error)'), -1);
     assert.notEqual(indexSource.indexOf('isIndexedDbBackingStoreError'), -1);
+    assert.notEqual(indexSource.indexOf("errorName === 'quotaexceedederror'"), -1);
+    assert.notEqual(indexSource.indexOf("normalizedMessage.indexOf('full disk')"), -1);
     assert.notEqual(indexSource.indexOf('event.preventDefault()'), -1);
     assert.notEqual(indexSource.indexOf('OFFLINE STORAGE UNAVAILABLE:'), -1);
+    assert.notEqual(indexSource.indexOf('including printing'), -1);
+    assert.notEqual(offlineQueueSource.indexOf('Could not read local invoice snapshot; continuing without offline data.'), -1);
+    assert.notEqual(offlineQueueSource.indexOf('Could not read local invoice snapshots; continuing without offline data.'), -1);
 });
 
 test('Firestore uses memory cache so an IndexedDB failure cannot poison cloud reads', function() {

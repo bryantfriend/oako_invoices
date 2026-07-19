@@ -8,8 +8,8 @@ const vendorDir = path.join(root, 'vendor');
 const tempDir = path.join(root, '.workbox');
 const bundledWorker = path.join(tempDir, 'sw-bundled.js');
 const deploymentVersion = {
-    appVersion: '2.34',
-    serviceWorkerVersion: '2.34',
+    appVersion: '2.35',
+    serviceWorkerVersion: '2.35',
     dexieSchemaVersion: 3
 };
 
