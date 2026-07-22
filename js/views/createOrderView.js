@@ -1154,17 +1154,35 @@ export const renderCreateOrder = async (params, routeContext) => {
 
         modal.open();
 
-        const tableContainer = document.getElementById('modal-customer-table-container');
-        if (!customers.length && tableContainer) {
-            tableContainer.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">Loading saved customers...</div>';
-            customers = await customerController.loadAllCustomers();
+        const customerPickerElement = modal.modalEl;
+        if (!customerPickerElement) {
+            notificationService.error('Could not open the customer picker.');
+            return;
         }
 
-        const renderTable = () => {
-            const filtered = customers.filter(c => {
-                const matchesCat = selectedCategory === 'all' || c.category === selectedCategory;
-                const matchesQuery = (c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    (c.phone || '').includes(searchQuery);
+        const tableContainer = customerPickerElement.querySelector('#modal-customer-table-container');
+        const customerSearchInput = customerPickerElement.querySelector('#modal-cust-search');
+        const customerCategorySelect = customerPickerElement.querySelector('#modal-cust-category');
+
+        if (!tableContainer || !customerSearchInput || !customerCategorySelect) {
+            modal.close();
+            notificationService.error('Could not open the customer picker.');
+            return;
+        }
+
+        function isCustomerPickerOpen() {
+            return modal.modalEl === customerPickerElement && customerPickerElement.isConnected;
+        }
+
+        function renderTable() {
+            if (!isCustomerPickerOpen()) {
+                return;
+            }
+
+            const filtered = customers.filter(function(customer) {
+                const matchesCat = selectedCategory === 'all' || customer.category === selectedCategory;
+                const matchesQuery = (customer.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    (customer.phone || '').includes(searchQuery);
                 return matchesCat && matchesQuery;
             });
 
@@ -1187,33 +1205,37 @@ export const renderCreateOrder = async (params, routeContext) => {
                 }
             });
 
-            const container = document.getElementById('modal-customer-table-container');
             if (!customers.length) {
-                container.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">No saved customers are available on this device yet. Connect to the internet once to refresh the customer list.</div>';
+                tableContainer.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">No saved customers are available on this device yet. Connect to the internet once to refresh the customer list.</div>';
                 return;
             }
-            container.innerHTML = table.render();
+            tableContainer.innerHTML = table.render();
 
             // Re-bind row clicks since DataTable might just return string
-            document.querySelectorAll('#modal-customer-table-container .data-row').forEach((rowEl, idx) => {
-                rowEl.addEventListener('click', () => {
-                    const row = filtered[idx];
+            tableContainer.querySelectorAll('.data-row').forEach(function(rowElement, index) {
+                rowElement.addEventListener('click', function() {
+                    const row = filtered[index];
                     customerInput.value = row.companyName || row.name;
                     customerInput.dispatchEvent(new Event('change'));
                     modal.close();
                 });
             });
-        };
+        }
 
-        document.getElementById('modal-cust-search').addEventListener('input', (e) => {
-            searchQuery = e.target.value;
+        customerSearchInput.addEventListener('input', function(event) {
+            searchQuery = event.target.value;
             renderTable();
         });
 
-        document.getElementById('modal-cust-category').addEventListener('change', (e) => {
-            selectedCategory = e.target.value;
+        customerCategorySelect.addEventListener('change', function(event) {
+            selectedCategory = event.target.value;
             renderTable();
         });
+
+        if (!customers.length) {
+            tableContainer.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">Loading saved customers...</div>';
+            customers = await customerController.loadAllCustomers();
+        }
 
         renderTable();
     });
