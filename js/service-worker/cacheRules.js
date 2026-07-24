@@ -44,6 +44,11 @@ export function isHealthCheckUrl(value) {
     return url.pathname === '/health.json' || url.pathname.endsWith('/health.json');
 }
 
+export function isDeploymentVersionUrl(value) {
+    var url = getUrl(value);
+    return url.pathname === '/deployment-version.json' || url.pathname.endsWith('/deployment-version.json');
+}
+
 export function isStaticAssetRequest(request, url) {
     var safeRequest = request || {};
     var safeUrl = url ? getUrl(url) : getUrl(safeRequest.url || '/');
@@ -66,6 +71,10 @@ export function shouldBypassRuntimeCaching(request, url) {
     }
 
     if (isHealthCheckUrl(safeUrl)) {
+        return true;
+    }
+
+    if (isDeploymentVersionUrl(safeUrl)) {
         return true;
     }
 

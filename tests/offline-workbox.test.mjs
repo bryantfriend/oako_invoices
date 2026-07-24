@@ -22,6 +22,7 @@ import {
 import {
     isBackendOrAuthUrl,
     isHealthCheckUrl,
+    isDeploymentVersionUrl,
     shouldBypassRuntimeCaching,
     shouldHandleNavigation
 } from '../js/service-worker/cacheRules.js';
@@ -161,14 +162,17 @@ test('Retry backoff grows and remains bounded', function() {
 
 test('Workbox route rules exclude dynamic backend and mutation requests', function() {
     assert.equal(isBackendOrAuthUrl('https://firestore.googleapis.com/google.firestore.v1.Firestore/Write/channel'), true);
+    assert.equal(isDeploymentVersionUrl('https://oako.local/deployment-version.json?updateCheck=123'), true);
     assert.equal(shouldBypassRuntimeCaching({ method: 'POST', url: 'https://example.com/invoices' }), true);
     assert.equal(shouldBypassRuntimeCaching({ method: 'GET', url: 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword' }), true);
+    assert.equal(shouldBypassRuntimeCaching({ method: 'GET', url: 'https://oako.local/deployment-version.json?updateCheck=123' }), true);
     assert.equal(shouldHandleNavigation({ method: 'GET', mode: 'navigate', url: 'https://oako.local/index.html' }, new URL('https://oako.local/index.html')), true);
 });
 
 test('Workbox build output is generated and does not keep the injection marker', function() {
     var worker = fs.readFileSync('sw.js', 'utf8');
     assert.equal(worker.indexOf('__WB_MANIFEST'), -1);
+    assert.notEqual(worker.indexOf('SKIP_WAITING'), -1);
     assert.notEqual(worker.indexOf('OAKO_SKIP_WAITING'), -1);
     assert.notEqual(worker.indexOf('offline.html'), -1);
 });
@@ -177,6 +181,9 @@ test('Application update service uses user-controlled activation and cache-bypas
     var source = fs.readFileSync('js/services/appUpdateService.js', 'utf8');
     assert.notEqual(source.indexOf('messageSkipWaiting'), -1);
     assert.notEqual(source.indexOf("cache: 'no-store'"), -1);
+    assert.notEqual(source.indexOf("updateViaCache: 'none'"), -1);
+    assert.notEqual(source.indexOf('startAutomaticVersionChecks'), -1);
+    assert.notEqual(source.indexOf('forceFreshReload'), -1);
     assert.equal(source.indexOf('skipWaiting()'), -1);
 });
 

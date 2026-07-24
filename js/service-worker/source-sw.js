@@ -10,7 +10,7 @@ import {
     shouldHandleNavigation
 } from './cacheRules.js';
 
-const OAKO_SERVICE_WORKER_VERSION = '2.36';
+const OAKO_SERVICE_WORKER_VERSION = '2.37';
 const LEGACY_STATIC_CACHES = [
     'oako-invoices-v2.01',
     'oako-invoices-v2.02'
@@ -30,7 +30,7 @@ cleanupOutdatedCaches();
 
 self.addEventListener('message', function(event) {
     var data = event && event.data ? event.data : {};
-    if (data.type === 'OAKO_SKIP_WAITING') {
+    if (data.type === 'SKIP_WAITING' || data.type === 'OAKO_SKIP_WAITING') {
         self.skipWaiting();
     }
 });
