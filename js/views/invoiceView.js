@@ -8,6 +8,7 @@ import { createStatusBadge } from "../components/statusBadge.js";
 import { DataTable } from "../components/dataTable.js";
 import { renderInvoiceSyncPill } from "../components/syncStatusBadge.js";
 import { t, i18n } from "../core/i18n.js";
+import { notificationService } from "../core/notificationService.js";
 
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
@@ -2202,15 +2203,27 @@ export const renderInvoiceDetail = async ({ id }) => {
                     afterPrint();
                 };
                 window.addEventListener('afterprint', finish, { once: true });
-try {
+                try {
                     const printableImages = Array.from(document.querySelectorAll('#invoice-doc-container img'));
                     await Promise.all(printableImages.map(function(image) {
                         if (image.complete && image.naturalWidth > 0) {
                             return typeof image.decode === 'function' ? image.decode().catch(function() { return undefined; }) : Promise.resolve();
                         }
+                        if (image.complete) {
+                            return image.classList.contains('invoice-qr-image')
+                                ? Promise.reject(new Error('The invoice QR code is missing or blank.'))
+                                : Promise.resolve();
+                        }
                         return new Promise(function(resolve, reject) {
                             image.addEventListener('load', resolve, { once: true });
-                            image.addEventListener('error', function() { reject(new Error('An invoice image failed to load.')); }, { once: true });
+                            image.addEventListener('error', function() {
+                                if (image.classList.contains('invoice-qr-image')) {
+                                    reject(new Error('The invoice QR code failed to load.'));
+                                    return;
+                                }
+                                console.warn('An optional invoice image failed to load; printing without it.', image.src);
+                                resolve();
+                            }, { once: true });
                         });
                     }));
                     if (document.fonts && document.fonts.ready) {

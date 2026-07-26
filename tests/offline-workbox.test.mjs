@@ -355,6 +355,17 @@ test('Unknown routes and invoice offline errors do not fall back to Orders', fun
     assert.notEqual(invoiceViewSource.indexOf('fallbackUsed: false'), -1);
 });
 
+test('Invoice printing reports preparation failures without an undefined notification service', function() {
+    var invoiceViewSource = fs.readFileSync('js/views/invoiceView.js', 'utf8');
+
+    assert.notEqual(
+        invoiceViewSource.indexOf('import { notificationService } from "../core/notificationService.js";'),
+        -1
+    );
+    assert.notEqual(invoiceViewSource.indexOf("image.classList.contains('invoice-qr-image')"), -1);
+    assert.notEqual(invoiceViewSource.indexOf('An optional invoice image failed to load; printing without it.'), -1);
+});
+
 test('Offline order submit gives feedback, cache update, and pending sync badge', function() {
     var controllerSource = fs.readFileSync('js/controllers/createOrderController.js', 'utf8');
     var dashboardSource = fs.readFileSync('js/views/dashboardView.js', 'utf8');
