@@ -11,6 +11,9 @@ import addGenerateInvoiceApprovalLinkContextModule from "./Invoices/addGenerateI
 import addSubmitInvoiceApprovalResponseContextModule from "./Invoices/addSubmitInvoiceApprovalResponseContext.js";
 import addInvoiceMutationContextModule from "./Invoices/addInvoiceMutationContext.js";
 import addQuickPrintSelectedInvoicesContextModule from "./Invoices/addQuickPrintSelectedInvoicesContext.js";
+import addMarkInvoicePrintedContextModule from "./Invoices/addMarkInvoicePrintedContext.js";
+import addArchiveSelectedOrdersContextModule from "./Orders/addArchiveSelectedOrdersContext.js";
+import addPreparePrintableInvoiceContextModule from "./Invoices/addPreparePrintableInvoiceContext.js";
 
 /**
  * Context Providers
@@ -42,6 +45,12 @@ var contextProviders = {
 
   addQuickPrintSelectedInvoicesContext:
     addQuickPrintSelectedInvoicesContextModule.addQuickPrintSelectedInvoicesContext,
+  addMarkInvoicePrintedContext:
+    addMarkInvoicePrintedContextModule.addMarkInvoicePrintedContext,
+  addArchiveSelectedOrdersContext:
+    addArchiveSelectedOrdersContextModule.addArchiveSelectedOrdersContext,
+  addPreparePrintableInvoiceContext:
+    addPreparePrintableInvoiceContextModule.addPreparePrintableInvoiceContext,
 
   createAddStaticContextValueProvider:
     addStaticContextValueModule.createAddStaticContextValueProvider

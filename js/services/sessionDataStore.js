@@ -861,7 +861,7 @@ function updateRecord(collectionName, id, patch, reason) {
     }
 
     state.records = records;
-    state.loaded = state.loaded || found;
+    state.loaded = state.loaded || found || Boolean(patch);
     state.loadedAt = state.loadedAt || Date.now();
     state.revision = state.revision + 1;
     state.lastMutationAt = Date.now();

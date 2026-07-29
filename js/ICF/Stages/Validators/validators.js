@@ -16,6 +16,10 @@ import validateUpdateInvoiceItemsPayloadModule from "./Invoices/validateUpdateIn
 import validateRecordInvoiceReturnPayloadModule from "./Invoices/validateRecordInvoiceReturnPayload.js";
 import validateUpdateOrderStatusPayloadModule from "./Orders/validateUpdateOrderStatusPayload.js";
 import validateQuickPrintSelectedInvoicesPayloadModule from "./Invoices/validateQuickPrintSelectedInvoicesPayload.js";
+import validateMarkInvoicePrintedPayloadModule from "./Invoices/validateMarkInvoicePrintedPayload.js";
+import validateDashboardAnalyticsRangePayloadModule from "./Dashboard/validateDashboardAnalyticsRangePayload.js";
+import validateArchiveSelectedOrdersPayloadModule from "./Orders/validateArchiveSelectedOrdersPayload.js";
+import validatePreparePrintableInvoicePayloadModule from "./Invoices/validatePreparePrintableInvoicePayload.js";
 
 /**
  * Validators
@@ -58,6 +62,14 @@ var validators = {
 
   validateQuickPrintSelectedInvoicesPayload:
     validateQuickPrintSelectedInvoicesPayloadModule.validateQuickPrintSelectedInvoicesPayload,
+  validateMarkInvoicePrintedPayload:
+    validateMarkInvoicePrintedPayloadModule.validateMarkInvoicePrintedPayload,
+  validateDashboardAnalyticsRangePayload:
+    validateDashboardAnalyticsRangePayloadModule.validateDashboardAnalyticsRangePayload,
+  validateArchiveSelectedOrdersPayload:
+    validateArchiveSelectedOrdersPayloadModule.validateArchiveSelectedOrdersPayload,
+  validatePreparePrintableInvoicePayload:
+    validatePreparePrintableInvoicePayloadModule.validatePreparePrintableInvoicePayload,
 
   createRequireActorRoleValidator: requireActorRoleModule.createRequireActorRoleValidator
 };

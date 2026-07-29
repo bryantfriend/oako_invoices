@@ -125,6 +125,18 @@ export const customerService = {
         }) || null;
     },
 
+    async getCustomerByNameCached(name) {
+        const normalizedName = String(name || '').trim().toLowerCase();
+        if (!normalizedName) return null;
+
+        const customers = filterActiveCustomers(await readCachedRowsAsync('customers:all'));
+        return customers.find(function(customer) {
+            const companyName = String(customer.companyName || '').trim().toLowerCase();
+            const customerName = String(customer.name || '').trim().toLowerCase();
+            return companyName === normalizedName || customerName === normalizedName;
+        }) || null;
+    },
+
     async createCustomer(data) {
         try {
             const payload = {

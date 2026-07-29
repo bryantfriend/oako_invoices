@@ -14,6 +14,10 @@ import normalizeUpdateInvoiceItemsPayloadModule from "./Invoices/normalizeUpdate
 import normalizeRecordInvoiceReturnPayloadModule from "./Invoices/normalizeRecordInvoiceReturnPayload.js";
 import normalizeUpdateOrderStatusPayloadModule from "./Orders/normalizeUpdateOrderStatusPayload.js";
 import normalizeQuickPrintSelectedInvoicesPayloadModule from "./Invoices/normalizeQuickPrintSelectedInvoicesPayload.js";
+import normalizeMarkInvoicePrintedPayloadModule from "./Invoices/normalizeMarkInvoicePrintedPayload.js";
+import normalizeDashboardAnalyticsRangePayloadModule from "./Dashboard/normalizeDashboardAnalyticsRangePayload.js";
+import normalizeArchiveSelectedOrdersPayloadModule from "./Orders/normalizeArchiveSelectedOrdersPayload.js";
+import normalizePreparePrintableInvoicePayloadModule from "./Invoices/normalizePreparePrintableInvoicePayload.js";
 
 /**
  * Normalizers
@@ -43,6 +47,14 @@ var normalizers = {
 
   normalizeQuickPrintSelectedInvoicesPayload:
     normalizeQuickPrintSelectedInvoicesPayloadModule.normalizeQuickPrintSelectedInvoicesPayload,
+  normalizeMarkInvoicePrintedPayload:
+    normalizeMarkInvoicePrintedPayloadModule.normalizeMarkInvoicePrintedPayload,
+  normalizeDashboardAnalyticsRangePayload:
+    normalizeDashboardAnalyticsRangePayloadModule.normalizeDashboardAnalyticsRangePayload,
+  normalizeArchiveSelectedOrdersPayload:
+    normalizeArchiveSelectedOrdersPayloadModule.normalizeArchiveSelectedOrdersPayload,
+  normalizePreparePrintableInvoicePayload:
+    normalizePreparePrintableInvoicePayloadModule.normalizePreparePrintableInvoicePayload,
 
   createTrimPayloadStringFieldNormalizer:
     trimPayloadStringFieldModule.createTrimPayloadStringFieldNormalizer,

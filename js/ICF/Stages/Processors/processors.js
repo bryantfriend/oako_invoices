@@ -13,6 +13,10 @@ import processUpdateInvoiceItemsModule from "./Invoices/processUpdateInvoiceItem
 import processRecordInvoiceReturnModule from "./Invoices/processRecordInvoiceReturn.js";
 import processUpdateOrderStatusModule from "./Orders/processUpdateOrderStatus.js";
 import processQuickPrintSelectedInvoicesModule from "./Invoices/processQuickPrintSelectedInvoices.js";
+import processMarkInvoicePrintedModule from "./Invoices/processMarkInvoicePrinted.js";
+import processDashboardAnalyticsRangeModule from "./Dashboard/processDashboardAnalyticsRange.js";
+import processArchiveSelectedOrdersModule from "./Orders/processArchiveSelectedOrders.js";
+import processPreparePrintableInvoiceModule from "./Invoices/processPreparePrintableInvoice.js";
 
 /**
  * Processors
@@ -44,6 +48,14 @@ var processors = {
 
   processQuickPrintSelectedInvoices:
     processQuickPrintSelectedInvoicesModule.processQuickPrintSelectedInvoices,
+  processMarkInvoicePrinted:
+    processMarkInvoicePrintedModule.processMarkInvoicePrinted,
+  processDashboardAnalyticsRange:
+    processDashboardAnalyticsRangeModule.processDashboardAnalyticsRange,
+  processArchiveSelectedOrders:
+    processArchiveSelectedOrdersModule.processArchiveSelectedOrders,
+  processPreparePrintableInvoice:
+    processPreparePrintableInvoiceModule.processPreparePrintableInvoice,
 
   createSetResultDataProcessor:
     setResultDataModule.createSetResultDataProcessor,

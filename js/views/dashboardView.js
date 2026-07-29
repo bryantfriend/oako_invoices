@@ -28,6 +28,7 @@ import { auth } from "../core/firebase.js";
 import { store } from "../core/store.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import quickPrintSelectedInvoicesIntentModule from "../ICF/Intents/QuickPrintSelectedInvoicesIntent.js";
+import selectDashboardAnalyticsRangeIntentModule from "../ICF/Intents/SelectDashboardAnalyticsRangeIntent.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { invoiceService } from "../services/invoiceService.js";
 
@@ -105,8 +106,10 @@ export const renderDashboard = async (params, routeContext) => {
     let printableInvoiceByOrderId = {};
     let confirmedMissingInvoiceOrderIds = new Set();
     let pendingInvoiceOrderIds = new Set();
+    let pendingPrintOrderIds = new Set();
     let bulkPrintActive = false;
-    let currentPeriod = '30d';
+    let bulkArchiveActive = false;
+    let currentPeriod = 'all';
     let revenueGranularity = 'day';
     let productChartMode = 'products';
     let selectedProductCategory = null;
@@ -353,6 +356,27 @@ export const renderDashboard = async (params, routeContext) => {
         filteredOrders.forEach(applyUpdate);
     };
 
+    function markOrderArchivedLocally(orderId, archiveResult) {
+        var currentOrder = allOrders.find(function(order) {
+            return order && order.id === orderId;
+        });
+        var previousStatus = currentOrder ? (currentOrder.previousStatus || (currentOrder.status === 'archived' ? '' : currentOrder.status || '')) : '';
+        var result = archiveResult || {};
+        var patch = {
+            archived: true,
+            status: 'archived',
+            previousStatus: previousStatus,
+            archivedAt: new Date(),
+            updatedAt: new Date()
+        };
+        if (result.queued) {
+            patch.syncState = 'pending_sync';
+            patch.syncStatus = 'pending';
+        }
+        updateLocalOrder(orderId, patch);
+        dashboardController.updateCachedOrder(orderId, patch, 'archive-selected-orders');
+    }
+
     const getDateKey = (value) => {
         if (!value) return '';
         const date = value.toDate ? value.toDate() : new Date(value);
@@ -518,9 +542,17 @@ export const renderDashboard = async (params, routeContext) => {
                             <span>${showArchivedAnalytics ? 'Showing active + archived data' : 'Showing active data only'}</span>
                         </label>
                         <div class="segmented-control dashboard-period-control">
-                            ${['today', '7d', '30d'].map(p => `
-                                <button class="time-btn ${currentPeriod === p ? 'active' : ''}" data-period="${p}">${p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : 'Today'}</button>
-                            `).join('')}
+                            ${[
+                                { value: 'today', label: 'Day' },
+                                { value: '7d', label: 'Week' },
+                                { value: '30d', label: 'Month' },
+                                { value: '90d', label: '3 Months' },
+                                { value: '180d', label: '6 Months' },
+                                { value: '365d', label: 'Year' },
+                                { value: 'all', label: 'All' }
+                            ].map(function(option) {
+                                return '<button class="time-btn ' + (currentPeriod === option.value ? 'active' : '') + '" data-period="' + option.value + '">' + option.label + '</button>';
+                            }).join('')}
                             <div class="date-popover-wrap">
                                 <button id="btn-custom-date" class="time-btn ${typeof currentPeriod === 'object' ? 'active' : ''}">${icon('calendar', 'inline-icon')} Custom</button>
                                 <div id="custom-date-popover" class="date-popover" style="display: none;">
@@ -1469,7 +1501,7 @@ export const renderDashboard = async (params, routeContext) => {
             countEl.textContent = `${count} selected`;
         }
         if (archiveBtn) {
-            archiveBtn.disabled = count === 0 || bulkPrintActive;
+            archiveBtn.disabled = count === 0 || bulkPrintActive || bulkArchiveActive;
             archiveBtn.textContent = count > 0 ? `Archive ${count} Selected` : 'Archive Selected';
         }
         if (actionBar) {
@@ -1479,10 +1511,10 @@ export const renderDashboard = async (params, routeContext) => {
             actionLabel.textContent = `${count} invoice${count === 1 ? '' : 's'} selected`;
         }
         if (fullButton) {
-            fullButton.disabled = count === 0 || bulkPrintActive;
+            fullButton.disabled = count === 0 || bulkPrintActive || bulkArchiveActive;
         }
         if (twoUpButton) {
-            twoUpButton.disabled = count === 0 || bulkPrintActive;
+            twoUpButton.disabled = count === 0 || bulkPrintActive || bulkArchiveActive;
         }
     };
 
@@ -1494,6 +1526,29 @@ export const renderDashboard = async (params, routeContext) => {
             id: user ? (user.email || user.uid || 'admin') : 'anonymous',
             role: profile.role || (user ? 'admin' : 'anonymous')
         };
+    }
+
+    async function selectDashboardAnalyticsRange(period, granularity) {
+        var intent = selectDashboardAnalyticsRangeIntentModule.createSelectDashboardAnalyticsRangeIntent(
+            getQuickPrintActor(),
+            {
+                period: period,
+                granularity: granularity
+            },
+            {
+                source: 'orders-dashboard'
+            }
+        );
+        var result = await icfPipeline.run(intent);
+        if (!result || !result.ok) {
+            var errors = result && result.errors ? result.errors : [];
+            notificationService.error(errors.length > 0 ? errors[0] : 'Could not update the analytics time frame.');
+            return false;
+        }
+        currentPeriod = result.data.period;
+        revenueGranularity = result.data.granularity;
+        renderUI();
+        return true;
     }
 
     function openPreparingPreview() {
@@ -1600,19 +1655,17 @@ export const renderDashboard = async (params, routeContext) => {
                 quickPrintSelectedInvoices('two-up-portrait');
             });
         }
-        document.querySelectorAll('.time-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (btn.dataset.period) {
-                    currentPeriod = btn.dataset.period;
-                    renderUI();
+        document.querySelectorAll('.time-btn').forEach(function(button) {
+            button.addEventListener('click', function() {
+                if (button.dataset.period) {
+                    selectDashboardAnalyticsRange(button.dataset.period, revenueGranularity);
                 }
             });
         });
 
-        document.querySelectorAll('.revenue-view-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                revenueGranularity = btn.dataset.revenueView || 'day';
-                renderUI();
+        document.querySelectorAll('.revenue-view-btn').forEach(function(button) {
+            button.addEventListener('click', function() {
+                selectDashboardAnalyticsRange(currentPeriod, button.dataset.revenueView || 'day');
             });
         });
 
@@ -1660,12 +1713,11 @@ export const renderDashboard = async (params, routeContext) => {
 
             popover.addEventListener('click', (e) => e.stopPropagation());
 
-            document.getElementById('apply-custom-date').addEventListener('click', () => {
-                const start = document.getElementById('custom-start').value;
-                const end = document.getElementById('custom-end').value;
+            document.getElementById('apply-custom-date').addEventListener('click', function() {
+                var start = document.getElementById('custom-start').value;
+                var end = document.getElementById('custom-end').value;
                 if (start && end) {
-                    currentPeriod = { start, end };
-                    renderUI(); // Re-render with new period
+                    selectDashboardAnalyticsRange({ start: start, end: end }, revenueGranularity);
                 }
             });
 
@@ -1749,31 +1801,112 @@ export const renderDashboard = async (params, routeContext) => {
 
         document.getElementById('open-inventory-btn')?.addEventListener('click', () => router.navigate(ROUTES.INVENTORY));
         document.getElementById('end-of-day-report-btn')?.addEventListener('click', renderEndOfDaySummaryModal);
-        document.getElementById('archive-selected-orders')?.addEventListener('click', async () => {
-            const ids = [...selectedOrderIds];
-            if (ids.length === 0) return;
-
-            if (!confirm(`Archive ${ids.length} selected order${ids.length === 1 ? '' : 's'}? They will be hidden from the active Orders list.`)) {
+        document.getElementById('archive-selected-orders')?.addEventListener('click', async function() {
+            var ids = Array.from(selectedOrderIds);
+            if (ids.length === 0 || bulkArchiveActive) {
+                return;
+            }
+            if (!confirm('Archive ' + ids.length + ' selected order' + (ids.length === 1 ? '' : 's') + '? They will be hidden from the active Orders list.')) {
                 return;
             }
 
-            const { orderService } = await import("../services/orderService.js");
-            const { gamificationService } = await import("../services/gamificationService.js");
-            await orderService.archiveOrders(ids);
-            ids.forEach(function(orderId) {
-                const currentOrder = allOrders.find(order => order.id === orderId);
-                const previousStatus = currentOrder ? (currentOrder.previousStatus || currentOrder.status || '') : '';
-                dashboardController.updateCachedOrder(orderId, { archived: true, previousStatus, archivedAt: new Date(), updatedAt: new Date() }, 'archive-orders');
-            });
-            await gamificationService.awardAction('ordersArchived', ids.length);
-            allOrders.forEach(order => {
-                if (selectedOrderIds.has(order.id)) {
-                    order.previousStatus = order.previousStatus || order.status || '';
-                    order.archived = true;
+            var archiveProgressModal = null;
+            bulkArchiveActive = true;
+            updateBulkArchiveControls();
+            try {
+                var orderServiceModule = await import("../services/orderService.js");
+                var gamificationModule = await import("../services/gamificationService.js");
+                archiveProgressModal = new Modal({
+                    title: 'Archiving selected orders',
+                    footer: false,
+                    closeOnBackdrop: false,
+                    closeOnEsc: false,
+                    content: '<div id="bulk-archive-progress" style="display:grid;gap:12px;">' +
+                        '<strong id="bulk-archive-progress-label">Preparing 0 of ' + ids.length + ' orders...</strong>' +
+                        '<div style="height:14px;background:var(--color-gray-100);border-radius:999px;overflow:hidden;border:1px solid var(--color-gray-200);">' +
+                            '<div id="bulk-archive-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--color-primary-500),var(--color-primary-700));transition:width 600ms ease;border-radius:999px;"></div>' +
+                        '</div>' +
+                        '<span id="bulk-archive-progress-percent" style="font-size:12px;font-weight:900;color:var(--color-primary-700);">0%</span>' +
+                        '<span id="bulk-archive-progress-message" style="font-size:12px;color:var(--color-gray-600);">Starting archive...</span>' +
+                    '</div>'
+                });
+                archiveProgressModal.open();
+
+                var result = await orderServiceModule.orderService.archiveOrders(ids, {
+                    source: 'orders-dashboard',
+                    onProgress: function(progress) {
+                        var bar = document.getElementById('bulk-archive-progress-bar');
+                        var label = document.getElementById('bulk-archive-progress-label');
+                        var percent = document.getElementById('bulk-archive-progress-percent');
+                        var message = document.getElementById('bulk-archive-progress-message');
+                        if (progress.ok && progress.orderId) {
+                            markOrderArchivedLocally(progress.orderId, progress.result);
+                            selectedOrderIds.delete(progress.orderId);
+                        }
+                        if (bar) {
+                            bar.style.width = String(progress.percent || 0) + '%';
+                        }
+                        if (label) {
+                            label.textContent = 'Archived ' + progress.archived + ' of ' + progress.total + ' orders';
+                        }
+                        if (percent) {
+                            percent.textContent = String(progress.percent || 0) + '%';
+                        }
+                        if (message) {
+                            message.textContent = progress.message || 'Archiving...';
+                        }
+                    }
+                });
+
+                if (result.complete) {
+                    var finalBar = document.getElementById('bulk-archive-progress-bar');
+                    var finalPercent = document.getElementById('bulk-archive-progress-percent');
+                    if (finalBar) finalBar.style.width = '100%';
+                    if (finalPercent) finalPercent.textContent = '100%';
+                    await new Promise(function(resolve) {
+                        setTimeout(resolve, 450);
+                    });
                 }
-            });
-            activeOrders = activeOrders.filter(order => !selectedOrderIds.has(order.id));
-            renderUI();
+                if (archiveProgressModal) {
+                    archiveProgressModal.close();
+                    archiveProgressModal = null;
+                }
+
+                activeOrders = getActiveOrders(allOrders);
+                filteredOrders = getOrdersForArchivedFilter();
+                if (result.archived > 0) {
+                    gamificationModule.gamificationService.awardAction('ordersArchived', result.archived).catch(function(error) {
+                        console.warn('Archived orders, but could not record the reward.', error);
+                    });
+                }
+                renderUI();
+
+                if (result.failed > 0) {
+                    var failureNames = result.failures.map(function(failure) {
+                        return '<li><strong>' + escapeHtml(failure.orderId) + '</strong>: ' + escapeHtml(failure.message) + '</li>';
+                    }).join('');
+                    var failureModal = new Modal({
+                        title: 'Some orders still need archiving',
+                        content: '<p>' + result.archived + ' of ' + result.requested + ' orders were archived. The remaining orders stay selected so you can retry.</p><ul style="margin-top:12px;padding-left:20px;display:grid;gap:6px;">' + failureNames + '</ul>',
+                        confirmText: 'Close',
+                        cancelText: 'Close'
+                    });
+                    failureModal.open();
+                    notificationService.error(String(result.failed) + ' order' + (result.failed === 1 ? '' : 's') + ' could not be archived.');
+                } else {
+                    notificationService.success(String(result.archived) + ' order' + (result.archived === 1 ? '' : 's') + ' archived.');
+                }
+            } catch (error) {
+                if (archiveProgressModal) {
+                    archiveProgressModal.close();
+                }
+                notificationService.error(error.message || 'Could not archive the selected orders.');
+            } finally {
+                bulkArchiveActive = false;
+                if (isNavigationStillCurrent(navigationId, expectedRoute)) {
+                    updateBulkArchiveControls();
+                }
+            }
         });
 
         const alertStrip = document.getElementById('risk-alert');
@@ -1843,15 +1976,48 @@ export const renderDashboard = async (params, routeContext) => {
         window.viewOrder = (id) => router.navigate(ROUTES.ORDER_DETAIL.replace(':id', id));
 
         window.printOrder = async (id) => {
+            if (pendingPrintOrderIds.has(id)) {
+                return;
+            }
+
+            const knownInvoice = printableInvoiceByOrderId[id];
+            if (knownInvoice && knownInvoice.invoiceId) {
+                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', knownInvoice.invoiceId));
+                return;
+            }
+
+            pendingPrintOrderIds.add(id);
             try {
                 const { invoiceController } = await import("../controllers/invoiceController.js");
-                const orderSnapshot = allOrders.find(order => order.id === id) || null;
-                const invoiceId = await invoiceController.generateForOrder(id, orderSnapshot);
+                const orderSnapshot = allOrders.find(function(order) {
+                    return order && order.id === id;
+                }) || null;
+                const localCreatedAt = orderSnapshot ? Number(orderSnapshot.localCreatedAt || 0) : 0;
+                const isRecentNewOrder = Boolean(
+                    orderSnapshot &&
+                    orderSnapshot.invoiceGenerated === false &&
+                    localCreatedAt > 0 &&
+                    Date.now() - localCreatedAt < 15 * 60 * 1000
+                );
+                const invoiceId = await invoiceController.generateForOrder(id, orderSnapshot, {
+                    source: 'orders-print-button',
+                    skipExistingLookup: isRecentNewOrder,
+                    preferCachedDependencies: isRecentNewOrder
+                });
                 if (invoiceId) {
+                    const cachedInvoice = invoiceController.getCachedInvoice(invoiceId);
+                    printableInvoiceByOrderId[id] = {
+                        invoiceId: invoiceId,
+                        invoiceNumber: cachedInvoice && cachedInvoice.invoiceNumber ? cachedInvoice.invoiceNumber : ''
+                    };
+                    confirmedMissingInvoiceOrderIds.delete(id);
                     router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
                 }
-            } catch (e) {
-                console.error("Error navigating to invoice:", e);
+            } catch (error) {
+                console.error("Error navigating to invoice:", error);
+                notificationService.error(error && error.message ? error.message : 'Could not prepare the invoice.');
+            } finally {
+                pendingPrintOrderIds.delete(id);
             }
         };
 

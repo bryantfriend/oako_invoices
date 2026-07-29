@@ -620,6 +620,10 @@ textarea:focus {
     background: rgba(255, 255, 255, 0.72);
 }
 
+.dashboard-period-control {
+    flex-wrap: wrap;
+}
+
 .dashboard-period-control button,
 .compact-control button {
     border: none;

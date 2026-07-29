@@ -15,6 +15,10 @@ import loadInvoicesIntentModule from "./LoadInvoicesIntent.js";
 import invalidateOrdersCacheIntentModule from "./InvalidateOrdersCacheIntent.js";
 import refreshOrdersIntentModule from "./RefreshOrdersIntent.js";
 import loadOrdersIntentModule from "./LoadOrdersIntent.js";
+import markInvoicePrintedIntentModule from "./MarkInvoicePrintedIntent.js";
+import selectDashboardAnalyticsRangeIntentModule from "./SelectDashboardAnalyticsRangeIntent.js";
+import archiveSelectedOrdersIntentModule from "./ArchiveSelectedOrdersIntent.js";
+import preparePrintableInvoiceIntentModule from "./PreparePrintableInvoiceIntent.js";
 
 /**
  * Registers all project Intents.
@@ -36,6 +40,14 @@ function registerProjectIntents() {
       recordInvoiceReturnIntentModule.createRecordInvoiceReturnIntent,
     UpdateOrderStatusIntent:
       updateOrderStatusIntentModule.createUpdateOrderStatusIntent,
+    MarkInvoicePrintedIntent:
+      markInvoicePrintedIntentModule.createMarkInvoicePrintedIntent,
+    SelectDashboardAnalyticsRangeIntent:
+      selectDashboardAnalyticsRangeIntentModule.createSelectDashboardAnalyticsRangeIntent,
+    ArchiveSelectedOrdersIntent:
+      archiveSelectedOrdersIntentModule.createArchiveSelectedOrdersIntent,
+    PreparePrintableInvoiceIntent:
+      preparePrintableInvoiceIntentModule.createPreparePrintableInvoiceIntent,
     LoadOrdersIntent: loadOrdersIntentModule.createLoadOrdersIntent,
     RefreshOrdersIntent: refreshOrdersIntentModule.createRefreshOrdersIntent,
     InvalidateOrdersCacheIntent:

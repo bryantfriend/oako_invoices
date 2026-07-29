@@ -356,44 +356,13 @@ export const statsService = {
     /**
      * Calculates stats for a given period and compares with the previous period
      * @param {Array} orders - All orders
-     * @param {string} period - 'today', '7d', '30d', 'all'
+     * @param {string} period - 'today', '7d', '30d', '90d', '180d', '365d', 'all'
      */
-    getDashboardStats(orders, period = '30d', revenueGranularity = 'day', returnInvoices = []) {
+    getDashboardStats(orders, period = 'all', revenueGranularity = 'day', returnInvoices = []) {
         const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-        let currentRange = { start: null, end: now };
-        let prevRange = { start: null, end: null };
-
-        if (typeof period === 'object' && period.start && period.end) {
-            currentRange.start = new Date(period.start);
-            currentRange.end = new Date(period.end);
-            // Previous range is same duration backwards
-            const diff = currentRange.end - currentRange.start;
-            prevRange.end = new Date(currentRange.start.getTime() - 1);
-            prevRange.start = new Date(prevRange.end.getTime() - diff);
-        } else {
-            switch (period) {
-                case 'today':
-                    currentRange.start = startOfToday;
-                    prevRange.end = new Date(startOfToday.getTime() - 1);
-                    prevRange.start = new Date(startOfToday.getTime() - (24 * 60 * 60 * 1000));
-                    break;
-                case '7d':
-                    currentRange.start = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
-                    prevRange.end = new Date(currentRange.start.getTime() - 1);
-                    prevRange.start = new Date(currentRange.start.getTime() - (7 * 24 * 60 * 60 * 1000));
-                    break;
-                case '30d':
-                    currentRange.start = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-                    prevRange.end = new Date(currentRange.start.getTime() - 1);
-                    prevRange.start = new Date(currentRange.start.getTime() - (30 * 24 * 60 * 60 * 1000));
-                    break;
-                default: // 'all'
-                    currentRange.start = new Date(0);
-                    prevRange = null; // No comparison for 'all'
-            }
-        }
+        const ranges = this._getAnalyticsRanges(orders, period, now);
+        const currentRange = ranges.current;
+        const prevRange = ranges.previous;
 
         const currentOrders = this._filterByDate(orders, currentRange.start, currentRange.end);
         const prevOrders = prevRange ? this._filterByDate(orders, prevRange.start, prevRange.end) : [];
@@ -428,8 +397,8 @@ export const statsService = {
             overdueCustomers: this.getTopOverdueCustomers(orders),
             topOrders: this.getTopOrders(orders),
             charts: {
-                revenueOverTime: this._getRevenueOverTime(currentOrders, period, revenueGranularity),
-                unitDemandOverTime: this._getUnitDemandOverTime(currentOrders, period),
+                revenueOverTime: this._getRevenueOverTime(currentOrders, currentRange, revenueGranularity),
+                unitDemandOverTime: this._getUnitDemandOverTime(currentOrders, currentRange, revenueGranularity),
                 statusPipeline: this._getStatusPipeline(orders),
                 topProducts: this._getTopProducts(currentOrders),
                 topCategories: this._getTopCategories(currentOrders),
@@ -437,6 +406,90 @@ export const statsService = {
                 returnedItems: this.getReturnedItemsAnalytics(returnInvoices, currentRange)
             }
         };
+    },
+
+    _getAnalyticsRanges(orders, period, now) {
+        var currentRange = {
+            start: null,
+            end: new Date(now.getTime())
+        };
+        var previousRange = null;
+        var dayCounts = {
+            today: 1,
+            '7d': 7,
+            '30d': 30,
+            '90d': 90,
+            '180d': 180,
+            '365d': 365
+        };
+
+        if (period && typeof period === 'object' && period.start && period.end) {
+            currentRange.start = this._parseLocalDateBoundary(period.start, false);
+            currentRange.end = this._parseLocalDateBoundary(period.end, true);
+            previousRange = this._getPreviousRange(currentRange);
+            return {
+                current: currentRange,
+                previous: previousRange
+            };
+        }
+
+        var normalizedPeriod = String(period || 'all').toLowerCase();
+        var dayCount = dayCounts[normalizedPeriod];
+        if (dayCount) {
+            currentRange.start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            currentRange.start.setDate(currentRange.start.getDate() - (dayCount - 1));
+            previousRange = this._getPreviousRange(currentRange);
+        } else {
+            currentRange.start = this._getEarliestAnalyticsDate(orders, now);
+        }
+
+        return {
+            current: currentRange,
+            previous: previousRange
+        };
+    },
+
+    _parseLocalDateBoundary(value, endOfDay) {
+        var date;
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            var parts = value.split('-');
+            date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        } else {
+            date = new Date(value);
+        }
+
+        if (endOfDay) {
+            date.setHours(23, 59, 59, 999);
+        } else {
+            date.setHours(0, 0, 0, 0);
+        }
+        return date;
+    },
+
+    _getPreviousRange(currentRange) {
+        var duration = currentRange.end.getTime() - currentRange.start.getTime();
+        var previousEnd = new Date(currentRange.start.getTime() - 1);
+        return {
+            start: new Date(previousEnd.getTime() - duration),
+            end: previousEnd
+        };
+    },
+
+    _getEarliestAnalyticsDate(orders, fallbackDate) {
+        var earliestMillis = 0;
+        (orders || []).forEach(function(order) {
+            var millis = getRevenueTrendTimestamp(order) ||
+                getMillis(order && order.updatedAt) ||
+                getMillis(order && order.localUpdatedAt) ||
+                getMillis(order && order.archivedAt);
+            if (millis && (!earliestMillis || millis < earliestMillis)) {
+                earliestMillis = millis;
+            }
+        });
+
+        var earliestDate = earliestMillis ? new Date(earliestMillis) : new Date(fallbackDate.getTime());
+        earliestDate.setHours(0, 0, 0, 0);
+        return earliestDate;
     },
 
     _filterByDate(orders, start, end) {
@@ -507,40 +560,32 @@ export const statsService = {
         if (granularity === 'week') {
             return `Week of ${date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}`;
         }
-        return date.toISOString().split('T')[0].split('-').slice(1).join('/');
+        return String(date.getMonth() + 1) + '/' + String(date.getDate());
     },
 
-    _getRevenueOverTime(orders, period, granularity = 'day') {
-        const now = new Date();
-        let days;
-        let startDate;
-        let endDate = now;
+    _bucketKey(date) {
+        var year = date.getFullYear();
+        var month = String(date.getMonth() + 1).padStart(2, '0');
+        var day = String(date.getDate()).padStart(2, '0');
+        return year + '-' + month + '-' + day;
+    },
 
-        if (typeof period === 'object' && period.start && period.end) {
-            startDate = new Date(period.start);
-            endDate = new Date(period.end);
-            const diffTime = Math.abs(endDate - startDate);
-            days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        } else {
-            days = period === '7d' ? 7 : period === '30d' ? 30 : period === 'today' ? 1 : 30;
-            startDate = new Date(now.getTime() - ((days - 1) * 24 * 60 * 60 * 1000));
-        }
-
+    _getRevenueOverTime(orders, range, granularity = 'day') {
         const groups = {};
         const labels = [];
 
-        const startBucket = this._startOfBucket(startDate, granularity);
-        const endBucket = this._startOfBucket(endDate, granularity);
+        const startBucket = this._startOfBucket(range.start, granularity);
+        const endBucket = this._startOfBucket(range.end, granularity);
 
         for (let d = startBucket; d <= endBucket; d = this._addBucket(d, granularity)) {
-            const key = d.toISOString().split('T')[0];
-            groups[key] = { gross: 0, confirmedRevenue: 0, paid: 0, outstanding: 0, orders: 0 };
+            const key = this._bucketKey(d);
+            groups[key] = { date: new Date(d.getTime()), gross: 0, confirmedRevenue: 0, paid: 0, outstanding: 0, orders: 0 };
             labels.push(key);
         }
 
         orders.forEach(o => {
             const date = this._getOrderDate(o);
-            const key = this._startOfBucket(date, granularity).toISOString().split('T')[0];
+            const key = this._bucketKey(this._startOfBucket(date, granularity));
             if (groups[key]) {
                 const amount = o.totalAmount || 0;
                 const status = getAnalyticsStatus(o);
@@ -555,7 +600,7 @@ export const statsService = {
         });
 
         return {
-            labels: labels.map(l => this._bucketLabel(new Date(`${l}T00:00:00`), granularity)),
+            labels: labels.map(k => this._bucketLabel(groups[k].date, granularity)),
             gross: labels.map(k => groups[k].gross),
             confirmedRevenue: labels.map(k => groups[k].confirmedRevenue),
             paid: labels.map(k => groups[k].paid),
@@ -564,33 +609,21 @@ export const statsService = {
         };
     },
 
-    _getUnitDemandOverTime(orders, period) {
-        const revenue = this._getRevenueOverTime(orders, period);
-        const now = new Date();
-        let days;
-        let startDate;
-
-        if (typeof period === 'object' && period.start && period.end) {
-            startDate = new Date(period.start);
-            const diffTime = Math.abs(new Date(period.end) - startDate);
-            days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        } else {
-            days = period === '7d' ? 7 : period === '30d' ? 30 : period === 'today' ? 1 : 30;
-            startDate = new Date(now.getTime() - ((days - 1) * 24 * 60 * 60 * 1000));
-        }
-
+    _getUnitDemandOverTime(orders, range, granularity = 'day') {
         const groups = {};
         const keys = [];
-        for (let i = 0; i < days; i++) {
-            const d = new Date(startDate.getTime() + (i * 24 * 60 * 60 * 1000));
-            const key = d.toISOString().split('T')[0];
-            groups[key] = { units: 0 };
+        const startBucket = this._startOfBucket(range.start, granularity);
+        const endBucket = this._startOfBucket(range.end, granularity);
+
+        for (let d = startBucket; d <= endBucket; d = this._addBucket(d, granularity)) {
+            const key = this._bucketKey(d);
+            groups[key] = { date: new Date(d.getTime()), units: 0 };
             keys.push(key);
         }
 
         orders.forEach(order => {
-            const date = order.orderDate ? new Date(order.orderDate) : (order.createdAt?.toDate ? order.createdAt.toDate() : new Date());
-            const key = date.toISOString().split('T')[0];
+            const date = this._getOrderDate(order);
+            const key = this._bucketKey(this._startOfBucket(date, granularity));
             if (!groups[key]) return;
 
             (order.items || []).forEach(item => {
@@ -600,7 +633,7 @@ export const statsService = {
         });
 
         return {
-            labels: revenue.labels,
+            labels: keys.map(k => this._bucketLabel(groups[k].date, granularity)),
             data: keys.map(k => groups[k].units)
         };
     },

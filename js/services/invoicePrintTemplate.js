@@ -2,6 +2,7 @@ import { formatDate, formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
 
 var DEFAULT_ITEMS_PER_PAGE = 7;
+var DEFAULT_PAYMENT_QR_IMAGE_URL = './Payment QR Code.png';
 
 function escapeHtml(value) {
     return String(value || '')
@@ -92,7 +93,9 @@ function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, t
     var invoiceNumber = escapeHtml(invoice.invoiceNumber || '');
     var invoiceQr = safeImageUrl(invoice.invoiceQrDataUrl || '');
     var logoUrl = safeImageUrl(settings.logoUrl);
-    var paymentQr = safeImageUrl(settings.paymentQrImageUrl);
+    // Keep the bundled payment QR visible when older or incomplete settings
+    // documents do not contain the uploaded paymentQrImageUrl field.
+    var paymentQr = safeImageUrl(settings.paymentQrImageUrl || DEFAULT_PAYMENT_QR_IMAGE_URL);
     var subtotal = options.subtotal;
     var taxRate = Number(invoice.taxRate || 0);
     var taxAmount = subtotal * taxRate / 100;

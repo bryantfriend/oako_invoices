@@ -12,6 +12,10 @@ import emitUpdateInvoiceItemsResultModule from "./Invoices/emitUpdateInvoiceItem
 import emitRecordInvoiceReturnResultModule from "./Invoices/emitRecordInvoiceReturnResult.js";
 import emitUpdateOrderStatusResultModule from "./Orders/emitUpdateOrderStatusResult.js";
 import emitQuickPrintSelectedInvoicesResultModule from "./Invoices/emitQuickPrintSelectedInvoicesResult.js";
+import emitMarkInvoicePrintedResultModule from "./Invoices/emitMarkInvoicePrintedResult.js";
+import emitDashboardAnalyticsRangeResultModule from "./Dashboard/emitDashboardAnalyticsRangeResult.js";
+import emitArchiveSelectedOrdersResultModule from "./Orders/emitArchiveSelectedOrdersResult.js";
+import emitPreparePrintableInvoiceResultModule from "./Invoices/emitPreparePrintableInvoiceResult.js";
 
 /**
  * Emitters
@@ -42,6 +46,14 @@ var emitters = {
 
   emitQuickPrintSelectedInvoicesResult:
     emitQuickPrintSelectedInvoicesResultModule.emitQuickPrintSelectedInvoicesResult,
+  emitMarkInvoicePrintedResult:
+    emitMarkInvoicePrintedResultModule.emitMarkInvoicePrintedResult,
+  emitDashboardAnalyticsRangeResult:
+    emitDashboardAnalyticsRangeResultModule.emitDashboardAnalyticsRangeResult,
+  emitArchiveSelectedOrdersResult:
+    emitArchiveSelectedOrdersResultModule.emitArchiveSelectedOrdersResult,
+  emitPreparePrintableInvoiceResult:
+    emitPreparePrintableInvoiceResultModule.emitPreparePrintableInvoiceResult,
 
   createAddSuccessMessageEmitter:
     addSuccessMessageModule.createAddSuccessMessageEmitter,

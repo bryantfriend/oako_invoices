@@ -139,22 +139,25 @@ export const invoiceController = {
         }
     },
 
-    async generateForOrder(orderId, orderSnapshot) {
+    async generateForOrder(orderId, orderSnapshot, options) {
         try {
-            const invoiceId = await invoiceService.createInvoice(orderId, {}, orderSnapshot);
-            try {
-                const createdInvoice = await invoiceService.getInvoice(invoiceId);
-                if (createdInvoice) {
-                    sessionDataStore.updateInvoiceRecord(invoiceId, createdInvoice, 'create-invoice');
-                } else {
-                    await sessionDataStore.invalidateInvoicesCache('create-invoice-missing-record');
-                }
-            } catch (cacheError) {
-                console.warn('Created invoice could not be seeded into the session cache.', cacheError);
-                await sessionDataStore.invalidateInvoicesCache('create-invoice-cache-fallback');
+            const result = await invoiceService.preparePrintableInvoice(orderId, orderSnapshot, options || {});
+            const data = result && result.data ? result.data : {};
+            const invoiceId = data.invoiceId || '';
+            if (!invoiceId) {
+                throw new Error('Invoice preparation returned no invoice ID.');
             }
+            if (data.invoice) {
+                sessionDataStore.updateInvoiceRecord(invoiceId, data.invoice, 'create-invoice');
+            }
+            sessionDataStore.updateOrderRecord(orderId, {
+                invoiceGenerated: true,
+                invoiceId: invoiceId,
+                updatedAt: new Date()
+            }, 'create-invoice-order-link');
             return invoiceId;
         } catch (error) {
+            console.error('Could not prepare invoice for printing.', error);
             notificationService.error(t('msg_save_fail'));
             return null;
         }
@@ -241,6 +244,24 @@ export const invoiceController = {
         } catch (error) {
             notificationService.error(error.message || t('msg_update_fail'));
             return false;
+        }
+    },
+
+    async markPrinted(invoiceId, orderId) {
+        try {
+            var result = await invoiceService.markInvoicePrinted(invoiceId, orderId);
+            if (!result || !result.ok) {
+                throw new Error(getIntentErrorMessage(result, 'Failed to mark invoice as printed.'));
+            }
+            var data = result.data || {};
+            var invoicePatch = Object.assign({}, data.invoicePatch || {}, { updatedAt: new Date() });
+            var orderPatch = Object.assign({}, data.orderPatch || {}, { updatedAt: new Date() });
+            sessionDataStore.updateInvoiceRecord(invoiceId, invoicePatch, 'mark-invoice-printed');
+            sessionDataStore.updateOrderRecord(orderId, orderPatch, 'mark-invoice-printed');
+            return data;
+        } catch (error) {
+            notificationService.error(error.message || 'Failed to mark invoice as printed.');
+            return null;
         }
     },
 

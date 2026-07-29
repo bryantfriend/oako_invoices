@@ -12,6 +12,10 @@ import authorizeSubmitInvoiceApprovalResponseModule from "./Invoices/authorizeSu
 import authorizeInvoiceMutationModule from "./Invoices/authorizeInvoiceMutation.js";
 import authorizeOrderMutationModule from "./Orders/authorizeOrderMutation.js";
 import authorizeQuickPrintSelectedInvoicesModule from "./Invoices/authorizeQuickPrintSelectedInvoices.js";
+import authorizeMarkInvoicePrintedModule from "./Invoices/authorizeMarkInvoicePrinted.js";
+import authorizeDashboardAnalyticsRangeModule from "./Dashboard/authorizeDashboardAnalyticsRange.js";
+import authorizeArchiveSelectedOrdersModule from "./Orders/authorizeArchiveSelectedOrders.js";
+import authorizePreparePrintableInvoiceModule from "./Invoices/authorizePreparePrintableInvoice.js";
 
 /**
  * Authorizers
@@ -40,6 +44,14 @@ var authorizers = {
 
   authorizeQuickPrintSelectedInvoices:
     authorizeQuickPrintSelectedInvoicesModule.authorizeQuickPrintSelectedInvoices,
+  authorizeMarkInvoicePrinted:
+    authorizeMarkInvoicePrintedModule.authorizeMarkInvoicePrinted,
+  authorizeDashboardAnalyticsRange:
+    authorizeDashboardAnalyticsRangeModule.authorizeDashboardAnalyticsRange,
+  authorizeArchiveSelectedOrders:
+    authorizeArchiveSelectedOrdersModule.authorizeArchiveSelectedOrders,
+  authorizePreparePrintableInvoice:
+    authorizePreparePrintableInvoiceModule.authorizePreparePrintableInvoice,
 
   createRequireActorRoleAuthorizer:
     requireActorRoleModule.createRequireActorRoleAuthorizer,

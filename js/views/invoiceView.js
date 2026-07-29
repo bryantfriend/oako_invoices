@@ -2150,39 +2150,21 @@ export const renderInvoiceDetail = async ({ id }) => {
                         type: 'primary',
                         onConfirm: async () => {
                             try {
-                                try {
-                                    const { orderService } = await import("../services/orderService.js");
-                                    const { invoiceService } = await import("../services/invoiceService.js");
-                                    const { gamificationService } = await import("../services/gamificationService.js");
-                                    const order = await orderService.getOrderById(invoice.orderId);
-                                    const orderUpdates = { isPrinted: true, printedAt: new Date() };
-                                    if (order?.status === 'draft') {
-                                        orderUpdates.status = 'confirmed';
-                                    }
-                                    await orderService.updateOrder(invoice.orderId, orderUpdates);
-                                    const workflowStatus = getCanonicalInvoiceStatus(invoice.status);
-                                    if (workflowStatus === 'submitted' || workflowStatus === 'draft') {
-                                        await invoiceService.updateInvoice(invoice.id, { status: 'approved' });
-                                        invoice.status = 'approved';
-                                    }
-                                    if (!order?.isPrinted) {
-                                        await gamificationService.awardAction('invoicesPrinted');
-                                    }
-                                } catch (updateErr) {
-                                    console.warn("Could not sync print status to order (order may have been deleted):", updateErr);
-                                    // We continue anyway so the user isn't stuck and the animation still plays
+                                var printResult = await invoiceController.markPrinted(invoice.id, invoice.orderId);
+                                if (!printResult) {
+                                    return;
                                 }
-
-                                // 1. Set global flag for the animation
+                                if (printResult.invoiceStatus) {
+                                    invoice.status = printResult.invoiceStatus;
+                                }
+                                invoice.isPrinted = true;
+                                invoice.printedAt = new Date();
                                 window.highlightOrderId = invoice.orderId;
-
-                                // 2. Redirect to Orders tab (Dashboard)
                                 router.navigate(ROUTES.DASHBOARD);
-
-                                const { notificationService } = await import("../core/notificationService.js");
                                 notificationService.success(t('msg_invoice_printed'));
-                            } catch (e) {
-                                console.error("Failed post-print routine", e);
+                            } catch (error) {
+                                console.error("Failed post-print routine", error);
+                                notificationService.error(error.message || 'Failed to mark invoice as printed.');
                             }
                         }
                     });

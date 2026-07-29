@@ -23,6 +23,7 @@ import { deviceIdService } from "./deviceIdService.js";
 import { store } from "../core/store.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import updateOrderStatusIntentModule from "../ICF/Intents/UpdateOrderStatusIntent.js";
+import archiveSelectedOrdersIntentModule from "../ICF/Intents/ArchiveSelectedOrdersIntent.js";
 
 const COLLECTION = 'orders';
 
@@ -45,7 +46,7 @@ function getCurrentActor() {
 
     return {
         id: (user && (user.email || user.uid)) || 'admin',
-        role: profile.role || (isAdmin ? 'admin' : 'anonymous')
+        role: profile.role || ((isAdmin || user) ? 'admin' : 'anonymous')
     };
 }
 
@@ -338,14 +339,36 @@ export const orderService = {
             : true;
     },
 
-    async archiveOrders(ids) {
-        try {
-            await Promise.all(ids.map(id => this.archiveOrder(id)));
-            return true;
-        } catch (error) {
-            console.error("Error archiving orders:", error);
-            throw error;
+    async archiveOrders(ids, options) {
+        var service = this;
+        var safeOptions = options || {};
+        var intent = archiveSelectedOrdersIntentModule.createArchiveSelectedOrdersIntent(
+            getCurrentActor(),
+            {
+                orderIds: ids
+            },
+            {
+                source: safeOptions.source || 'orders-dashboard',
+                onProgress: safeOptions.onProgress,
+                archiveApi: {
+                    archiveOrder: function(orderId) {
+                        return service.archiveOrder(orderId);
+                    }
+                }
+            }
+        );
+        var result = await icfPipeline.run(intent);
+        if (!result || result.ok !== true) {
+            throw new Error('ArchiveSelectedOrdersIntent failed: ' + getPipelineErrorMessage(result));
         }
+        return result.data || {
+            requested: 0,
+            archived: 0,
+            failed: 0,
+            succeeded: [],
+            failures: [],
+            complete: false
+        };
     },
 
     async archiveOrder(id) {

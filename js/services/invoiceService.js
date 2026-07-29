@@ -32,6 +32,8 @@ import {
 } from "../core/invoiceWorkflow.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import archiveInvoiceIntentModule from "../ICF/Intents/ArchiveInvoiceIntent.js";
+import markInvoicePrintedIntentModule from "../ICF/Intents/MarkInvoicePrintedIntent.js";
+import preparePrintableInvoiceIntentModule from "../ICF/Intents/PreparePrintableInvoiceIntent.js";
 import updateInvoiceItemsIntentModule from "../ICF/Intents/UpdateInvoiceItemsIntent.js";
 import recordInvoiceReturnIntentModule from "../ICF/Intents/RecordInvoiceReturnIntent.js";
 import {
@@ -68,6 +70,24 @@ function getCurrentAdminActor() {
         id: getActorId(user) || 'anonymous',
         role: 'admin'
     };
+}
+
+function formatInvoiceCreationResult(invoiceId, invoice, created, options) {
+    if (options && options.returnInvoiceSnapshot === true) {
+        return {
+            invoiceId: invoiceId,
+            invoice: invoice ? Object.assign({}, invoice, { id: invoiceId }) : null,
+            created: created === true
+        };
+    }
+    return invoiceId;
+}
+
+function getIntentFailureMessage(result) {
+    if (result && result.errors && result.errors.length > 0) {
+        return result.errors[0];
+    }
+    return result && result.reason ? result.reason : 'Invoice preparation failed.';
 }
 
 function isActiveInvoice(invoice) {
@@ -429,18 +449,48 @@ async function queueInvoiceMutation(actionType, invoiceId, firestorePatch, local
 }
 
 export const invoiceService = {
-    async createInvoice(orderId, adjustments = {}, orderSnapshot = null) {
+    async preparePrintableInvoice(orderId, orderSnapshot, options) {
+        var safeOptions = options || {};
+        var generationOptions = Object.assign({}, safeOptions, {
+            returnInvoiceSnapshot: true,
+            deferNonCriticalWork: true
+        });
+        var service = this;
+        var intent = preparePrintableInvoiceIntentModule.createPreparePrintableInvoiceIntent(
+            getCurrentAdminActor(),
+            { orderId: orderId },
+            {
+                source: safeOptions.source || 'order-print',
+                invoiceApi: function(intentOrderId, intentOrderSnapshot, intentGenerationOptions) {
+                    return service.createInvoice(intentOrderId, {}, intentOrderSnapshot, intentGenerationOptions);
+                },
+                orderSnapshot: orderSnapshot || null,
+                generationOptions: generationOptions
+            }
+        );
+        var result = await icfPipeline.run(intent);
+        if (!result || !result.ok) {
+            throw new Error(getIntentFailureMessage(result));
+        }
+        return result;
+    },
+
+    async createInvoice(orderId, adjustments = {}, orderSnapshot = null, options = {}) {
         try {
-            const existingInvoice = await this.getInvoiceByOrderId(orderId).catch(function() {
-                return null;
-            });
+            const safeOptions = options || {};
+            let existingInvoice = null;
+            if (safeOptions.skipExistingLookup !== true) {
+                existingInvoice = await this.getInvoiceByOrderId(orderId).catch(function() {
+                    return null;
+                });
+            }
             if (existingInvoice) {
                 if (offlineStatusService.isOnline()) {
                     this.syncInvoiceWithOrder(orderId, existingInvoice).catch(function() {
                         return null;
                     });
                 }
-                return existingInvoice.id;
+                return formatInvoiceCreationResult(existingInvoice.id, existingInvoice, false, safeOptions);
             }
             const order = orderSnapshot || await orderService.getOrderById(orderId);
 
@@ -448,11 +498,16 @@ export const invoiceService = {
                 throw new Error("Order not found");
             }
 
+            const customerPromise = safeOptions.preferCachedDependencies === true
+                ? customerService.getCustomerByNameCached(order.customerName).catch(function() {
+                    return null;
+                })
+                : customerService.getCustomerByName(order.customerName).catch(function() {
+                    return null;
+                });
             const [settings, customer, deviceId] = await Promise.all([
                 settingsService.getInvoiceSettings(),
-                customerService.getCustomerByName(order.customerName).catch(function() {
-                    return null;
-                }),
+                customerPromise,
                 deviceIdService.getDeviceId()
             ]);
             const user = auth.currentUser;
@@ -483,7 +538,7 @@ export const invoiceService = {
                 }, {
                     storeId: storeId
                 });
-                return offlineInvoiceId;
+                return formatInvoiceCreationResult(offlineInvoiceId, payload, true, safeOptions);
             }
 
             delete payload.id;
@@ -491,11 +546,25 @@ export const invoiceService = {
                 actor: getCurrentAdminActor(),
                 source: 'ui',
                 storeId: storeId,
-                companyId: storeId
+                companyId: storeId,
+                intentId: 'invoice-for-order-' + orderId,
+                intentType: 'PreparePrintableInvoiceIntent'
+            });
+            const createdInvoice = Object.assign({}, payload, {
+                id: invoiceId,
+                updatedAt: new Date(),
+                localUpdatedAt: localUpdatedAt,
+                syncState: 'synced'
             });
             console.info('[PRICING] invoice generated with preserved price metadata');
-            await gamificationService.awardAction('invoicesCreated');
-            return invoiceId;
+            if (safeOptions.deferNonCriticalWork === true) {
+                gamificationService.awardAction('invoicesCreated').catch(function(error) {
+                    console.warn('Invoice gamification update was deferred.', error);
+                });
+            } else {
+                await gamificationService.awardAction('invoicesCreated');
+            }
+            return formatInvoiceCreationResult(invoiceId, createdInvoice, true, safeOptions);
         } catch (error) {
             console.error("Error creating invoice:", error);
             throw error;
@@ -733,6 +802,38 @@ export const invoiceService = {
 
     recalculateInvoiceTotals(invoice) {
         return recalculateInvoiceTotals(invoice);
+    },
+
+    async markInvoicePrinted(invoiceId, orderId) {
+        var service = this;
+        var intent = markInvoicePrintedIntentModule.createMarkInvoicePrintedIntent(
+            getCurrentAdminActor(),
+            {
+                invoiceId: invoiceId,
+                orderId: orderId
+            },
+            {
+                source: 'invoice-print',
+                printApi: {
+                    getInvoice: function(id) {
+                        return service.getInvoice(id);
+                    },
+                    getOrder: function(id) {
+                        return orderService.getOrderById(id);
+                    },
+                    updateOrder: function(id, patch) {
+                        return orderService.updateOrder(id, patch);
+                    },
+                    updateInvoice: function(id, patch) {
+                        return service.updateInvoice(id, patch, 'markInvoicePrinted');
+                    },
+                    awardPrintedInvoice: function() {
+                        return gamificationService.awardAction('invoicesPrinted');
+                    }
+                }
+            }
+        );
+        return icfPipeline.run(intent);
     },
 
     async archiveInvoice(invoiceId) {
