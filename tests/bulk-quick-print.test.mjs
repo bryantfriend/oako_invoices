@@ -114,7 +114,7 @@ test('Invoice QR payload and renderer are invoice-number-specific data URLs', ()
     const settingsSource = read('js/services/settingsService.js');
     assert.match(qrSource, /invoiceNumber: String\(invoice\.invoiceNumber \|\| ''\)/);
     assert.match(qrSource, /QRCode\.toDataURL/);
-    assert.match(qrSource, /payload\.invoiceNumber && invoice\.invoiceNumber !== payload\.invoiceNumber/);
+    assert.match(qrSource, /invoiceNumberMatches\(invoice, payload\.invoiceNumber\)/);
     assert.match(templateSource, /invoice-qr-image/);
     assert.match(templateSource, /is missing its prepared QR image/);
     assert.match(templateSource, /settings\.paymentQrImageUrl \|\| DEFAULT_PAYMENT_QR_IMAGE_URL/);

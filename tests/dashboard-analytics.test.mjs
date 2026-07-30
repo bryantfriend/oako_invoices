@@ -14,7 +14,7 @@ test('dashboard analytics can include archived data by default and hide it on de
     assert.match(dashboardView, /let\s+showArchivedAnalytics\s*=\s*true;/);
     assert.match(dashboardView, /id="show-archived-analytics"\s+\$\{showArchivedAnalytics\s*\?\s*'checked'/);
     assert.match(dashboardView, /const\s+getAnalyticsOrders\s*=\s*\(\)\s*=>\s*allOrders\.filter\(order\s*=>\s*shouldIncludeRecordInAnalytics\(order,\s*\{\s*includeArchived:\s*showArchivedAnalytics\s*\}\)\)/);
-    assert.match(dashboardView, /dashboardController\.loadStats\(analyticsOrders,\s*currentPeriod,\s*revenueGranularity,\s*analyticsReturnInvoices,\s*analyticsReturnOrders\)/);
+    assert.match(dashboardView, /dashboardController\.loadStats\(analyticsOrders,\s*currentPeriod,\s*revenueGranularity,\s*analyticsReturnInvoices,\s*analyticsReturnOrders,\s*intelligenceSettings\)/);
     assert.match(dashboardView, /showArchivedAnalytics\s*=\s*event\.target\.checked;/);
 });
 

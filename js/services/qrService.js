@@ -6,6 +6,7 @@ import {
     updateDoc,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { invoiceNumberMatches } from "./invoiceNumberService.js";
 
 const COLLECTION = 'invoices';
 const PUBLIC_LINK_COLLECTION = 'invoice_qr_links';
@@ -94,6 +95,8 @@ export const qrService = {
             invoiceId: invoice.id,
             token: invoice.secureToken,
             invoiceNumber: String(invoice.invoiceNumber || ''),
+            temporaryInvoiceNumber: String(invoice.temporaryInvoiceNumber || ''),
+            previousInvoiceNumbers: Array.isArray(invoice.previousInvoiceNumbers) ? invoice.previousInvoiceNumbers : [],
             customerName: invoice.customerName || '',
             customerPinCode: invoice.customerPinCode || invoice.pinCode || '',
             items: invoice.items || [],
@@ -134,7 +137,7 @@ export const qrService = {
         if (publicSnap.exists()) {
             const invoice = { id: publicSnap.data().invoiceId, ...publicSnap.data() };
             const matchesInvoice = invoice.invoiceId === payload.invoiceId || invoice.id === payload.invoiceId;
-            const matchesNumber = !payload.invoiceNumber || invoice.invoiceNumber === payload.invoiceNumber;
+            const matchesNumber = invoiceNumberMatches(invoice, payload.invoiceNumber);
             if (matchesInvoice && matchesNumber && invoice.token === payload.token) {
                 return invoice;
             }
@@ -145,7 +148,7 @@ export const qrService = {
 
         const invoice = { id: invoiceSnap.id, ...invoiceSnap.data() };
         if (invoice.secureToken !== payload.token) return null;
-        if (payload.invoiceNumber && invoice.invoiceNumber !== payload.invoiceNumber) return null;
+        if (!invoiceNumberMatches(invoice, payload.invoiceNumber)) return null;
 
         await this.publishPublicInvoiceSnapshot(invoice);
         return invoice;

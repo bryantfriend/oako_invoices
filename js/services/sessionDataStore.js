@@ -343,10 +343,15 @@ function assignCollectionData(state, records, extras, readCount, reason) {
 
 async function fetchOrdersData() {
     var startedAt = getPerformanceNow();
-    var queryCount = 3;
+    var queryCount = 4;
     var referenceGroupsPromise = Promise.all([
         readCachedRowsAsync('products:all').catch(function() { return []; }),
-        readCachedRowsAsync('categories:all').catch(function() { return []; })
+        readCachedRowsAsync('categories:all').catch(function() { return []; }),
+        settingsService.getInvoiceSettings().then(function(settings) {
+            return [settings || {}];
+        }).catch(function() {
+            return [];
+        })
     ]);
     var groups = await Promise.all([
         orderService.getAllOrders(),
@@ -360,6 +365,8 @@ async function fetchOrdersData() {
     var referenceGroups = groups[3] || [];
     var products = referenceGroups[0] || [];
     var productCategories = referenceGroups[1] || [];
+    var intelligenceSettingsRows = referenceGroups[2] || [];
+    var intelligenceSettings = intelligenceSettingsRows[0] || {};
     var enrichedOrders = buildOrdersWithContext(orders, customers, products, productCategories, returnInvoices);
 
     logPerf('Orders Firestore refresh', startedAt);
@@ -368,6 +375,7 @@ async function fetchOrdersData() {
         records: enrichedOrders.length,
         cachedProducts: products.length,
         cachedCategories: productCategories.length,
+        cachedFinancialSettings: intelligenceSettingsRows.length,
         skippedProductServerRead: true
     });
 
@@ -375,7 +383,8 @@ async function fetchOrdersData() {
         records: enrichedOrders,
         extras: {
             returnOrders: enrichedOrders,
-            returnInvoices: returnInvoices
+            returnInvoices: returnInvoices,
+            intelligenceSettings: intelligenceSettings
         },
         readCount: queryCount
     };
@@ -628,6 +637,24 @@ function buildSingleOrderWithContext(order, context) {
     });
 }
 
+function getProductUnitCost(product) {
+    var source = product || {};
+    var fieldNames = ['unitCost', 'costPrice', 'productionCost', 'unitProductionCost'];
+    var index = 0;
+
+    while (index < fieldNames.length) {
+        var value = source[fieldNames[index]];
+        if (value !== undefined && value !== null && value !== '') {
+            var number = Number(value);
+            if (Number.isFinite(number) && number >= 0) {
+                return number;
+            }
+        }
+        index = index + 1;
+    }
+    return null;
+}
+
 function buildOrderItemWithContext(item, productMap, productCategoryLookup, returnInvoice) {
     var product = productMap[item.productId] || {};
     var category = resolveProductCategory(item, product, productCategoryLookup);
@@ -637,6 +664,7 @@ function buildOrderItemWithContext(item, productMap, productCategoryLookup, retu
     return Object.assign({}, item, {
         returnedQuantity: returnedQuantity,
         returnQuantity: returnedQuantity,
+        productUnitCost: getProductUnitCost(product),
         categoryId: category.id,
         categoryName: category.name
     });

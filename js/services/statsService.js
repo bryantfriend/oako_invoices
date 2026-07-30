@@ -1,5 +1,6 @@
 import { getReturnState } from "../core/returnStatus.js";
 import { getAnalyticsStatus, getMillis, getRevenueTrendTimestamp, isArchivedRecord } from "../core/orderRecordHelpers.js";
+import { buildFinancialIntelligence } from "./financialIntelligenceService.js";
 
 function safeNumber(value, fallback = 0) {
     const number = Number(value);
@@ -369,6 +370,20 @@ export const statsService = {
 
         const currentMetrics = this._calculateMetrics(currentOrders);
         const prevMetrics = this._calculateMetrics(prevOrders);
+        const analyticsOptions = Array.isArray(returnInvoices)
+            ? { invoices: returnInvoices }
+            : (returnInvoices || {});
+        const returnedItems = this.getReturnedItemsAnalytics(analyticsOptions, currentRange);
+        const intelligence = buildFinancialIntelligence({
+            currentOrders: currentOrders,
+            previousOrders: prevOrders,
+            allOrders: orders,
+            currentMetrics: currentMetrics,
+            previousMetrics: prevMetrics,
+            returnedAmount: returnedItems.totalReturnedAmount || 0,
+            settings: analyticsOptions.intelligenceSettings || {},
+            now: now
+        });
 
         return {
             period,
@@ -394,6 +409,7 @@ export const statsService = {
                 }
             },
             overview: this.getRevenueBreakdown(orders),
+            intelligence: intelligence,
             overdueCustomers: this.getTopOverdueCustomers(orders),
             topOrders: this.getTopOrders(orders),
             charts: {
@@ -403,7 +419,7 @@ export const statsService = {
                 topProducts: this._getTopProducts(currentOrders),
                 topCategories: this._getTopCategories(currentOrders),
                 topProductsByCategory: this._getTopProductsByCategory(currentOrders),
-                returnedItems: this.getReturnedItemsAnalytics(returnInvoices, currentRange)
+                returnedItems: returnedItems
             }
         };
     },

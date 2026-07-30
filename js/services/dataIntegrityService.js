@@ -5,10 +5,18 @@ import {
     runTransaction,
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+    buildCanonicalInvoiceNumberAssignment,
+    getInvoiceSequenceDocumentId,
+    getInvoiceSequenceYear,
+    getNextInvoiceSequenceValue,
+    isTemporaryInvoiceNumber
+} from "./invoiceNumberService.js";
 
 const AUDIT_COLLECTION = 'audit_logs';
 const INVENTORY_COLLECTION = 'inventory';
 const INVOICE_COLLECTION = 'invoices';
+const INVOICE_SEQUENCE_COLLECTION = 'invoice_sequences';
 const PROCESSED_INTENT_COLLECTION = 'processed_invoice_intents';
 const INVENTORY_VERSION = 1;
 
@@ -530,68 +538,153 @@ function writeProcessedIntentInTransaction(transaction, options, result) {
     });
 }
 
+async function readProcessedInvoiceResult(transaction, processedSnapshot, fallbackInvoiceRef) {
+    if (!processedSnapshot || !processedSnapshot.exists()) {
+        return null;
+    }
+
+    var storedResult = processedSnapshot.data().result || {};
+    var invoiceId = storedResult.invoiceId || (fallbackInvoiceRef ? fallbackInvoiceRef.id : '');
+    var invoiceRef = invoiceId ? doc(db, INVOICE_COLLECTION, invoiceId) : fallbackInvoiceRef;
+    var invoiceSnapshot = invoiceRef ? await transaction.get(invoiceRef) : null;
+    var invoice = invoiceSnapshot && invoiceSnapshot.exists()
+        ? Object.assign({ id: invoiceSnapshot.id }, invoiceSnapshot.data())
+        : null;
+
+    return Object.assign({}, storedResult, {
+        invoiceId: invoiceId,
+        invoiceNumber: invoice ? invoice.invoiceNumber || '' : storedResult.invoiceNumber || '',
+        invoice: invoice,
+        alreadyProcessed: true
+    });
+}
+
+async function readInvoiceNumberAllocation(transaction, invoicePayload) {
+    if (!isTemporaryInvoiceNumber(invoicePayload && invoicePayload.invoiceNumber)) {
+        return null;
+    }
+
+    var year = getInvoiceSequenceYear(invoicePayload ? invoicePayload.createdAt : null);
+    var sequenceRef = doc(db, INVOICE_SEQUENCE_COLLECTION, getInvoiceSequenceDocumentId(year));
+    var sequenceSnapshot = await transaction.get(sequenceRef);
+    var sequenceData = sequenceSnapshot.exists() ? sequenceSnapshot.data() : {};
+    var nextValue = getNextInvoiceSequenceValue(sequenceData);
+
+    return {
+        sequenceRef: sequenceRef,
+        year: year,
+        nextValue: nextValue,
+        assignment: buildCanonicalInvoiceNumberAssignment(invoicePayload, year, nextValue)
+    };
+}
+
+function applyInvoiceNumberAllocation(invoicePayload, allocation) {
+    if (!allocation) {
+        return Object.assign({}, invoicePayload || {});
+    }
+
+    return Object.assign({}, invoicePayload || {}, allocation.assignment, {
+        invoiceNumberAssignedAt: serverTimestamp()
+    });
+}
+
+function writeInvoiceNumberAllocation(transaction, allocation, invoiceRef, options) {
+    if (!allocation) {
+        return;
+    }
+
+    var actor = getActor(options);
+    transaction.set(allocation.sequenceRef, {
+        scope: 'global',
+        year: allocation.year,
+        lastValue: allocation.nextValue,
+        lastInvoiceId: invoiceRef.id,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor.id || ''
+    }, { merge: true });
+}
+
+function buildInvoiceTransactionResult(invoiceRef, invoice, alreadyProcessed) {
+    return {
+        invoiceId: invoiceRef.id,
+        invoiceNumber: invoice.invoiceNumber || '',
+        invoice: Object.assign({}, invoice, { id: invoiceRef.id }),
+        alreadyProcessed: alreadyProcessed === true
+    };
+}
+
 async function createInvoiceWithIntegrity(invoicePayload, options) {
     var safeOptions = options || {};
     var invoiceRef = safeOptions.invoiceRef || doc(collection(db, INVOICE_COLLECTION));
-    var payload = prepareInvoicePayloadForCreate(invoicePayload);
-    var invoiceWithId = Object.assign({ id: invoiceRef.id }, payload);
-    var deltas = buildInventoryDeltas(null, invoiceWithId, 'create');
-    var auditEntries = buildInvoiceAuditEntries(null, invoiceWithId, 'create', safeOptions);
+    var initialPayload = prepareInvoicePayloadForCreate(invoicePayload);
 
     var transactionResult = await runTransaction(db, async function(transaction) {
         var processedSnapshot = await getProcessedIntentSnapshot(transaction, safeOptions);
         if (processedSnapshot && processedSnapshot.exists()) {
-            return processedSnapshot.data().result || { invoiceId: invoiceRef.id, alreadyProcessed: true };
+            return readProcessedInvoiceResult(transaction, processedSnapshot, invoiceRef);
         }
+
+        var allocation = await readInvoiceNumberAllocation(transaction, initialPayload);
+        var payload = applyInvoiceNumberAllocation(initialPayload, allocation);
+        var invoiceWithId = Object.assign({ id: invoiceRef.id }, payload);
+        var deltas = buildInventoryDeltas(null, invoiceWithId, 'create');
+        var auditEntries = buildInvoiceAuditEntries(null, invoiceWithId, 'create', safeOptions);
 
         await applyInventoryDeltasInTransaction(transaction, deltas, {
             action: 'invoice_create'
         });
+        writeInvoiceNumberAllocation(transaction, allocation, invoiceRef, safeOptions);
         transaction.set(invoiceRef, payload);
         addAuditEntriesInTransaction(transaction, auditEntries);
+        var result = buildInvoiceTransactionResult(invoiceRef, invoiceWithId, false);
         writeProcessedIntentInTransaction(transaction, safeOptions, {
-            invoiceId: invoiceRef.id,
+            invoiceId: result.invoiceId,
+            invoiceNumber: result.invoiceNumber,
             alreadyProcessed: false
         });
-
-        return {
-            invoiceId: invoiceRef.id,
-            alreadyProcessed: false
-        };
+        return result;
     });
 
+    if (safeOptions.returnResult === true) {
+        return transactionResult || buildInvoiceTransactionResult(invoiceRef, initialPayload, false);
+    }
     return transactionResult && transactionResult.invoiceId ? transactionResult.invoiceId : invoiceRef.id;
 }
 
 async function setInvoiceWithIntegrity(invoiceRef, invoicePayload, options) {
     var safeOptions = options || {};
-    var payload = prepareInvoicePayloadForCreate(invoicePayload);
-    var invoiceWithId = Object.assign({ id: invoiceRef.id }, payload);
-    var deltas = buildInventoryDeltas(null, invoiceWithId, 'create');
-    var auditEntries = buildInvoiceAuditEntries(null, invoiceWithId, 'create', safeOptions);
+    var initialPayload = prepareInvoicePayloadForCreate(invoicePayload);
 
     var transactionResult = await runTransaction(db, async function(transaction) {
         var processedSnapshot = await getProcessedIntentSnapshot(transaction, safeOptions);
         if (processedSnapshot && processedSnapshot.exists()) {
-            return processedSnapshot.data().result || { invoiceId: invoiceRef.id, alreadyProcessed: true };
+            return readProcessedInvoiceResult(transaction, processedSnapshot, invoiceRef);
         }
+
+        var allocation = await readInvoiceNumberAllocation(transaction, initialPayload);
+        var payload = applyInvoiceNumberAllocation(initialPayload, allocation);
+        var invoiceWithId = Object.assign({ id: invoiceRef.id }, payload);
+        var deltas = buildInventoryDeltas(null, invoiceWithId, 'create');
+        var auditEntries = buildInvoiceAuditEntries(null, invoiceWithId, 'create', safeOptions);
 
         await applyInventoryDeltasInTransaction(transaction, deltas, {
             action: 'invoice_create'
         });
+        writeInvoiceNumberAllocation(transaction, allocation, invoiceRef, safeOptions);
         transaction.set(invoiceRef, payload, { merge: true });
         addAuditEntriesInTransaction(transaction, auditEntries);
+        var result = buildInvoiceTransactionResult(invoiceRef, invoiceWithId, false);
         writeProcessedIntentInTransaction(transaction, safeOptions, {
-            invoiceId: invoiceRef.id,
+            invoiceId: result.invoiceId,
+            invoiceNumber: result.invoiceNumber,
             alreadyProcessed: false
         });
-
-        return {
-            invoiceId: invoiceRef.id,
-            alreadyProcessed: false
-        };
+        return result;
     });
 
+    if (safeOptions.returnResult === true) {
+        return transactionResult || buildInvoiceTransactionResult(invoiceRef, initialPayload, false);
+    }
     return transactionResult && transactionResult.invoiceId ? transactionResult.invoiceId : invoiceRef.id;
 }
 

@@ -133,6 +133,30 @@ function serverChangedSinceBase(queueItem, serverData) {
     return serverMillis > baseMillis;
 }
 
+function buildCanonicalInvoiceSyncResult(queueItem, integrityResult) {
+    var invoice = integrityResult && integrityResult.invoice ? integrityResult.invoice : {};
+    return {
+        invoiceId: integrityResult && integrityResult.invoiceId ? integrityResult.invoiceId : queueItem.entityId,
+        canonicalAggregateId: queueItem.entityId,
+        invoiceNumber: integrityResult && integrityResult.invoiceNumber ? integrityResult.invoiceNumber : invoice.invoiceNumber || '',
+        invoiceNumberVersion: invoice.invoiceNumberVersion || 0,
+        invoiceNumberYear: invoice.invoiceNumberYear || 0,
+        invoiceNumberSequence: invoice.invoiceNumberSequence || 0,
+        temporaryInvoiceNumber: invoice.temporaryInvoiceNumber || '',
+        previousInvoiceNumbers: Array.isArray(invoice.previousInvoiceNumbers) ? invoice.previousInvoiceNumbers : []
+    };
+}
+
+function isMatchingCommittedOfflineInvoice(serverInvoice, localInvoice) {
+    if (!serverInvoice || !localInvoice) {
+        return false;
+    }
+    if (!serverInvoice.secureToken || serverInvoice.secureToken !== localInvoice.secureToken) {
+        return false;
+    }
+    return serverInvoice.orderId === localInvoice.orderId;
+}
+
 async function writeInvoiceCreate(queueItem) {
     const invoice = Object.assign({}, queueItem.payload.invoice || {});
     const invoiceRef = doc(db, 'invoices', queueItem.entityId);
@@ -140,6 +164,13 @@ async function writeInvoiceCreate(queueItem) {
 
     if (serverSnap.exists() && queueItem.payload.forceOverwrite !== true) {
         const localVersion = getLocalSnapshot(queueItem);
+        if (isMatchingCommittedOfflineInvoice(serverSnap.data(), localVersion)) {
+            return buildCanonicalInvoiceSyncResult(queueItem, {
+                invoiceId: serverSnap.id,
+                invoiceNumber: serverSnap.data().invoiceNumber || '',
+                invoice: serverSnap.data()
+            });
+        }
         await conflictService.saveConflict(queueItem, serverSnap.data(), localVersion);
         throw new Error('sync_conflict');
     }
@@ -152,14 +183,16 @@ async function writeInvoiceCreate(queueItem) {
     restoreDateField(invoice, 'createdAt');
     restoreDateField(invoice, 'dueDate');
 
-    await dataIntegrityService.setInvoiceWithIntegrity(invoiceRef, invoice, {
+    const integrityResult = await dataIntegrityService.setInvoiceWithIntegrity(invoiceRef, invoice, {
         actor: getQueueActor(queueItem),
         source: 'offline-sync',
         storeId: queueItem.storeId || '',
         companyId: queueItem.companyId || '',
         intentId: queueItem.intentId || queueItem.id || '',
-        intentType: queueItem.actionType || ''
+        intentType: queueItem.actionType || '',
+        returnResult: true
     });
+    return buildCanonicalInvoiceSyncResult(queueItem, integrityResult);
 }
 
 async function writeInvoiceUpdate(queueItem) {
@@ -197,10 +230,23 @@ async function writeInvoiceUpdate(queueItem) {
             intentType: queueItem.actionType || ''
         }
     );
+    return buildCanonicalInvoiceSyncResult(queueItem, {
+        invoiceId: serverSnap.id,
+        invoiceNumber: serverSnap.data().invoiceNumber || '',
+        invoice: serverSnap.data()
+    });
 }
 
-async function syncCompletedInvoiceToSheet(queueItem) {
+async function syncCompletedInvoiceToSheet(queueItem, canonicalResult) {
     const localVersion = Object.assign({}, getLocalSnapshot(queueItem));
+    if (canonicalResult && canonicalResult.invoiceNumber) {
+        localVersion.invoiceNumber = canonicalResult.invoiceNumber;
+        localVersion.invoiceNumberVersion = canonicalResult.invoiceNumberVersion || 0;
+        localVersion.invoiceNumberYear = canonicalResult.invoiceNumberYear || 0;
+        localVersion.invoiceNumberSequence = canonicalResult.invoiceNumberSequence || 0;
+        localVersion.temporaryInvoiceNumber = canonicalResult.temporaryInvoiceNumber || '';
+        localVersion.previousInvoiceNumbers = canonicalResult.previousInvoiceNumbers || [];
+    }
     localVersion.status = 'fulfilled';
     localVersion.syncState = 'synced';
 
@@ -212,15 +258,15 @@ async function syncCompletedInvoiceToSheet(queueItem) {
 
 async function processInvoiceQueueItem(queueItem) {
     if (queueItem.actionType === 'createInvoice') {
-        await writeInvoiceCreate(queueItem);
-        return;
+        return writeInvoiceCreate(queueItem);
     }
 
-    await writeInvoiceUpdate(queueItem);
+    const syncResult = await writeInvoiceUpdate(queueItem);
 
     if (queueItem.actionType === 'completeInvoice') {
-        await syncCompletedInvoiceToSheet(queueItem);
+        await syncCompletedInvoiceToSheet(queueItem, syncResult);
     }
+    return syncResult;
 }
 
 
@@ -312,13 +358,11 @@ async function processOrderQueueItem(queueItem) {
 }
 async function processQueueItem(queueItem) {
     if (queueItem.entityType === 'invoice') {
-        await processInvoiceQueueItem(queueItem);
-        return;
+        return processInvoiceQueueItem(queueItem);
     }
 
     if (queueItem.entityType === 'order') {
-        await processOrderQueueItem(queueItem);
-        return;
+        return processOrderQueueItem(queueItem);
     }
 
     throw new Error('Unsupported offline queue entity: ' + queueItem.entityType);
@@ -432,10 +476,10 @@ export const syncService = {
                     }
 
                     await offlineQueueService.markSyncing(item.id);
-                    await processQueueItem(item);
-                    await offlineQueueService.markSynced(item.id, {
+                    const serverResult = await processQueueItem(item);
+                    await offlineQueueService.markSynced(item.id, Object.assign({
                         processedAt: new Date().toISOString()
-                    });
+                    }, serverResult || {}));
                     result.synced += 1;
                 } catch (error) {
                     await offlineQueueService.markFailed(item.id, error);

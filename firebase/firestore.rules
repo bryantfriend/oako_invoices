@@ -124,6 +124,39 @@ service cloud.firestore {
         || request.resource.data.defaultOrderPriceMode in ['retail', 'business'];
     }
 
+    function isValidInvoiceSequenceCreate() {
+      return request.resource.data.keys().hasOnly([
+          'scope',
+          'year',
+          'lastValue',
+          'lastInvoiceId',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && request.resource.data.scope == 'global'
+        && request.resource.data.year is int
+        && request.resource.data.lastValue == 1
+        && request.resource.data.lastInvoiceId is string
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedBy is string;
+    }
+
+    function isValidInvoiceSequenceUpdate() {
+      return changedKeys().hasOnly([
+          'lastValue',
+          'lastInvoiceId',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && request.resource.data.scope == resource.data.scope
+        && request.resource.data.year == resource.data.year
+        && request.resource.data.lastValue is int
+        && request.resource.data.lastValue == resource.data.lastValue + 1
+        && request.resource.data.lastInvoiceId is string
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedBy is string;
+    }
+
     function isInventoryRecord() {
       return request.resource.data.date is string
         && request.resource.data.productId is string
@@ -340,6 +373,16 @@ service cloud.firestore {
         && request.resource.data.createdAt is timestamp;
 
       allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ===============================
+    // COLLISION-PROOF INVOICE SEQUENCES
+    // ===============================
+    match /invoice_sequences/{sequenceId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidInvoiceSequenceCreate();
+      allow update: if isAdmin() && isValidInvoiceSequenceUpdate();
       allow delete: if false;
     }
 

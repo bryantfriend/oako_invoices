@@ -32,6 +32,7 @@ export const DEFAULT_INVOICE_SETTINGS = {
     qrText: 'https://kyrgyz-organics.com/pay',
     paymentQrImageUrl: './Payment QR Code.png',
     defaultTaxRate: 0,
+    defaultCostPercent: 0,
     defaultInvoiceDateOffsetDays: 0,
     invoiceItemsPerPage: 7,
     logoUrl: '',
@@ -68,10 +69,12 @@ function normalizeInvoiceSettings(data = {}) {
     const invoiceItemsPerPage = Math.min(30, Math.max(1, parseInt(data.invoiceItemsPerPage, 10) || DEFAULT_INVOICE_SETTINGS.invoiceItemsPerPage));
     const approvalLinkExpirationHours = Math.min(720, Math.max(1, parseInt(data.approvalLinkExpirationHours, 10) || DEFAULT_INVOICE_SETTINGS.approvalLinkExpirationHours));
     const defaultInvoiceDateOffsetDays = Math.min(365, Math.max(-365, parseInt(data.defaultInvoiceDateOffsetDays, 10) || 0));
+    const defaultCostPercent = Math.min(100, Math.max(0, Number(data.defaultCostPercent) || 0));
 
     return {
         ...data,
         defaultOrderPriceMode: normalizeDefaultOrderPriceMode(data.defaultOrderPriceMode),
+        defaultCostPercent,
         invoiceItemsPerPage,
         defaultInvoiceDateOffsetDays,
         approvalLinkExpirationHours,

@@ -260,6 +260,34 @@ async function getAllIntentRecords() {
     return items.map(mapIntentForCompatibility).sort(sortBySequenceNumber);
 }
 
+function applyCanonicalServerResultToPayload(existing, serverResult) {
+    var payload = cloneData(existing && existing.payload ? existing.payload : {});
+    if (!serverResult || !serverResult.invoiceNumber) {
+        return payload;
+    }
+
+    var snapshotNames = ['invoice', 'localInvoiceSnapshot'];
+    for (var index = 0; index < snapshotNames.length; index += 1) {
+        var snapshotName = snapshotNames[index];
+        if (!payload[snapshotName]) {
+            continue;
+        }
+        payload[snapshotName] = Object.assign({}, payload[snapshotName], {
+            invoiceNumber: serverResult.invoiceNumber,
+            invoiceNumberVersion: serverResult.invoiceNumberVersion || payload[snapshotName].invoiceNumberVersion || 0,
+            invoiceNumberYear: serverResult.invoiceNumberYear || payload[snapshotName].invoiceNumberYear || 0,
+            invoiceNumberSequence: serverResult.invoiceNumberSequence || payload[snapshotName].invoiceNumberSequence || 0,
+            temporaryInvoiceNumber: serverResult.temporaryInvoiceNumber || payload[snapshotName].temporaryInvoiceNumber || '',
+            previousInvoiceNumbers: Array.isArray(serverResult.previousInvoiceNumbers)
+                ? serverResult.previousInvoiceNumbers
+                : payload[snapshotName].previousInvoiceNumbers || [],
+            syncState: 'synced',
+            offlineCreated: false
+        });
+    }
+    return payload;
+}
+
 export const offlineQueueService = {
     async init() {
         await openOfflineDexieDatabase();
@@ -357,11 +385,17 @@ export const offlineQueueService = {
     },
 
     async markSynced(id, serverResult) {
+        var existing = await this.getQueueItem(id);
+        var canonicalPayload = applyCanonicalServerResultToPayload(existing, serverResult);
         return this.updateQueueItem(id, {
             status: SYNC_RETRY_STATUSES.ACKNOWLEDGED,
             acknowledgedAt: getIsoNow(),
             syncedAt: getIsoNow(),
             serverResult: serverResult || null,
+            canonicalAggregateId: serverResult && serverResult.canonicalAggregateId
+                ? serverResult.canonicalAggregateId
+                : existing && existing.canonicalAggregateId ? existing.canonicalAggregateId : '',
+            payload: canonicalPayload,
             lastError: '',
             lastErrorCode: '',
             lastErrorMessage: ''

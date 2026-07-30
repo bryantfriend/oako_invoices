@@ -13,6 +13,7 @@ function buildDashboardResult(loadResult) {
         orders: orders,
         returnOrders: extras.returnOrders || orders,
         returnInvoices: extras.returnInvoices || [],
+        intelligenceSettings: extras.intelligenceSettings || {},
         metrics: dashboardController.calculateMetrics(orders),
         meta: result.meta || {}
     };
@@ -119,10 +120,11 @@ export const dashboardController = {
         };
     },
 
-    loadStats(orders, period, revenueGranularity = 'day', returnInvoices = [], returnOrders = orders) {
+    loadStats(orders, period, revenueGranularity = 'day', returnInvoices = [], returnOrders = orders, intelligenceSettings = {}) {
         return statsService.getDashboardStats(orders, period, revenueGranularity, {
             invoices: returnInvoices,
-            orders: returnOrders
+            orders: returnOrders,
+            intelligenceSettings: intelligenceSettings
         });
     },
 

@@ -31,6 +31,7 @@ import quickPrintSelectedInvoicesIntentModule from "../ICF/Intents/QuickPrintSel
 import selectDashboardAnalyticsRangeIntentModule from "../ICF/Intents/SelectDashboardAnalyticsRangeIntent.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { invoiceService } from "../services/invoiceService.js";
+import { renderFinancialIntelligencePanel, attachFinancialIntelligencePanel } from "../components/financialIntelligencePanel.js";
 
 // Global chart registry to prevent "broken" graphs
 const ORDERS_TABLE_PAGE_SIZE = 120;
@@ -100,6 +101,7 @@ export const renderDashboard = async (params, routeContext) => {
     let activeOrders = [];
     let returnOrders = [];
     let returnInvoices = [];
+    let intelligenceSettings = {};
     let filteredOrders = [];
     let inventoryCategories = [];
     let selectedOrderIds = new Set();
@@ -253,6 +255,7 @@ export const renderDashboard = async (params, routeContext) => {
     const orders = initialDashboardResult && initialDashboardResult.orders ? initialDashboardResult.orders : [];
     const loadedReturnOrders = initialDashboardResult && initialDashboardResult.returnOrders ? initialDashboardResult.returnOrders : [];
     const loadedReturnInvoices = initialDashboardResult && initialDashboardResult.returnInvoices ? initialDashboardResult.returnInvoices : [];
+    intelligenceSettings = initialDashboardResult && initialDashboardResult.intelligenceSettings ? initialDashboardResult.intelligenceSettings : {};
     allOrders = orders;
     activeOrders = getActiveOrders(allOrders);
     returnOrders = loadedReturnOrders;
@@ -281,7 +284,7 @@ export const renderDashboard = async (params, routeContext) => {
     const refreshDashboardDataPreservingState = async () => {
         const scrollTop = getScrollPosition();
         console.info('[DASHBOARD_REFRESH] started navigationId=' + navigationId);
-        const [{ orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [] }, refreshedInventoryData] = await Promise.all([
+        const [{ orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [], intelligenceSettings: refreshedIntelligenceSettings = {} }, refreshedInventoryData] = await Promise.all([
             dashboardController.refreshDashboard({ source: 'orders-background-refresh' }),
             inventoryController.loadInventoryData(today, { routeName: expectedRoute, navigationId: navigationId })
         ]);
@@ -296,6 +299,7 @@ export const renderDashboard = async (params, routeContext) => {
         activeOrders = getActiveOrders(allOrders);
         returnOrders = refreshedReturnOrders;
         returnInvoices = refreshedReturnInvoices;
+        intelligenceSettings = refreshedIntelligenceSettings;
         inventoryCategories = refreshedInventoryData;
         pendingCheckmarkUpdates.clear();
         updatedCheckmarkUpdates.clear();
@@ -517,7 +521,7 @@ export const renderDashboard = async (params, routeContext) => {
         const analyticsOrders = getAnalyticsOrders();
         const analyticsReturnOrders = getAnalyticsReturnOrders();
         const analyticsReturnInvoices = getAnalyticsReturnInvoices();
-        const stats = dashboardController.loadStats(analyticsOrders, currentPeriod, revenueGranularity, analyticsReturnInvoices, analyticsReturnOrders);
+        const stats = dashboardController.loadStats(analyticsOrders, currentPeriod, revenueGranularity, analyticsReturnInvoices, analyticsReturnOrders, intelligenceSettings);
         const alerts = dashboardController.getRiskAlerts(analyticsOrders);
         const productChart = getProductChartData(stats.charts);
         const workQueueLanes = getWorkQueueLanes();
@@ -581,6 +585,8 @@ export const renderDashboard = async (params, routeContext) => {
                     ${renderKPICard("Outstanding", stats.metrics.outstanding, true, true, 'balance')}
                     ${renderKPICard("AOV", stats.metrics.aov, true, false, 'average')}
                 </div>
+
+                ${renderFinancialIntelligencePanel(stats.intelligence)}
 
                 <div class="dashboard-main-grid">
                     <section class="dashboard-card revenue-card">
@@ -686,6 +692,7 @@ export const renderDashboard = async (params, routeContext) => {
         `;
 
         initCharts(stats.charts, productChart);
+        attachFinancialIntelligencePanel();
         attachListeners();
         applyFilters();
     };
@@ -1683,7 +1690,7 @@ export const renderDashboard = async (params, routeContext) => {
             row.addEventListener('click', () => {
                 if (productChartMode !== 'categories') return;
                 const index = Number(row.dataset.categoryIndex);
-                const stats = dashboardController.loadStats(getAnalyticsOrders(), currentPeriod, revenueGranularity, getAnalyticsReturnInvoices(), getAnalyticsReturnOrders());
+                const stats = dashboardController.loadStats(getAnalyticsOrders(), currentPeriod, revenueGranularity, getAnalyticsReturnInvoices(), getAnalyticsReturnOrders(), intelligenceSettings);
                 const categoryChart = stats.charts.topCategories;
                 selectedProductCategory = {
                     id: categoryChart.ids[index],

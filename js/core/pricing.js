@@ -346,6 +346,18 @@ export function normalizeOrderItemPricing(item) {
     return normalized;
 }
 
+function getProductUnitCostSnapshot(product) {
+    var source = product || {};
+    var fieldNames = ['unitCost', 'costPrice', 'productionCost', 'unitProductionCost'];
+    for (var index = 0; index < fieldNames.length; index += 1) {
+        var value = source[fieldNames[index]];
+        if (value === undefined || value === null || value === '') continue;
+        var number = Number(value);
+        if (Number.isFinite(number) && number >= 0) return number;
+    }
+    return null;
+}
+
 export function buildPricedOrderItemFromProduct(product, priceMode, quantity) {
     var source = product || {};
     var selectedBasePriceMode = normalizeDefaultOrderPriceMode(priceMode);
@@ -367,6 +379,7 @@ export function buildPricedOrderItemFromProduct(product, priceMode, quantity) {
         selectedBasePriceMode: selectedBasePriceMode,
         unitPrice: unitPrice,
         price: unitPrice,
+        unitCost: getProductUnitCostSnapshot(source),
         originalRetailPrice: snapshots.originalRetailPrice,
         originalBusinessPrice: snapshots.originalBusinessPrice,
         priceOverridden: false,

@@ -100,9 +100,16 @@ export const renderSettings = async () => {
                 ${createCard({
         title: 'Financial & Payment Settings',
         content: `
-                        <div class="input-group">
-                            <label>Default Tax Rate (%)</label>
-                            <input type="number" name="defaultTaxRate" value="${settings.defaultTaxRate ?? 0}" step="0.1" style="width: 120px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4);">
+                            <div class="input-group">
+                                <label>Default Tax Rate (%)</label>
+                                <input type="number" name="defaultTaxRate" value="${settings.defaultTaxRate ?? 0}" step="0.1" style="width: 120px;">
+                            </div>
+                            <div class="input-group">
+                                <label>Fallback Cost of Goods (%)</label>
+                                <input type="number" name="defaultCostPercent" value="${settings.defaultCostPercent ?? 0}" min="0" max="100" step="0.1" style="width: 120px;">
+                                <small style="color: var(--color-gray-500);">Used only when a sold product has no unit cost. Leave at 0 to hide incomplete profit instead of estimating it.</small>
+                            </div>
                         </div>
                         <div class="input-group">
                             <label>Bank Account / Payment Terms</label>
@@ -267,6 +274,7 @@ export const renderSettings = async () => {
             const formData = new FormData(document.getElementById('settings-form'));
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+            data.defaultCostPercent = Math.min(100, Math.max(0, parseFloat(data.defaultCostPercent) || 0));
             data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
             data.defaultInvoiceDateOffsetDays = parseInt(data.defaultInvoiceDateOffsetDays, 10) || 0;
             data.approvalLinkExpirationHours = parseInt(data.approvalLinkExpirationHours, 10) || 24;
@@ -302,6 +310,7 @@ export const renderSettings = async () => {
             const formData = new FormData(document.getElementById('settings-form'));
             const data = Object.fromEntries(formData.entries());
             data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+            data.defaultCostPercent = Math.min(100, Math.max(0, parseFloat(data.defaultCostPercent) || 0));
             data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
             data.defaultInvoiceDateOffsetDays = parseInt(data.defaultInvoiceDateOffsetDays, 10) || 0;
             data.approvalLinkExpirationHours = parseInt(data.approvalLinkExpirationHours, 10) || 24;
@@ -327,6 +336,7 @@ export const renderSettings = async () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         data.defaultTaxRate = parseFloat(data.defaultTaxRate) || 0;
+        data.defaultCostPercent = Math.min(100, Math.max(0, parseFloat(data.defaultCostPercent) || 0));
         data.invoiceItemsPerPage = parseInt(data.invoiceItemsPerPage, 10) || 7;
         data.defaultInvoiceDateOffsetDays = parseInt(data.defaultInvoiceDateOffsetDays, 10) || 0;
         data.approvalLinkExpirationHours = parseInt(data.approvalLinkExpirationHours, 10) || 24;

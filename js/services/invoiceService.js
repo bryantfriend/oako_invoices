@@ -514,7 +514,7 @@ export const invoiceService = {
             const storeId = getStoreId(settings);
             const isOffline = !offlineStatusService.isOnline();
             const offlineInvoiceId = isOffline ? await deviceIdService.createOfflineEntityId(storeId) : '';
-            const invoiceNumber = isOffline ? await deviceIdService.nextOfflineInvoiceNumber() : 'INV-' + Date.now().toString().substr(-6);
+            const invoiceNumber = isOffline ? await deviceIdService.nextOfflineInvoiceNumber() : 'PENDING-CANONICAL';
             const localUpdatedAt = new Date().toISOString();
 
             const payload = buildInvoicePayload(order, settings, customer, orderId, adjustments, invoiceNumber, qrService.generateSecureToken(), {
@@ -542,16 +542,19 @@ export const invoiceService = {
             }
 
             delete payload.id;
-            const invoiceId = await dataIntegrityService.createInvoiceWithIntegrity(payload, {
+            const integrityResult = await dataIntegrityService.createInvoiceWithIntegrity(payload, {
                 actor: getCurrentAdminActor(),
                 source: 'ui',
                 storeId: storeId,
                 companyId: storeId,
                 intentId: 'invoice-for-order-' + orderId,
-                intentType: 'PreparePrintableInvoiceIntent'
+                intentType: 'PreparePrintableInvoiceIntent',
+                returnResult: true
             });
-            const createdInvoice = Object.assign({}, payload, {
+            const invoiceId = integrityResult.invoiceId;
+            const createdInvoice = Object.assign({}, payload, integrityResult.invoice || {}, {
                 id: invoiceId,
+                invoiceNumber: integrityResult.invoiceNumber,
                 updatedAt: new Date(),
                 localUpdatedAt: localUpdatedAt,
                 syncState: 'synced'
