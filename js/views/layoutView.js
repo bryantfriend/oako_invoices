@@ -12,6 +12,7 @@ import { syncService } from "../services/syncService.js";
 import { syncDiagnosticsService } from "../services/syncDiagnosticsService.js";
 import { Modal } from "../components/modal.js";
 import { getCurrentRoute } from "../core/routeGuard.js";
+import { attachGlobalCommandPalette } from "../components/globalCommandPalette.js";
 
 
 function renderOfflineReadinessPanel(readiness) {
@@ -106,6 +107,11 @@ class LayoutView {
             </div>
             </div>
             <div style="display: flex; align-items: center; gap: var(--space-4);">
+                <button id="global-search-button" class="global-search-button" type="button" title="Search and commands (Ctrl K)">
+                    <span aria-hidden="true">⌕</span>
+                    <span class="global-search-label">Search</span>
+                    <kbd>Ctrl K</kbd>
+                </button>
                 <div id="sync-status-mount" class="sync-status-mount"></div>
                 <!-- Language Selector -->
                 <div class="language-selector">
@@ -153,6 +159,7 @@ class LayoutView {
             </div>
         `;
 
+        attachGlobalCommandPalette();
         this.updateSyncBadge();
         if (this.unsubscribeSync) {
             this.unsubscribeSync();

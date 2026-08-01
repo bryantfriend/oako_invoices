@@ -11,6 +11,9 @@ const NAV_ICONS = {
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
     invoices: '<path d="M4 3h16v18l-3-2-3 2-3-2-3 2-4-2Z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>',
     inventory: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+    collections: '<path d="M3 6h18v12H3z"/><path d="M7 10h6"/><path d="M17 14h.01"/>',
+    production: '<path d="M4 20h16"/><path d="M6 20V9l6-5v16"/><path d="M12 12l6-3v11"/><path d="M8 13h1"/><path d="M8 16h1"/><path d="M15 13h1"/><path d="M15 16h1"/>',
+    delivery: '<path d="M3 6h11v11H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7" cy="19" r="2"/><circle cx="18" cy="19" r="2"/>',
     customers: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     settings: '<path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 5 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.4 5a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.4.6.8 1 .9.3.1.7.1 1.1.1H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/>',
     profile: '<path d="M12 17.8 5.8 21l1.2-6.9L2 9.2l6.9-1L12 2l3.1 6.2 6.9 1-5 4.9 1.2 6.9Z"/>',
@@ -46,6 +49,9 @@ export class Sidebar {
                 ${this.createNavItem(t('sidebar_orders'), ROUTES.DASHBOARD, 'orders', 'orders')}
                 ${this.createNavItem(t('dash_new_order'), ROUTES.CREATE_ORDER, 'plus')}
                 ${this.createNavItem(t('sidebar_invoices'), ROUTES.INVOICES, 'invoices', 'invoices')}
+                ${this.createNavItem('Collections', ROUTES.COLLECTIONS, 'collections')}
+                ${this.createNavItem('Production Plan', ROUTES.PRODUCTION_PLANNER, 'production')}
+                ${this.createNavItem('Delivery & Packing', ROUTES.DELIVERY, 'delivery')}
                 ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, 'inventory', 'lowStock')}
                 ${this.createNavItem(t('sidebar_customers'), ROUTES.CUSTOMERS, 'customers')}
                 ${this.createNavItem(t('sidebar_settings'), ROUTES.SETTINGS, 'settings')}
