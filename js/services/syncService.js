@@ -330,6 +330,7 @@ function prepareOrderPatchForSync(queueItem) {
     patch.lastSyncAttemptAt = new Date().toISOString();
     restoreDateField(patch, 'archivedAt');
     restoreDateField(patch, 'unarchivedAt');
+    restoreDateField(patch, 'printedAt');
     return patch;
 }
 
@@ -349,7 +350,7 @@ async function processOrderQueueItem(queueItem) {
         return;
     }
 
-    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder') {
+    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder' || queueItem.actionType === 'markOrderPrinted') {
         await writeOrderArchive(queueItem);
         return;
     }

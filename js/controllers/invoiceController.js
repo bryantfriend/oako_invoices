@@ -247,9 +247,26 @@ export const invoiceController = {
         }
     },
 
-    async markPrinted(invoiceId, orderId) {
+    async markPrinted(invoiceId, orderId, trustedContext) {
         try {
-            var result = await invoiceService.markInvoicePrinted(invoiceId, orderId);
+            var safeContext = trustedContext || {};
+            var orderSnapshot = safeContext.order || null;
+            if (!orderSnapshot) {
+                var ordersState = sessionDataStore.getOrdersSnapshot();
+                var knownOrders = ordersState && Array.isArray(ordersState.records) ? ordersState.records : [];
+                if (knownOrders.length === 0) {
+                    var invoicesState = sessionDataStore.getInvoicesSnapshot();
+                    var invoiceExtras = invoicesState && invoicesState.extras ? invoicesState.extras : {};
+                    knownOrders = Array.isArray(invoiceExtras.orders) ? invoiceExtras.orders : [];
+                }
+                orderSnapshot = knownOrders.find(function(order) {
+                    return order && String(order.id || '') === String(orderId || '');
+                }) || null;
+            }
+            var result = await invoiceService.markInvoicePrinted(invoiceId, orderId, {
+                invoice: safeContext.invoice || null,
+                order: orderSnapshot
+            });
             if (!result || !result.ok) {
                 throw new Error(getIntentErrorMessage(result, 'Failed to mark invoice as printed.'));
             }

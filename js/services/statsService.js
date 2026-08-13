@@ -1,5 +1,6 @@
 import { getReturnState } from "../core/returnStatus.js";
-import { getAnalyticsStatus, getMillis, getRevenueTrendTimestamp, isArchivedRecord } from "../core/orderRecordHelpers.js";
+import { getAnalyticsStatus, getMillis, isArchivedRecord } from "../core/orderRecordHelpers.js";
+import { buildOrderAnalyticsProjections } from "../core/orderAnalyticsProjection.js";
 import { buildFinancialIntelligence } from "./financialIntelligenceService.js";
 
 function safeNumber(value, fallback = 0) {
@@ -364,12 +365,16 @@ export const statsService = {
         const ranges = this._getAnalyticsRanges(orders, period, now);
         const currentRange = ranges.current;
         const prevRange = ranges.previous;
+        const projections = buildOrderAnalyticsProjections(orders);
+        const currentProjections = this._filterProjectionsByDate(projections, currentRange.start, currentRange.end);
+        const prevProjections = prevRange ? this._filterProjectionsByDate(projections, prevRange.start, prevRange.end) : [];
+        const undatedProjections = projections.filter(function(projection) { return !projection.analyticsDate; });
+        const reconciliationProjections = currentProjections.concat(undatedProjections);
+        const currentOrders = currentProjections.map(function(projection) { return projection.source; });
+        const prevOrders = prevProjections.map(function(projection) { return projection.source; });
 
-        const currentOrders = this._filterByDate(orders, currentRange.start, currentRange.end);
-        const prevOrders = prevRange ? this._filterByDate(orders, prevRange.start, prevRange.end) : [];
-
-        const currentMetrics = this._calculateMetrics(currentOrders);
-        const prevMetrics = this._calculateMetrics(prevOrders);
+        const currentMetrics = this._calculateMetrics(currentOrders, currentProjections);
+        const prevMetrics = this._calculateMetrics(prevOrders, prevProjections);
         const analyticsOptions = Array.isArray(returnInvoices)
             ? { invoices: returnInvoices }
             : (returnInvoices || {});
@@ -401,19 +406,20 @@ export const statsService = {
                     delta: this._calculateDelta(currentMetrics.outstanding, prevMetrics.outstanding, true) // inverted logic (lower is better)
                 },
                 aov: {
-                    value: currentMetrics.count > 0 ? currentMetrics.revenue / currentMetrics.count : 0,
+                    value: currentMetrics.revenueOrderCount > 0 ? currentMetrics.revenue / currentMetrics.revenueOrderCount : 0,
                     delta: this._calculateDelta(
-                        currentMetrics.count > 0 ? currentMetrics.revenue / currentMetrics.count : 0,
-                        prevMetrics.count > 0 ? prevMetrics.revenue / prevMetrics.count : 0
+                        currentMetrics.revenueOrderCount > 0 ? currentMetrics.revenue / currentMetrics.revenueOrderCount : 0,
+                        prevMetrics.revenueOrderCount > 0 ? prevMetrics.revenue / prevMetrics.revenueOrderCount : 0
                     )
                 }
             },
+            revenueReconciliation: this._getRevenueReconciliation(reconciliationProjections),
             overview: this.getRevenueBreakdown(orders),
             intelligence: intelligence,
             overdueCustomers: this.getTopOverdueCustomers(orders),
             topOrders: this.getTopOrders(orders),
             charts: {
-                revenueOverTime: this._getRevenueOverTime(currentOrders, currentRange, revenueGranularity),
+                revenueOverTime: this._getRevenueOverTime(currentProjections, currentRange, revenueGranularity),
                 unitDemandOverTime: this._getUnitDemandOverTime(currentOrders, currentRange, revenueGranularity),
                 statusPipeline: this._getStatusPipeline(orders),
                 topProducts: this._getTopProducts(currentOrders),
@@ -494,10 +500,7 @@ export const statsService = {
     _getEarliestAnalyticsDate(orders, fallbackDate) {
         var earliestMillis = 0;
         (orders || []).forEach(function(order) {
-            var millis = getRevenueTrendTimestamp(order) ||
-                getMillis(order && order.updatedAt) ||
-                getMillis(order && order.localUpdatedAt) ||
-                getMillis(order && order.archivedAt);
+            var millis = getMillis(order && order.orderDate) || getMillis(order && order.createdAt);
             if (millis && (!earliestMillis || millis < earliestMillis)) {
                 earliestMillis = millis;
             }
@@ -510,21 +513,77 @@ export const statsService = {
 
     _filterByDate(orders, start, end) {
         return orders.filter(function(order) {
-            var millis = getRevenueTrendTimestamp(order) || getMillis(order && order.updatedAt) || getMillis(order && order.localUpdatedAt) || getMillis(order && order.archivedAt);
+            var millis = getMillis(order && order.orderDate) || getMillis(order && order.createdAt);
             if (!millis) return false;
             var date = new Date(millis);
             return date >= start && date <= end;
         });
     },
 
-    _calculateMetrics(orders) {
-        const confirmedStati = ['confirmed', 'fulfilled', 'fullfilled', 'paid'];
-        const outstandingStati = ['confirmed', 'fulfilled', 'fullfilled'];
+    _filterProjectionsByDate(projections, start, end) {
+        return (projections || []).filter(function(projection) {
+            if (!projection || !projection.analyticsDate) {
+                return false;
+            }
+            return projection.analyticsDate >= start && projection.analyticsDate <= end;
+        });
+    },
+
+    _calculateMetrics(orders, projections) {
+        var revenueRows = (projections || []).filter(function(projection) {
+            return projection.revenueEligible;
+        });
 
         return {
             count: orders.length,
-            revenue: orders.filter(o => confirmedStati.includes(getAnalyticsStatus(o))).reduce((sum, o) => sum + (o.totalAmount || 0), 0),
-            outstanding: orders.filter(o => outstandingStati.includes(getAnalyticsStatus(o))).reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+            revenueOrderCount: revenueRows.length,
+            revenue: revenueRows.reduce(function(total, projection) {
+                return total + projection.netAmount;
+            }, 0),
+            outstanding: revenueRows.filter(function(projection) {
+                return projection.outstandingEligible;
+            }).reduce(function(total, projection) {
+                return total + projection.netAmount;
+            }, 0)
+        };
+    },
+
+    _getRevenueReconciliation(projections) {
+        var rows = projections || [];
+        var included = rows.filter(function(projection) { return projection.revenueEligible; });
+        var excluded = rows.filter(function(projection) { return !projection.revenueEligible; });
+        var exclusionCounts = {};
+
+        excluded.forEach(function(projection) {
+            var reason = projection.exclusionReason || 'unknown';
+            exclusionCounts[reason] = (exclusionCounts[reason] || 0) + 1;
+        });
+
+        return {
+            includedOrderCount: included.length,
+            excludedOrderCount: excluded.length,
+            archivedIncludedCount: included.filter(function(projection) { return projection.isArchived; }).length,
+            warningRecordCount: rows.filter(function(projection) { return projection.dataWarnings.length > 0; }).length,
+            grossAmount: included.reduce(function(total, projection) { return total + projection.grossAmount; }, 0),
+            returnedAmount: included.reduce(function(total, projection) { return total + projection.returnedAmount; }, 0),
+            netAmount: included.reduce(function(total, projection) { return total + projection.netAmount; }, 0),
+            exclusionCounts: exclusionCounts,
+            rows: rows.map(function(projection) {
+                return {
+                    recordId: projection.recordId,
+                    customerName: projection.source.customerName || '',
+                    storedStatus: projection.source.status || '',
+                    lifecycleStatus: projection.lifecycleStatus,
+                    isArchived: projection.isArchived,
+                    analyticsDate: projection.analyticsDate,
+                    grossAmount: projection.grossAmount,
+                    returnedAmount: projection.returnedAmount,
+                    netAmount: projection.revenueEligible ? projection.netAmount : 0,
+                    included: projection.revenueEligible,
+                    reason: projection.revenueEligible ? 'included' : projection.exclusionReason,
+                    warnings: projection.dataWarnings.slice()
+                };
+            })
         };
     },
 
@@ -535,7 +594,7 @@ export const statsService = {
     },
 
     _getOrderDate(order) {
-        var millis = getRevenueTrendTimestamp(order);
+        var millis = getMillis(order && order.orderDate) || getMillis(order && order.createdAt);
         return millis ? new Date(millis) : new Date();
     },
 
@@ -586,7 +645,7 @@ export const statsService = {
         return year + '-' + month + '-' + day;
     },
 
-    _getRevenueOverTime(orders, range, granularity = 'day') {
+    _getRevenueOverTime(projections, range, granularity = 'day') {
         const groups = {};
         const labels = [];
 
@@ -599,21 +658,20 @@ export const statsService = {
             labels.push(key);
         }
 
-        orders.forEach(o => {
-            const date = this._getOrderDate(o);
+        (projections || []).forEach(function(projection) {
+            if (!projection.revenueEligible || !projection.analyticsDate) return;
+            const date = projection.analyticsDate;
             const key = this._bucketKey(this._startOfBucket(date, granularity));
             if (groups[key]) {
-                const amount = o.totalAmount || 0;
-                const status = getAnalyticsStatus(o);
+                const amount = projection.netAmount;
+                const status = projection.lifecycleStatus;
                 if (status === 'paid') groups[key].paid += amount;
-                else if (['confirmed', 'fulfilled', 'fullfilled'].includes(status)) groups[key].outstanding += amount;
-                if (['confirmed', 'fulfilled', 'fullfilled', 'paid'].includes(status)) {
-                    groups[key].gross += amount;
-                    groups[key].confirmedRevenue += amount;
-                    groups[key].orders += 1;
-                }
+                else if (projection.outstandingEligible) groups[key].outstanding += amount;
+                groups[key].gross += projection.grossAmount;
+                groups[key].confirmedRevenue += amount;
+                groups[key].orders += 1;
             }
-        });
+        }.bind(this));
 
         return {
             labels: labels.map(k => this._bucketLabel(groups[k].date, granularity)),

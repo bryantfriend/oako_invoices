@@ -45,6 +45,8 @@ test('order archiving preserves previousStatus for future analytics', function()
 
     assert.match(orderService, /const\s+previousStatus\s*=\s*existingOrder/);
     assert.match(orderService, /previousStatus:\s*previousStatus/);
+    assert.match(orderService, /LEGACY_ARCHIVE_COLLECTION\s*=\s*'orders_archive'/);
+    assert.match(orderService, /mergeLegacyArchivedOrders/);
 });
 
 test('all analytics includes confirmed revenue older than the former 30-day bucket cap', function() {
@@ -130,4 +132,63 @@ test('day week and month groupings cover the same selected historical revenue', 
     });
     assert.ok(daily.revenueOverTime.labels.length > weekly.revenueOverTime.labels.length);
     assert.ok(weekly.revenueOverTime.labels.length > monthly.revenueOverTime.labels.length);
+});
+
+test('confirmed revenue normalizes amounts, deducts returns, and explains excluded states', function() {
+    const orders = [
+        { id: 'confirmed', status: 'confirmed', orderDate: '2026-08-10', totalAmount: 100, items: [] },
+        { id: 'fulfilled-string', status: 'fulfilled', orderDate: '2026-08-10', totalAmount: '200', items: [] },
+        { id: 'paid', status: 'paid', orderDate: '2026-08-10', totalAmount: 300, items: [] },
+        { id: 'draft', status: 'draft', orderDate: '2026-08-10', totalAmount: 400, items: [] },
+        { id: 'pending', status: 'pending', orderDate: '2026-08-10', totalAmount: 500, items: [] },
+        { id: 'cancelled', status: 'cancelled', orderDate: '2026-08-10', totalAmount: 600, items: [] },
+        { id: 'archived-paid', status: 'archived', archived: true, previousStatus: 'paid', orderDate: '2026-08-10', totalAmount: 700, items: [] },
+        { id: 'archived-flag-paid', status: 'paid', archived: true, orderDate: '2026-08-10', totalAmount: 50, items: [] },
+        { id: 'archived-unknown', status: 'archived', archived: true, orderDate: '2026-08-10', totalAmount: 800, items: [] },
+        {
+            id: 'partial-return',
+            status: 'paid',
+            orderDate: '2026-08-10',
+            totalAmount: 100,
+            returnSummary: { totalReturnedAmount: 30 },
+            items: [{ quantity: 2, returnedQuantity: 1, price: 30 }]
+        },
+        {
+            id: 'full-return',
+            status: 'returned',
+            orderDate: '2026-08-10',
+            totalAmount: 90,
+            items: [{ quantity: 1, returnedQuantity: 1, price: 90 }]
+        }
+    ];
+    const stats = statsService.getDashboardStats(orders, { start: '2026-08-10', end: '2026-08-10' }, 'day');
+
+    assert.equal(stats.metrics.orders.value, 11);
+    assert.equal(stats.metrics.revenue.value, 1420);
+    assert.equal(stats.metrics.aov.value, 1420 / 7);
+    assert.equal(stats.charts.revenueOverTime.confirmedRevenue[0], 1420);
+    assert.equal(stats.revenueReconciliation.includedOrderCount, 7);
+    assert.equal(stats.revenueReconciliation.archivedIncludedCount, 2);
+    assert.equal(stats.revenueReconciliation.returnedAmount, 120);
+    assert.equal(stats.revenueReconciliation.exclusionCounts.draft, 1);
+    assert.equal(stats.revenueReconciliation.exclusionCounts.pending, 1);
+    assert.equal(stats.revenueReconciliation.exclusionCounts.cancelled, 1);
+    assert.equal(stats.revenueReconciliation.exclusionCounts.unknown_status, 1);
+});
+
+test('confirmed revenue stays on the original order date after fulfillment and payment', function() {
+    const stats = statsService.getDashboardStats([
+        {
+            id: 'paid-later',
+            status: 'paid',
+            orderDate: '2026-08-10T12:00:00+06:00',
+            fulfilledAt: '2026-08-11T12:00:00+06:00',
+            paidAt: '2026-08-12T12:00:00+06:00',
+            totalAmount: 250,
+            items: []
+        }
+    ], { start: '2026-08-10', end: '2026-08-12' }, 'day');
+
+    assert.deepEqual(stats.charts.revenueOverTime.labels, ['8/10', '8/11', '8/12']);
+    assert.deepEqual(stats.charts.revenueOverTime.confirmedRevenue, [250, 0, 0]);
 });

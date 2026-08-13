@@ -2150,7 +2150,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         type: 'primary',
                         onConfirm: async () => {
                             try {
-                                var printResult = await invoiceController.markPrinted(invoice.id, invoice.orderId);
+                                var printResult = await invoiceController.markPrinted(invoice.id, invoice.orderId, { invoice: invoice });
                                 if (!printResult) {
                                     return;
                                 }

@@ -879,6 +879,71 @@ textarea:focus {
     height: 290px;
 }
 
+.revenue-reconciliation-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 12px;
+    color: var(--color-gray-600);
+    font-size: 11px;
+}
+
+.revenue-reconciliation-summary strong {
+    color: var(--color-gray-900);
+}
+
+.revenue-reconciliation-exclusions {
+    margin-top: 6px;
+    color: var(--color-gray-500);
+    font-size: 10px;
+}
+
+.revenue-reconciliation-details {
+    margin-top: 10px;
+    border-top: 1px solid var(--color-gray-100);
+    padding-top: 8px;
+}
+
+.revenue-reconciliation-details summary {
+    color: var(--color-primary-700);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.revenue-reconciliation-table-wrap {
+    margin-top: 10px;
+    max-height: 340px;
+    overflow: auto;
+}
+
+.revenue-reconciliation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.revenue-reconciliation-table th,
+.revenue-reconciliation-table td {
+    border-bottom: 1px solid var(--color-gray-100);
+    padding: 7px 8px;
+    text-align: left;
+}
+
+.revenue-reconciliation-table th {
+    background: var(--color-gray-50);
+    color: var(--color-gray-600);
+    position: sticky;
+    top: 0;
+}
+
+.revenue-reconciliation-limit {
+    color: var(--color-gray-500);
+    font-size: 11px;
+    margin-top: 8px;
+}
+
 .mini-chart-frame {
     position: relative;
     height: 190px;

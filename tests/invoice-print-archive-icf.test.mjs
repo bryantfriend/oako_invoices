@@ -64,7 +64,7 @@ test('printing and archiving are wired through complete ICF flows', function() {
         assert.match(printIntent, new RegExp(stageName + ': \{'));
         assert.match(archiveIntent, new RegExp(stageName + ': \{'));
     });
-    assert.ok(invoiceView.includes('invoiceController.markPrinted(invoice.id, invoice.orderId)'));
+    assert.ok(invoiceView.includes('invoiceController.markPrinted(invoice.id, invoice.orderId, { invoice: invoice })'));
     assert.ok(!invoiceView.includes('orderService.updateOrder(invoice.orderId, orderUpdates)'));
     assert.ok(invoiceController.includes("sessionDataStore.updateInvoiceRecord(invoiceId, invoicePatch, 'mark-invoice-printed')"));
     assert.ok(invoiceController.includes("sessionDataStore.updateOrderRecord(orderId, orderPatch, 'mark-invoice-printed')"));
@@ -72,4 +72,29 @@ test('printing and archiving are wired through complete ICF flows', function() {
     assert.ok(invoiceController.includes("sessionDataStore.removeInvoiceRecord(invoiceId, 'archive-invoice')"));
     assert.ok(invoiceService.includes('archiveInvoiceIntentModule.createArchiveInvoiceIntent'));
     assert.ok(invoiceService.includes('markInvoicePrintedIntentModule.createMarkInvoicePrintedIntent'));
+});
+
+test('post-print flow reuses trusted records and supports queued offline status updates', function() {
+    const contextProvider = readText('js/ICF/Stages/ContextProviders/Invoices/addMarkInvoicePrintedContext.js');
+    const invoiceController = readText('js/controllers/invoiceController.js');
+    const invoiceService = readText('js/services/invoiceService.js');
+    const orderService = readText('js/services/orderService.js');
+    const syncService = readText('js/services/syncService.js');
+
+    assert.ok(invoiceController.includes('sessionDataStore.getOrdersSnapshot()'));
+    assert.ok(invoiceService.includes('safeContext.invoice'));
+    assert.ok(invoiceService.includes('safeContext.order'));
+    assert.ok(orderService.includes("enqueue('markOrderPrinted', 'order'"));
+    assert.ok(syncService.includes("queueItem.actionType === 'markOrderPrinted'"));
+    assert.ok(contextProvider.includes('The invoice was printed, but its status could not be saved yet.'));
+});
+
+test('single document reads can attempt the cloud during degraded connectivity', function() {
+    const invoiceService = readText('js/services/invoiceService.js');
+    const orderService = readText('js/services/orderService.js');
+
+    assert.ok(invoiceService.includes('offlineStatusService.canAttemptCloudRead()'));
+    assert.ok(orderService.includes('offlineStatusService.canAttemptCloudRead()'));
+    assert.ok(invoiceService.includes('getDocFromCache(docRef)'));
+    assert.ok(orderService.includes('getDocFromCache(docRef)'));
 });

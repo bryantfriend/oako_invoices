@@ -343,7 +343,7 @@ function assignCollectionData(state, records, extras, readCount, reason) {
 
 async function fetchOrdersData() {
     var startedAt = getPerformanceNow();
-    var queryCount = 4;
+    var queryCount = 5;
     var referenceGroupsPromise = Promise.all([
         readCachedRowsAsync('products:all').catch(function() { return []; }),
         readCachedRowsAsync('categories:all').catch(function() { return []; }),

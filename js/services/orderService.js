@@ -26,6 +26,7 @@ import updateOrderStatusIntentModule from "../ICF/Intents/UpdateOrderStatusInten
 import archiveSelectedOrdersIntentModule from "../ICF/Intents/ArchiveSelectedOrdersIntent.js";
 
 const COLLECTION = 'orders';
+const LEGACY_ARCHIVE_COLLECTION = 'orders_archive';
 
 function getCurrentUserId() {
     return auth.currentUser && auth.currentUser.uid ? auth.currentUser.uid : '';
@@ -85,6 +86,27 @@ function mergeLocalOrders(serverOrders, localOrdersById) {
     return Object.keys(byId).map(id => byId[id]);
 }
 
+function mergeLegacyArchivedOrders(activeOrders, legacyArchivedOrders) {
+    var byId = {};
+    (activeOrders || []).forEach(function(order) {
+        if (order && order.id) {
+            byId[order.id] = order;
+        }
+    });
+    (legacyArchivedOrders || []).forEach(function(order) {
+        if (!order || !order.id || byId[order.id]) {
+            return;
+        }
+        var storedStatus = String(order.status || '').toLowerCase();
+        byId[order.id] = Object.assign({}, order, {
+            archived: true,
+            status: 'archived',
+            previousStatus: order.previousStatus || (storedStatus !== 'archived' ? storedStatus : '')
+        });
+    });
+    return Object.keys(byId).map(function(id) { return byId[id]; });
+}
+
 async function getLocalOrderSnapshot(id) {
     const snapshots = await offlineQueueService.getLocalEntitySnapshots('order').catch(function() {
         return {};
@@ -104,12 +126,25 @@ export const orderService = {
     async getAllOrders() {
         try {
             const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
-            const rows = await getDocsWithCache(q, {
-                collectionName: COLLECTION,
-                cacheKey: 'orders:all:createdAt_desc',
-                timeoutMs: 45000,
-                attempts: 2
-            });
+            const legacyArchiveQuery = query(collection(db, LEGACY_ARCHIVE_COLLECTION));
+            const groups = await Promise.all([
+                getDocsWithCache(q, {
+                    collectionName: COLLECTION,
+                    cacheKey: 'orders:all:createdAt_desc',
+                    timeoutMs: 45000,
+                    attempts: 2
+                }),
+                getDocsWithCache(legacyArchiveQuery, {
+                    collectionName: LEGACY_ARCHIVE_COLLECTION,
+                    cacheKey: 'orders_archive:all',
+                    timeoutMs: 45000,
+                    attempts: 2
+                }).catch(function(error) {
+                    console.warn('Legacy archived orders could not be loaded; current orders remain available.', error);
+                    return [];
+                })
+            ]);
+            const rows = mergeLegacyArchivedOrders(groups[0] || [], groups[1] || []);
             return mergeLocalOrders(rows, await offlineQueueService.getLocalEntitySnapshots('order'));
         } catch (error) {
             logCollectionError(COLLECTION, error);
@@ -121,18 +156,37 @@ export const orderService = {
         let timeoutId;
         try {
             const docRef = doc(db, COLLECTION, id);
-            const timeoutPromise = new Promise((_, reject) => {
-                timeoutId = setTimeout(() => reject(createCollectionTimeoutError(COLLECTION, 30000)), 30000);
-            });
             const localOrder = await getLocalOrderSnapshot(id);
-            if (!offlineStatusService.isOnline() && localOrder) {
+            if (!offlineStatusService.canAttemptCloudRead() && localOrder) {
                 return localOrder;
             }
-            const docSnap = offlineStatusService.isOnline()
-                ? await Promise.race([getDoc(docRef), timeoutPromise])
-                : await getDocFromCache(docRef);
-            if (docSnap.exists()) {
-                return Object.assign({ id: docSnap.id }, docSnap.data(), localOrder || {});
+
+            if (offlineStatusService.canAttemptCloudRead()) {
+                try {
+                    const timeoutPromise = new Promise(function(resolve, reject) {
+                        timeoutId = setTimeout(function() {
+                            reject(createCollectionTimeoutError(COLLECTION, 30000));
+                        }, 30000);
+                    });
+                    const serverSnapshot = await Promise.race([getDoc(docRef), timeoutPromise]);
+                    if (serverSnapshot.exists()) {
+                        return Object.assign({ id: serverSnapshot.id }, serverSnapshot.data(), localOrder || {});
+                    }
+                    return localOrder;
+                } catch (serverError) {
+                    console.warn("Could not load server order; checking offline document cache.", serverError);
+                }
+            }
+
+            try {
+                const cachedSnapshot = await getDocFromCache(docRef);
+                if (cachedSnapshot.exists()) {
+                    return Object.assign({ id: cachedSnapshot.id }, cachedSnapshot.data(), localOrder || {});
+                }
+            } catch (cacheError) {
+                if (!localOrder) {
+                    console.warn("Order was not available in the offline document cache.", cacheError);
+                }
             }
             return localOrder;
         } catch (error) {
@@ -307,6 +361,38 @@ export const orderService = {
             console.error("Error updating order:", error);
             throw error;
         }
+    },
+
+    async updateOrderAfterPrint(id, updates, trustedOrder) {
+        if (offlineStatusService.isOnline()) {
+            return this.updateOrder(id, updates);
+        }
+
+        var now = new Date();
+        var source = trustedOrder || await getLocalOrderSnapshot(id) || { id: id };
+        var localSnapshot = Object.assign({}, source, updates || {}, {
+            id: id,
+            updatedAt: now.toISOString(),
+            localUpdatedAt: now.toISOString(),
+            localUpdatedAtMillis: now.getTime(),
+            syncState: source.offlineCreated ? 'offline_created' : 'pending_sync',
+            syncStatus: 'pending',
+            syncAction: 'markOrderPrinted'
+        });
+        var firestorePatch = Object.assign({}, updates || {});
+        if (firestorePatch.printedAt instanceof Date) {
+            firestorePatch.printedAt = firestorePatch.printedAt.toISOString();
+        }
+
+        await offlineQueueService.enqueue('markOrderPrinted', 'order', id, {
+            firestorePatch: firestorePatch,
+            localOrderSnapshot: localSnapshot,
+            order: localSnapshot,
+            localUpdatedAt: now.toISOString()
+        }, {
+            storeId: localSnapshot.storeId || localSnapshot.companyId || 'KORG'
+        });
+        return true;
     },
 
     async _updateOrderStatusDirect(id, status) {

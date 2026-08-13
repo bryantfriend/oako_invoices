@@ -82,6 +82,75 @@ function icon(name, className = '') {
     `;
 }
 
+function getRevenueReasonLabel(reason) {
+    var labels = {
+        included: 'Included',
+        draft: 'Draft excluded',
+        pending: 'Pending excluded',
+        cancelled: 'Cancelled excluded',
+        missing_sales_date: 'Missing sales date',
+        unknown_status: 'Status needs review'
+    };
+    return labels[reason] || String(reason || 'Needs review').replace(/_/g, ' ');
+}
+
+function renderRevenueReconciliation(reconciliation) {
+    var data = reconciliation || {};
+    var rows = Array.isArray(data.rows) ? data.rows : [];
+    var visibleRows = rows.slice(0, 200);
+    var exclusionCounts = data.exclusionCounts || {};
+    var exclusionSummary = Object.keys(exclusionCounts).map(function(reason) {
+        return String(exclusionCounts[reason]) + ' ' + getRevenueReasonLabel(reason).toLowerCase();
+    }).join(' · ');
+
+    return `
+        <div class="revenue-reconciliation-summary">
+            <span><strong>${data.includedOrderCount || 0}</strong> revenue orders included</span>
+            <span><strong>${data.archivedIncludedCount || 0}</strong> archived included</span>
+            <span><strong>${formatCurrency(data.returnedAmount || 0)}</strong> returns deducted</span>
+            <span><strong>${data.warningRecordCount || 0}</strong> records need review</span>
+        </div>
+        ${exclusionSummary ? `<div class="revenue-reconciliation-exclusions">${escapeHtml(exclusionSummary)}</div>` : ''}
+        <details class="revenue-reconciliation-details">
+            <summary>Explain this number</summary>
+            <div class="revenue-reconciliation-table-wrap">
+                <table class="revenue-reconciliation-table">
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Status used</th>
+                            <th>Sales date</th>
+                            <th>Gross</th>
+                            <th>Returns</th>
+                            <th>Net included</th>
+                            <th>Decision</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${visibleRows.map(function(row) {
+                            var warningText = row.warnings && row.warnings.length ? ' · ' + row.warnings.join(', ') : '';
+                            return `
+                                <tr>
+                                    <td>#${escapeHtml(String(row.recordId || '').slice(-8))}${row.isArchived ? ' · archived' : ''}</td>
+                                    <td>${escapeHtml(row.customerName || 'Unknown customer')}</td>
+                                    <td>${escapeHtml(row.lifecycleStatus || 'unknown')}</td>
+                                    <td>${row.analyticsDate ? formatDate(row.analyticsDate) : 'Missing'}</td>
+                                    <td>${formatCurrency(row.grossAmount || 0)}</td>
+                                    <td>${formatCurrency(row.returnedAmount || 0)}</td>
+                                    <td>${formatCurrency(row.netAmount || 0)}</td>
+                                    <td>${escapeHtml(getRevenueReasonLabel(row.reason) + warningText)}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+                ${rows.length > visibleRows.length ? `<p class="revenue-reconciliation-limit">Showing the first ${visibleRows.length} of ${rows.length} records.</p>` : ''}
+            </div>
+        </details>
+    `;
+}
+
 export const renderDashboard = async (params, routeContext) => {
     var navigationId = routeContext && routeContext.navigationId ? routeContext.navigationId : getCurrentNavigationId();
     var expectedRoute = 'orders';
@@ -593,7 +662,7 @@ export const renderDashboard = async (params, routeContext) => {
                         <div class="dashboard-card-header">
                             <div>
                                 <h2>Confirmed Revenue Trend</h2>
-                                <p>Confirmed, fulfilled, and paid orders grouped by ${revenueGranularity}.</p>
+                                <p>Net confirmed sales grouped by original order date. Returns are deducted.</p>
                             </div>
                             <div class="segmented-control compact-control">
                                 ${['day', 'week', 'month'].map(view => `
@@ -606,6 +675,7 @@ export const renderDashboard = async (params, routeContext) => {
                 ? '<canvas id="chart-revenue"></canvas>'
                 : '<div class="empty-state">No confirmed revenue in this range yet.</div>'}
                         </div>
+                        ${renderRevenueReconciliation(stats.revenueReconciliation)}
                     </section>
 
                     ${renderAttentionPanel(workQueueLanes, lowStockProducts)}

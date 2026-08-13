@@ -576,19 +576,42 @@ export const invoiceService = {
 
     async getInvoice(id) {
         const localInvoice = await offlineQueueService.getLocalInvoiceSnapshot(id);
-        if (!offlineStatusService.isOnline() && localInvoice) {
+        if (!offlineStatusService.canAttemptCloudRead() && localInvoice) {
             return localInvoice;
         }
 
         const docRef = doc(db, COLLECTION, id);
         let invoice = null;
+        let serverConfirmedMissing = false;
 
-        try {
-            const snap = offlineStatusService.isOnline()
-                ? await getDoc(docRef)
-                : await getDocFromCache(docRef);
-            if (snap.exists()) {
-                invoice = Object.assign({ id: snap.id }, snap.data());
+        if (offlineStatusService.canAttemptCloudRead()) {
+            try {
+                const serverSnapshot = await getDoc(docRef);
+                if (serverSnapshot.exists()) {
+                    invoice = Object.assign({ id: serverSnapshot.id }, serverSnapshot.data());
+                } else {
+                    serverConfirmedMissing = true;
+                }
+            } catch (serverError) {
+                console.warn("Could not load server invoice; checking offline document cache.", serverError);
+            }
+        }
+
+        if (!invoice && !serverConfirmedMissing) {
+            try {
+                const cachedSnapshot = await getDocFromCache(docRef);
+                if (cachedSnapshot.exists()) {
+                    invoice = Object.assign({ id: cachedSnapshot.id }, cachedSnapshot.data());
+                }
+            } catch (cacheError) {
+                if (!localInvoice) {
+                    console.warn("Invoice was not available in the offline document cache.", cacheError);
+                }
+            }
+        }
+
+        if (invoice) {
+            try {
                 if (invoice.orderId) {
                     const order = await orderService.getOrderById(invoice.orderId).catch(function() {
                         return null;
@@ -597,9 +620,9 @@ export const invoiceService = {
                         invoice = this.buildInvoiceFromOrder(invoice, order, { preserveInvoiceItems: true });
                     }
                 }
+            } catch (contextError) {
+                console.warn("Could not enrich invoice with its order context.", contextError);
             }
-        } catch (error) {
-            console.warn("Could not load server invoice; checking local offline queue.", error);
         }
         if (localInvoice) {
             invoice = Object.assign({}, invoice || {}, localInvoice);
@@ -807,8 +830,9 @@ export const invoiceService = {
         return recalculateInvoiceTotals(invoice);
     },
 
-    async markInvoicePrinted(invoiceId, orderId) {
+    async markInvoicePrinted(invoiceId, orderId, trustedContext) {
         var service = this;
+        var safeContext = trustedContext || {};
         var intent = markInvoicePrintedIntentModule.createMarkInvoicePrintedIntent(
             getCurrentAdminActor(),
             {
@@ -819,16 +843,22 @@ export const invoiceService = {
                 source: 'invoice-print',
                 printApi: {
                     getInvoice: function(id) {
+                        if (safeContext.invoice && String(safeContext.invoice.id || safeContext.invoice.invoiceId || '') === String(id || '')) {
+                            return safeContext.invoice;
+                        }
                         return service.getInvoice(id);
                     },
                     getOrder: function(id) {
+                        if (safeContext.order && String(safeContext.order.id || safeContext.order.orderId || '') === String(id || '')) {
+                            return safeContext.order;
+                        }
                         return orderService.getOrderById(id);
                     },
                     updateOrder: function(id, patch) {
-                        return orderService.updateOrder(id, patch);
+                        return orderService.updateOrderAfterPrint(id, patch, safeContext.order || null);
                     },
                     updateInvoice: function(id, patch) {
-                        return service.updateInvoice(id, patch, 'markInvoicePrinted');
+                        return service.updateInvoice(id, patch, 'markInvoicePrinted', safeContext.invoice || null);
                     },
                     awardPrintedInvoice: function() {
                         return gamificationService.awardAction('invoicesPrinted');
@@ -1063,13 +1093,13 @@ export const invoiceService = {
         });
     },
 
-    async updateInvoice(id, updates, actionType = 'updateInvoice') {
+    async updateInvoice(id, updates, actionType = 'updateInvoice', trustedInvoice) {
         try {
             const user = auth.currentUser;
             const deviceId = await deviceIdService.getDeviceId();
 
             if (!offlineStatusService.isOnline()) {
-                const current = await this.getInvoice(id).catch(function() {
+                const current = trustedInvoice || await this.getInvoice(id).catch(function() {
                     return { id: id };
                 });
                 const source = current || { id: id };
