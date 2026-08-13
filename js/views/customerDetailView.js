@@ -8,6 +8,7 @@ import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
 import { formatDate, formatCurrency } from "../core/formatters.js";
 import { t } from "../core/i18n.js";
+import { startInvoicePreparationProgress, stopInvoicePreparationProgress } from "../components/invoicePreparationProgress.js";
 
 export const renderCustomerDetail = async ({ id }) => {
     layoutView.render();
@@ -25,6 +26,7 @@ export const renderCustomerDetail = async ({ id }) => {
 
     const { customer, orders, invoices = [], returns = [], payments = [], stats, mostOrderedProducts = [] } = data;
     const latestOrder = orders[0] || null;
+    const pendingPrintOrderIds = new Set();
     layoutView.updateTitle(customer.companyName || customer.name || 'Customer Detail');
 
     // 1. Header & KPIs
@@ -246,15 +248,36 @@ export const renderCustomerDetail = async ({ id }) => {
 
     // Helper for Invoice Navigation (Same as Dashboard)
     window.printOrder = async (id) => {
+        if (pendingPrintOrderIds.has(id)) {
+            return;
+        }
+        pendingPrintOrderIds.add(id);
+        var invoiceNavigationStarted = false;
+        startInvoicePreparationProgress();
         try {
+            const knownInvoice = invoices.find(function(invoice) {
+                return invoice && invoice.orderId === id && invoice.id;
+            });
+            if (knownInvoice) {
+                invoiceNavigationStarted = true;
+                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', knownInvoice.id));
+                return;
+            }
+
             const { invoiceController } = await import("../controllers/invoiceController.js");
             const orderSnapshot = orders.find(order => order.id === id) || null;
             const invoiceId = await invoiceController.generateForOrder(id, orderSnapshot);
             if (invoiceId) {
+                invoiceNavigationStarted = true;
                 router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
             }
         } catch (e) {
             console.error("Error navigating to invoice:", e);
+        } finally {
+            pendingPrintOrderIds.delete(id);
+            if (!invoiceNavigationStarted) {
+                stopInvoicePreparationProgress();
+            }
         }
     };
 

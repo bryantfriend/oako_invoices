@@ -1827,3 +1827,64 @@ table {
     .delivery-stop, .ops-plan-row { break-inside: avoid; }
     .packing-details { display: block; }
 }
+
+/* Invoice preparation is indeterminate because Firebase and QR generation do not expose reliable percentages. */
+.order-print-progress {
+    display: grid;
+    gap: 14px;
+}
+
+.order-print-progress-copy {
+    display: grid;
+    gap: 5px;
+}
+
+.order-print-progress-copy strong {
+    color: var(--color-gray-900);
+    font-size: 14px;
+}
+
+.order-print-progress-copy span,
+.order-print-progress small {
+    color: var(--color-gray-500);
+    font-size: 12px;
+}
+
+.order-print-progress-track {
+    position: relative;
+    height: 14px;
+    overflow: hidden;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 999px;
+    background: var(--color-gray-100);
+}
+
+.order-print-progress-bar {
+    width: 42%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--color-primary-400), var(--color-primary-700));
+    animation: order-print-progress-sweep 1.35s ease-in-out infinite;
+    transform: translateX(-120%);
+}
+
+.order-print-progress.is-complete .order-print-progress-bar {
+    width: 100%;
+    animation: none;
+    transform: translateX(0);
+    background: #059669;
+    transition: width 180ms ease, background 180ms ease;
+}
+
+@keyframes order-print-progress-sweep {
+    from { transform: translateX(-120%); }
+    to { transform: translateX(260%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .order-print-progress-bar {
+        width: 100%;
+        animation: none;
+        transform: none;
+    }
+}

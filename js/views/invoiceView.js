@@ -16,6 +16,7 @@ import { productService } from "../services/productService.js";
 import { qrActivityService } from "../services/qrActivityService.js";
 import { qrService } from "../services/qrService.js";
 import { buildInvoicePrintPages } from "../services/invoicePrintTemplate.js";
+import { finishInvoicePreparationProgress, stopInvoicePreparationProgress } from "../components/invoicePreparationProgress.js";
 import { buildGoogleSheetUrl, settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
 import { offlineStatusService } from "../services/offlineStatusService.js";
@@ -775,11 +776,13 @@ export const renderInvoiceDetail = async ({ id }) => {
         }
     } catch (e) {
         console.error("error fetching invoice", e);
+        stopInvoicePreparationProgress();
         container.innerHTML = `<div class="p-8 text-center" style="color: #ef4444; font-weight: 500;">An error occurred while loading this invoice.</div>`;
         return;
     }
 
     if (!invoice) {
+        stopInvoicePreparationProgress();
         container.innerHTML = `<div class="p-8 text-center">Invoice not found</div>`;
         return;
     }
@@ -796,6 +799,7 @@ export const renderInvoiceDetail = async ({ id }) => {
         invoiceController.getCachedInvoice(invoice.id);
     } catch (qrError) {
         console.error('Invoice QR preparation failed.', qrError);
+        stopInvoicePreparationProgress();
         container.innerHTML = `<div class="p-8 text-center" style="color:#991b1b;font-weight:700;">Invoice ${escapeHtml(invoice.invoiceNumber || invoice.id)} cannot be rendered because its QR code failed: ${escapeHtml(qrError.message)}</div>`;
         return;
     }
@@ -2248,11 +2252,13 @@ export const renderInvoiceDetail = async ({ id }) => {
 
     try {
         refreshBody();
+        finishInvoicePreparationProgress();
         hydrateInvoiceDetail().catch(error => {
             console.warn("Invoice detail background hydration failed.", error);
         });
     } catch (err) {
         console.error("render invoice detail fail", err);
+        stopInvoicePreparationProgress();
         container.innerHTML = `<div class="p-8 text-center" style="color: #ef4444; font-weight: 500;">Failed to render invoice. Some data may be missing or corrupt (possibly offline).</div>`;
     }
 };

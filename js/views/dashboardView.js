@@ -32,6 +32,7 @@ import selectDashboardAnalyticsRangeIntentModule from "../ICF/Intents/SelectDash
 import sessionDataStore from "../services/sessionDataStore.js";
 import { invoiceService } from "../services/invoiceService.js";
 import { renderFinancialIntelligencePanel, attachFinancialIntelligencePanel } from "../components/financialIntelligencePanel.js";
+import { startInvoicePreparationProgress, stopInvoicePreparationProgress } from "../components/invoicePreparationProgress.js";
 
 // Global chart registry to prevent "broken" graphs
 const ORDERS_TABLE_PAGE_SIZE = 120;
@@ -185,7 +186,7 @@ export const renderDashboard = async (params, routeContext) => {
     let productChartMode = 'products';
     let selectedProductCategory = null;
     let showArchivedAnalytics = true;
-    let archivedFilter = 'all';
+    let archivedFilter = 'active';
     let filters = { status: 'all', drill: null };
     let sort = { key: 'recent', order: 'desc' };
     let tableVisibleLimit = ORDERS_TABLE_PAGE_SIZE;
@@ -612,7 +613,7 @@ export const renderDashboard = async (params, routeContext) => {
                     <div class="dashboard-toolbar-actions">
                         <label class="dashboard-archive-toggle" for="show-archived-analytics">
                             <input type="checkbox" id="show-archived-analytics" ${showArchivedAnalytics ? 'checked' : ''}>
-                            <span>${showArchivedAnalytics ? 'Showing active + archived data' : 'Showing active data only'}</span>
+                            <span>${showArchivedAnalytics ? 'Analytics: active + archived' : 'Analytics: active only'}</span>
                         </label>
                         <div class="segmented-control dashboard-period-control">
                             ${[
@@ -1772,7 +1773,6 @@ export const renderDashboard = async (params, routeContext) => {
 
         document.getElementById('show-archived-analytics')?.addEventListener('change', (event) => {
             showArchivedAnalytics = event.target.checked;
-            archivedFilter = showArchivedAnalytics ? 'all' : 'active';
             selectedProductCategory = null;
             console.info('[ANALYTICS] includeArchived toggled: ' + showArchivedAnalytics);
             renderUI();
@@ -1865,7 +1865,7 @@ export const renderDashboard = async (params, routeContext) => {
                     filters.status = 'all';
                 } else {
                     filters.status = nextStatus;
-                    archivedFilter = showArchivedAnalytics ? 'all' : 'active';
+                    archivedFilter = 'active';
                 }
                 const select = document.getElementById('filter-status');
                 if (select) select.value = filters.status;
@@ -1950,8 +1950,8 @@ export const renderDashboard = async (params, routeContext) => {
                 }
 
                 activeOrders = getActiveOrders(allOrders);
-                filteredOrders = getOrdersForArchivedFilter();
                 if (result.archived > 0) {
+                    archivedFilter = 'active';
                     gamificationModule.gamificationService.awardAction('ordersArchived', result.archived).catch(function(error) {
                         console.warn('Archived orders, but could not record the reward.', error);
                     });
@@ -2057,14 +2057,17 @@ export const renderDashboard = async (params, routeContext) => {
                 return;
             }
 
-            const knownInvoice = printableInvoiceByOrderId[id];
-            if (knownInvoice && knownInvoice.invoiceId) {
-                router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', knownInvoice.invoiceId));
-                return;
-            }
-
             pendingPrintOrderIds.add(id);
+            var invoiceNavigationStarted = false;
+            startInvoicePreparationProgress();
             try {
+                const knownInvoice = printableInvoiceByOrderId[id];
+                if (knownInvoice && knownInvoice.invoiceId) {
+                    invoiceNavigationStarted = true;
+                    router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', knownInvoice.invoiceId));
+                    return;
+                }
+
                 const { invoiceController } = await import("../controllers/invoiceController.js");
                 const orderSnapshot = allOrders.find(function(order) {
                     return order && order.id === id;
@@ -2088,6 +2091,7 @@ export const renderDashboard = async (params, routeContext) => {
                         invoiceNumber: cachedInvoice && cachedInvoice.invoiceNumber ? cachedInvoice.invoiceNumber : ''
                     };
                     confirmedMissingInvoiceOrderIds.delete(id);
+                    invoiceNavigationStarted = true;
                     router.navigate(ROUTES.INVOICE_DETAIL.replace(':id', invoiceId));
                 }
             } catch (error) {
@@ -2095,6 +2099,9 @@ export const renderDashboard = async (params, routeContext) => {
                 notificationService.error(error && error.message ? error.message : 'Could not prepare the invoice.');
             } finally {
                 pendingPrintOrderIds.delete(id);
+                if (!invoiceNavigationStarted) {
+                    stopInvoicePreparationProgress();
+                }
             }
         };
 
@@ -2137,14 +2144,18 @@ export const renderDashboard = async (params, routeContext) => {
                 const result = await orderService.deleteOrder(id);
                 if (result && result.localRemoved) {
                     dashboardController.removeCachedOrder(id, 'remove-local-pending-order');
+                    allOrders = allOrders.filter(function(order) {
+                        return order && order.id !== id;
+                    });
                     notificationService.success('Local pending order removed.');
                 } else {
-                    const currentOrder = allOrders.find(order => order.id === id);
-                    const previousStatus = currentOrder ? (currentOrder.previousStatus || currentOrder.status || '') : '';
-                    dashboardController.updateCachedOrder(id, { archived: true, previousStatus, archivedAt: new Date(), updatedAt: new Date() }, 'delete-order');
+                    markOrderArchivedLocally(id, result);
                     notificationService.success('Order archived.');
                 }
-                renderDashboard();
+                selectedOrderIds.delete(id);
+                activeOrders = getActiveOrders(allOrders);
+                archivedFilter = 'active';
+                renderUI();
             }
         };
     };

@@ -81,6 +81,36 @@ test('single invoice preparation uses the full ICF pipeline and fast dependency 
     assert.match(customerServiceSource, /readCachedRowsAsync\('customers:all'\)/);
 });
 
+test('single-order print shows accessible indeterminate progress until the invoice preview renders', function() {
+    const dashboardSource = read('js/views/dashboardView.js');
+    const customerDetailSource = read('js/views/customerDetailView.js');
+    const invoiceViewSource = read('js/views/invoiceView.js');
+    const progressSource = read('js/components/invoicePreparationProgress.js');
+    const stylesSource = read('css/styles.css');
+
+    assert.match(dashboardSource, /startInvoicePreparationProgress\(\)/);
+    assert.match(dashboardSource, /if \(!invoiceNavigationStarted\) \{\s*stopInvoicePreparationProgress\(\)/);
+    assert.match(customerDetailSource, /pendingPrintOrderIds\.has\(id\)/);
+    assert.match(customerDetailSource, /invoices\.find\(function\(invoice\)/);
+    assert.match(invoiceViewSource, /refreshBody\(\);\s*finishInvoicePreparationProgress\(\);/);
+    assert.match(progressSource, /role=\"progressbar\"/);
+    assert.match(progressSource, /aria-valuetext=\"Working\"/);
+    assert.match(progressSource, /closeOnEsc: true/);
+    assert.match(stylesSource, /@keyframes order-print-progress-sweep/);
+    assert.match(stylesSource, /prefers-reduced-motion: reduce/);
+});
+
+test('Recent Orders defaults to Active and successful archives remain in Active view', function() {
+    const dashboardSource = read('js/views/dashboardView.js');
+
+    assert.match(dashboardSource, /let archivedFilter = 'active';/);
+    assert.doesNotMatch(dashboardSource, /archivedFilter = showArchivedAnalytics \? 'all' : 'active';/);
+    assert.match(dashboardSource, /if \(result\.archived > 0\) \{\s*archivedFilter = 'active';/);
+    assert.match(dashboardSource, /filterRecordsByArchivedMode\(allOrders, archivedFilter\)/);
+    assert.match(dashboardSource, /markOrderArchivedLocally\(id, result\);/);
+    assert.match(dashboardSource, /selectedOrderIds\.delete\(id\);\s*activeOrders = getActiveOrders\(allOrders\);\s*archivedFilter = 'active';\s*renderUI\(\);/);
+});
+
 test('bulk archive UI tracks confirmed completion and keeps failed selections retryable', () => {
     const dashboardSource = read('js/views/dashboardView.js');
     const orderServiceSource = read('js/services/orderService.js');
