@@ -115,9 +115,9 @@ export const invoiceController = {
         }
     },
 
-    async loadArchivedInvoices() {
+    async loadArchivedInvoices(options) {
         try {
-            return await invoiceService.getArchivedInvoices();
+            return await invoiceService.getArchivedInvoices(options || {});
         } catch (error) {
             notificationService.error('Failed to load archived invoices.');
             return [];
@@ -307,6 +307,20 @@ export const invoiceController = {
         } catch (error) {
             notificationService.error(error.message || 'Failed to restore invoice.');
             return false;
+        }
+    },
+
+    async restoreArchivedInvoices(invoiceIds, options) {
+        try {
+            const result = await invoiceService.restoreArchivedInvoices(invoiceIds, options || {});
+            await sessionDataStore.invalidateInvoicesCache('bulk-restore-archived-invoices');
+            if (result.failed > 0) notificationService.error(result.failed + ' invoice restore' + (result.failed === 1 ? '' : 's') + ' failed.');
+            else if (result.restored > 0) notificationService.success(result.restored + ' invoice' + (result.restored === 1 ? '' : 's') + ' restored.');
+            else notificationService.info('The selected invoices were already active.');
+            return result;
+        } catch (error) {
+            notificationService.error(error.message || 'Failed to restore invoices.');
+            return null;
         }
     },
 

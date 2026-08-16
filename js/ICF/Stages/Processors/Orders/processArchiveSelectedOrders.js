@@ -5,6 +5,7 @@ async function processArchiveSelectedOrders(intent) {
   var archiveApi = intent.context.archiveApi;
   var onProgress = intent.context.onProgress;
   var succeeded = [];
+  var skipped = [];
   var failed = [];
   var nextIndex = 0;
   var completed = 0;
@@ -25,10 +26,15 @@ async function processArchiveSelectedOrders(intent) {
       var orderId = orderIds[currentIndex];
       var archiveResult = await archiveWithRetry(archiveApi, orderId);
       if (archiveResult.ok) {
-        succeeded.push({
+        var successEntry = {
           orderId: orderId,
           result: archiveResult.result
-        });
+        };
+        if (archiveResult.result && archiveResult.result.transitioned === false) {
+          skipped.push(successEntry);
+        } else {
+          succeeded.push(successEntry);
+        }
       } else {
         failed.push({
           orderId: orderId,
@@ -40,12 +46,12 @@ async function processArchiveSelectedOrders(intent) {
         orderId: orderId,
         ok: archiveResult.ok,
         result: archiveResult.result,
-        message: archiveResult.ok ? "Archived " + String(succeeded.length) + " of " + String(orderIds.length) + " orders" : "Could not archive order " + orderId,
+        message: archiveResult.ok ? "Processed " + String(completed) + " of " + String(orderIds.length) + " orders" : "Could not archive order " + orderId,
         completed: completed,
         archived: succeeded.length,
         failed: failed.length,
         total: orderIds.length,
-        percent: Math.round((succeeded.length / orderIds.length) * 100)
+        percent: Math.round(((succeeded.length + skipped.length) / orderIds.length) * 100)
       });
     }
   }
@@ -64,6 +70,8 @@ async function processArchiveSelectedOrders(intent) {
     archived: succeeded.length,
     failed: failed.length,
     succeeded: succeeded,
+    skipped: skipped,
+    skippedCount: skipped.length,
     failures: failed,
     complete: failed.length === 0
   });

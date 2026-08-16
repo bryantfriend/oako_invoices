@@ -1,14 +1,13 @@
-export function isArchivedRecord(record) {
-    return !!(record && (record.archived === true || String(record.status || '').toLowerCase() === 'archived'));
-}
+import {
+    isArchivedRecord,
+    normalizeArchivedRecord
+} from "./archiveRecordHelpers.js";
+
+export { isArchivedRecord };
 
 export function getAnalyticsStatus(record) {
-    var source = record || {};
-    var status = String(source.status || '').toLowerCase();
-    if (status === 'archived' && source.previousStatus) {
-        return String(source.previousStatus).toLowerCase();
-    }
-    return status;
+    var source = normalizeArchivedRecord(record || {}, 'draft');
+    return String(source.status || '').toLowerCase();
 }
 
 export function shouldIncludeRecordInAnalytics(record, analyticsOptions) {
@@ -19,7 +18,7 @@ export function shouldIncludeRecordInAnalytics(record, analyticsOptions) {
     if (options.includeArchived === true) {
         return true;
     }
-    return !isArchivedRecord(record);
+    return !isArchivedRecord(normalizeArchivedRecord(record, 'draft'));
 }
 
 export function getMillis(value) {
@@ -79,7 +78,7 @@ export function filterRecordsByArchivedMode(records, archivedMode) {
     var mode = normalizeArchivedFilter(archivedMode, false);
     var list = Array.isArray(records) ? records : [];
     return list.filter(function(record) {
-        var archived = isArchivedRecord(record);
+        var archived = isArchivedRecord(normalizeArchivedRecord(record, 'draft'));
         if (mode === 'archived') {
             return archived;
         }
@@ -94,7 +93,7 @@ export function countArchivedRecords(records) {
     var list = Array.isArray(records) ? records : [];
     var count = 0;
     for (var index = 0; index < list.length; index += 1) {
-        if (isArchivedRecord(list[index])) {
+        if (isArchivedRecord(normalizeArchivedRecord(list[index], 'draft'))) {
             count += 1;
         }
     }

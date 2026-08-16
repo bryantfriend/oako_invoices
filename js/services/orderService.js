@@ -10,7 +10,8 @@ import {
     orderBy,
     where,
     limit,
-    serverTimestamp
+    serverTimestamp,
+    runTransaction
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { ORDER_STATUS } from "../core/constants.js";
 import { googleSheetsService } from "./googleSheetsService.js";
@@ -24,6 +25,7 @@ import { store } from "../core/store.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import updateOrderStatusIntentModule from "../ICF/Intents/UpdateOrderStatusIntent.js";
 import archiveSelectedOrdersIntentModule from "../ICF/Intents/ArchiveSelectedOrdersIntent.js";
+import { normalizeArchivedRecord } from "../core/archiveRecordHelpers.js";
 
 const COLLECTION = 'orders';
 const LEGACY_ARCHIVE_COLLECTION = 'orders_archive';
@@ -83,7 +85,66 @@ function mergeLocalOrders(serverOrders, localOrdersById) {
     Object.keys(localOrdersById || {}).forEach(id => {
         byId[id] = Object.assign({}, byId[id] || {}, localOrdersById[id], { id });
     });
-    return Object.keys(byId).map(id => byId[id]);
+    return Object.keys(byId).map(id => normalizeArchivedRecord(byId[id], ORDER_STATUS.DRAFT));
+}
+
+function getMillis(value) {
+    if (!value) return 0;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    if (typeof value.toDate === 'function') return value.toDate().getTime();
+    if (value.seconds) return Number(value.seconds) * 1000;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+async function runBulkOrderTransition(ids, transition, onProgress) {
+    const orderIds = Array.from(new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean)));
+    const succeeded = [];
+    const failures = [];
+    let nextIndex = 0;
+    let completed = 0;
+
+    async function worker() {
+        while (nextIndex < orderIds.length) {
+            const index = nextIndex++;
+            const orderId = orderIds[index];
+            let result = null;
+            let error = null;
+            for (let attempt = 0; attempt < 2 && !result; attempt += 1) {
+                try {
+                    result = await transition(orderId);
+                } catch (transitionError) {
+                    error = transitionError;
+                }
+            }
+            if (result) succeeded.push({ orderId: orderId, result: result });
+            else failures.push({ orderId: orderId, message: error && error.message ? error.message : 'Transition failed.' });
+            completed += 1;
+            if (typeof onProgress === 'function') {
+                onProgress({
+                    orderId: orderId,
+                    ok: Boolean(result),
+                    result: result,
+                    completed: completed,
+                    succeeded: succeeded.length,
+                    failed: failures.length,
+                    total: orderIds.length,
+                    percent: orderIds.length ? Math.round((completed / orderIds.length) * 100) : 100
+                });
+            }
+        }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(3, orderIds.length) }, worker));
+    return {
+        requested: orderIds.length,
+        succeeded: succeeded,
+        failures: failures,
+        transitioned: succeeded.filter(entry => entry.result && entry.result.transitioned !== false).length,
+        skipped: succeeded.filter(entry => entry.result && entry.result.transitioned === false).length,
+        failed: failures.length,
+        complete: failures.length === 0
+    };
 }
 
 function mergeLegacyArchivedOrders(activeOrders, legacyArchivedOrders) {
@@ -100,8 +161,7 @@ function mergeLegacyArchivedOrders(activeOrders, legacyArchivedOrders) {
         var storedStatus = String(order.status || '').toLowerCase();
         byId[order.id] = Object.assign({}, order, {
             archived: true,
-            status: 'archived',
-            previousStatus: order.previousStatus || (storedStatus !== 'archived' ? storedStatus : '')
+            status: order.previousStatus || (storedStatus !== 'archived' ? storedStatus : ORDER_STATUS.DRAFT)
         });
     });
     return Object.keys(byId).map(function(id) { return byId[id]; });
@@ -158,7 +218,7 @@ export const orderService = {
             const docRef = doc(db, COLLECTION, id);
             const localOrder = await getLocalOrderSnapshot(id);
             if (!offlineStatusService.canAttemptCloudRead() && localOrder) {
-                return localOrder;
+                return normalizeArchivedRecord(localOrder, ORDER_STATUS.DRAFT);
             }
 
             if (offlineStatusService.canAttemptCloudRead()) {
@@ -170,9 +230,9 @@ export const orderService = {
                     });
                     const serverSnapshot = await Promise.race([getDoc(docRef), timeoutPromise]);
                     if (serverSnapshot.exists()) {
-                        return Object.assign({ id: serverSnapshot.id }, serverSnapshot.data(), localOrder || {});
+                        return normalizeArchivedRecord(Object.assign({ id: serverSnapshot.id }, serverSnapshot.data(), localOrder || {}), ORDER_STATUS.DRAFT);
                     }
-                    return localOrder;
+                    return normalizeArchivedRecord(localOrder, ORDER_STATUS.DRAFT);
                 } catch (serverError) {
                     console.warn("Could not load server order; checking offline document cache.", serverError);
                 }
@@ -181,14 +241,14 @@ export const orderService = {
             try {
                 const cachedSnapshot = await getDocFromCache(docRef);
                 if (cachedSnapshot.exists()) {
-                    return Object.assign({ id: cachedSnapshot.id }, cachedSnapshot.data(), localOrder || {});
+                    return normalizeArchivedRecord(Object.assign({ id: cachedSnapshot.id }, cachedSnapshot.data(), localOrder || {}), ORDER_STATUS.DRAFT);
                 }
             } catch (cacheError) {
                 if (!localOrder) {
                     console.warn("Order was not available in the offline document cache.", cacheError);
                 }
             }
-            return localOrder;
+            return normalizeArchivedRecord(localOrder, ORDER_STATUS.DRAFT);
         } catch (error) {
             console.error("Error fetching order:", error);
             throw error;
@@ -217,7 +277,7 @@ export const orderService = {
                     const dateB = b.createdAt?.seconds || 0;
                     return dateB - dateA;
                 });
-                return docs[0];
+                return normalizeArchivedRecord(docs[0], ORDER_STATUS.DRAFT);
             }
             return null;
         } catch (error) {
@@ -241,7 +301,7 @@ export const orderService = {
             });
 
             // Sort in memory to avoid index requirements for now
-            return docs.sort((a, b) => {
+            return docs.map(order => normalizeArchivedRecord(order, ORDER_STATUS.DRAFT)).sort((a, b) => {
                 const dateA = a.createdAt?.seconds || 0;
                 const dateB = b.createdAt?.seconds || 0;
                 return dateB - dateA;
@@ -261,6 +321,7 @@ export const orderService = {
                 ...orderData,
                 id: offlineOrderId,
                 status: ORDER_STATUS.DRAFT,
+                archived: false,
                 createdBy: userId,
                 createdAt: isOffline ? now : serverTimestamp(),
                 updatedAt: isOffline ? now : serverTimestamp(),
@@ -457,20 +518,31 @@ export const orderService = {
         };
     },
 
+    async unarchiveOrders(ids, options) {
+        const service = this;
+        const safeOptions = options || {};
+        return runBulkOrderTransition(ids, function(orderId) {
+            return service.unarchiveOrder(orderId);
+        }, safeOptions.onProgress);
+    },
+
     async archiveOrder(id) {
         try {
             const existingOrder = await this.getOrderById(id).catch(function() {
                 return null;
             });
+            if (!existingOrder) {
+                throw new Error('Order not found.');
+            }
+            if (existingOrder.archived === true) {
+                return { archived: true, alreadyArchived: true, transitioned: false, order: existingOrder };
+            }
             const now = new Date();
             const userId = getCurrentUserId();
-            const previousStatus = existingOrder ? (existingOrder.previousStatus || (existingOrder.status === 'archived' ? '' : existingOrder.status || '')) : '';
 
             if (isPendingLocalCreate(existingOrder)) {
                 const compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, {
                     archived: true,
-                    status: 'archived',
-                    previousStatus: previousStatus,
                     archivedAt: now.toISOString(),
                     archivedAtLocal: now.getTime(),
                     archivedBy: userId,
@@ -478,15 +550,13 @@ export const orderService = {
                     syncAction: 'create',
                     syncState: 'offline_created'
                 });
-                return { local: true, archived: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: true, status: 'archived', previousStatus: previousStatus }) };
+                return { local: true, archived: true, transitioned: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: true }) };
             }
 
             if (!offlineStatusService.isOnline()) {
                 const localSnapshot = Object.assign({}, existingOrder || { id: id }, {
                     id: id,
                     archived: true,
-                    status: 'archived',
-                    previousStatus: previousStatus,
                     archivedAt: now.toISOString(),
                     archivedAtLocal: now.getTime(),
                     archivedBy: userId,
@@ -500,27 +570,36 @@ export const orderService = {
                 await offlineQueueService.enqueue('archiveOrder', 'order', id, {
                     firestorePatch: {
                         archived: true,
-                        status: 'archived',
-                        previousStatus: previousStatus,
                         archivedAt: now.toISOString(),
                         archivedBy: userId
                     },
                     localOrderSnapshot: localSnapshot,
                     order: localSnapshot,
-                    localUpdatedAt: now.toISOString()
+                    localUpdatedAt: now.toISOString(),
+                    baseUpdatedAtMillis: getMillis(existingOrder.updatedAt || existingOrder.localUpdatedAt)
                 }, {
                     storeId: localSnapshot.storeId || localSnapshot.companyId || 'KORG'
                 });
-                return { queued: true, archived: true, order: localSnapshot };
+                return { queued: true, archived: true, transitioned: true, order: localSnapshot };
             }
 
-            await this.updateOrder(id, {
-                archived: true,
-                status: 'archived',
-                previousStatus: previousStatus,
-                archivedAt: serverTimestamp(),
-                archivedBy: userId
+            const orderRef = doc(db, COLLECTION, id);
+            const transitionResult = await runTransaction(db, async function(transaction) {
+                const snapshot = await transaction.get(orderRef);
+                if (!snapshot.exists()) throw new Error('Order not found.');
+                const current = normalizeArchivedRecord(Object.assign({ id: snapshot.id }, snapshot.data()), ORDER_STATUS.DRAFT);
+                if (current.archived === true) return { transitioned: false, order: current };
+                transaction.update(orderRef, {
+                    archived: true,
+                    archivedAt: serverTimestamp(),
+                    archivedBy: userId,
+                    updatedAt: serverTimestamp()
+                });
+                return { transitioned: true, order: Object.assign({}, current, { archived: true, archivedAt: now, archivedBy: userId, updatedAt: now }) };
             });
+            if (!transitionResult.transitioned) {
+                return { archived: true, alreadyArchived: true, transitioned: false, order: transitionResult.order };
+            }
             await dataIntegrityService.recordAuditLogSafely({
                 type: 'ORDER_ARCHIVED',
                 entityType: 'order',
@@ -532,7 +611,10 @@ export const orderService = {
             }, {
                 source: 'ui'
             });
-            return { archived: true };
+            await googleSheetsService.syncOrderLifecycle(transitionResult.order).catch(function(error) {
+                console.warn('Order archived, but Google Sheets sync failed.', error);
+            });
+            return { archived: true, transitioned: true, order: transitionResult.order };
         } catch (error) {
             console.error("Error archiving order:", error);
             throw error;
@@ -544,15 +626,21 @@ export const orderService = {
             const existingOrder = await this.getOrderById(id).catch(function() {
                 return null;
             });
+            if (!existingOrder) {
+                throw new Error('Order not found.');
+            }
+            if (existingOrder.archived !== true) {
+                return { unarchived: true, alreadyActive: true, transitioned: false, order: existingOrder };
+            }
             const now = new Date();
             const userId = getCurrentUserId();
-            const restoredStatus = existingOrder && existingOrder.previousStatus ? existingOrder.previousStatus : ORDER_STATUS.DRAFT;
+            const legacyCleanup = existingOrder && existingOrder.previousStatus
+                ? { status: existingOrder.status || ORDER_STATUS.DRAFT, previousStatus: null }
+                : {};
 
             if (isPendingLocalCreate(existingOrder)) {
-                const compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, {
+                const compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, Object.assign({}, legacyCleanup, {
                     archived: false,
-                    status: restoredStatus,
-                    previousStatus: '',
                     archivedAt: null,
                     archivedAtLocal: null,
                     archivedBy: null,
@@ -562,16 +650,14 @@ export const orderService = {
                     syncStatus: 'pending',
                     syncAction: 'create',
                     syncState: 'offline_created'
-                });
-                return { local: true, unarchived: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: false, status: restoredStatus, previousStatus: '' }) };
+                }));
+                return { local: true, unarchived: true, transitioned: true, order: compactedOrder || Object.assign({}, existingOrder || {}, legacyCleanup, { archived: false }) };
             }
 
             if (!offlineStatusService.isOnline()) {
-                const localSnapshot = Object.assign({}, existingOrder || { id: id }, {
+                const localSnapshot = Object.assign({}, existingOrder || { id: id }, legacyCleanup, {
                     id: id,
                     archived: false,
-                    status: restoredStatus,
-                    previousStatus: '',
                     archivedAt: null,
                     archivedAtLocal: null,
                     archivedBy: null,
@@ -586,33 +672,47 @@ export const orderService = {
                     syncAction: 'unarchive'
                 });
                 await offlineQueueService.enqueue('unarchiveOrder', 'order', id, {
-                    firestorePatch: {
+                    firestorePatch: Object.assign({}, legacyCleanup, {
                         archived: false,
-                        status: restoredStatus,
-                        previousStatus: '',
                         archivedAt: null,
                         archivedBy: null,
                         unarchivedAt: now.toISOString(),
                         unarchivedBy: userId
-                    },
+                    }),
                     localOrderSnapshot: localSnapshot,
                     order: localSnapshot,
-                    localUpdatedAt: now.toISOString()
+                    localUpdatedAt: now.toISOString(),
+                    baseUpdatedAtMillis: getMillis(existingOrder.updatedAt || existingOrder.localUpdatedAt)
                 }, {
                     storeId: localSnapshot.storeId || localSnapshot.companyId || 'KORG'
                 });
-                return { queued: true, unarchived: true, order: localSnapshot };
+                return { queued: true, unarchived: true, transitioned: true, order: localSnapshot };
             }
 
-            await this.updateOrder(id, {
-                archived: false,
-                status: restoredStatus,
-                previousStatus: '',
-                archivedAt: null,
-                archivedBy: null,
-                unarchivedAt: serverTimestamp(),
-                unarchivedBy: userId
+            const orderRef = doc(db, COLLECTION, id);
+            const transitionResult = await runTransaction(db, async function(transaction) {
+                const snapshot = await transaction.get(orderRef);
+                if (!snapshot.exists()) throw new Error('Order not found.');
+                const stored = Object.assign({ id: snapshot.id }, snapshot.data());
+                const current = normalizeArchivedRecord(stored, ORDER_STATUS.DRAFT);
+                if (current.archived !== true) return { transitioned: false, order: current };
+                const transitionPatch = Object.assign({}, stored.previousStatus ? {
+                    status: current.status || ORDER_STATUS.DRAFT,
+                    previousStatus: null
+                } : {}, {
+                    archived: false,
+                    archivedAt: null,
+                    archivedBy: null,
+                    unarchivedAt: serverTimestamp(),
+                    unarchivedBy: userId,
+                    updatedAt: serverTimestamp()
+                });
+                transaction.update(orderRef, transitionPatch);
+                return { transitioned: true, order: Object.assign({}, current, transitionPatch, { unarchivedAt: now, updatedAt: now }) };
             });
+            if (!transitionResult.transitioned) {
+                return { unarchived: true, alreadyActive: true, transitioned: false, order: transitionResult.order };
+            }
             await dataIntegrityService.recordAuditLogSafely({
                 type: 'ORDER_UNARCHIVED',
                 entityType: 'order',
@@ -624,7 +724,10 @@ export const orderService = {
             }, {
                 source: 'ui'
             });
-            return { unarchived: true };
+            await googleSheetsService.syncOrderLifecycle(transitionResult.order).catch(function(error) {
+                console.warn('Order restored, but Google Sheets sync failed.', error);
+            });
+            return { unarchived: true, transitioned: true, order: transitionResult.order };
         } catch (error) {
             console.error("Error unarchiving order:", error);
             throw error;

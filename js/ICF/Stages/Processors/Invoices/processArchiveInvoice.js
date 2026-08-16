@@ -5,6 +5,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { deviceIdService } from "../../../../services/deviceIdService.js";
 import { dataIntegrityService } from "../../../../services/dataIntegrityService.js";
+import {
+  isArchivedRecord,
+  normalizeArchivedRecord
+} from "../../../../core/archiveRecordHelpers.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 
 /**
@@ -26,18 +30,23 @@ async function processArchiveInvoice(intent) {
     return resultHelpers.processFailure("Invoice not found.");
   }
 
-  if (intent.context.invoice.status === "archived") {
-    return resultHelpers.processFailure("Invoice is already archived.");
+  var storedInvoice = intent.context.invoice;
+  var invoice = normalizeArchivedRecord(storedInvoice, "open");
+
+  if (isArchivedRecord(invoice)) {
+    return resultHelpers.success(resultHelpers.addContextValue(intent, "archiveResult", {
+      invoiceId: intent.payload.invoiceId,
+      archived: true,
+      transitioned: false,
+      status: invoice.status
+    }));
   }
 
-  var invoice = intent.context.invoice;
   var user = intent.context.currentUser;
   var deviceId = await deviceIdService.getDeviceId();
-  var previousStatus = invoice.status || "open";
 
-  await dataIntegrityService.updateInvoiceWithIntegrity(intent.context.invoiceRef, invoice, {
-    previousStatus: previousStatus,
-    status: "archived",
+  await dataIntegrityService.updateInvoiceWithIntegrity(intent.context.invoiceRef, storedInvoice, {
+    archived: true,
     archivedAt: serverTimestamp(),
     archivedBy: getActorId(user),
     updatedAt: serverTimestamp(),
@@ -56,8 +65,9 @@ async function processArchiveInvoice(intent) {
     "archiveResult",
     {
       invoiceId: intent.payload.invoiceId,
-      previousStatus: previousStatus,
-      status: "archived"
+      archived: true,
+      transitioned: true,
+      status: invoice.status
     }
   );
 

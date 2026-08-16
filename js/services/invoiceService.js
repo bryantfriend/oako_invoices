@@ -37,6 +37,11 @@ import preparePrintableInvoiceIntentModule from "../ICF/Intents/PreparePrintable
 import updateInvoiceItemsIntentModule from "../ICF/Intents/UpdateInvoiceItemsIntent.js";
 import recordInvoiceReturnIntentModule from "../ICF/Intents/RecordInvoiceReturnIntent.js";
 import {
+    hasLegacyArchivedStatus,
+    isArchivedRecord,
+    normalizeArchivedRecord
+} from "../core/archiveRecordHelpers.js";
+import {
     buildInvoiceItemFromProduct,
     getItemReturnedQuantity,
     normalizeInvoiceItemsForEditing,
@@ -47,7 +52,7 @@ import {
 const COLLECTION = 'invoices';
 const WORKING_INVOICE_LIMIT = 120;
 const RECENT_HISTORY_LIMIT = 60;
-const ARCHIVED_INVOICE_LIMIT = 200;
+const DEFAULT_ARCHIVED_INVOICE_LIMIT = 50;
 const RETURN_ANALYTICS_LIMIT = 250;
 
 function getActorId(user) {
@@ -91,11 +96,11 @@ function getIntentFailureMessage(result) {
 }
 
 function isActiveInvoice(invoice) {
-    return invoice && invoice.status !== 'archived';
+    return invoice && !isArchivedRecord(normalizeArchivedRecord(invoice, 'open'));
 }
 
 function isArchivedInvoice(invoice) {
-    return invoice && invoice.status === 'archived';
+    return invoice && isArchivedRecord(normalizeArchivedRecord(invoice, 'open'));
 }
 
 function getMillis(value) {
@@ -212,7 +217,7 @@ async function applyLocalInvoiceOverlays(invoices) {
     }
 
     return Object.keys(byId).map(function(id) {
-        return byId[id];
+        return normalizeArchivedRecord(byId[id], 'open');
     }).sort(sortInvoicesByNewest);
 }
 
@@ -265,31 +270,40 @@ async function authorizeRestoreArchivedInvoiceIntent(context) {
 }
 
 async function processRestoreArchivedInvoiceIntent(context) {
-    const invoice = context.invoice;
-    if (!invoice) {
+    const storedInvoice = context.invoice;
+    if (!storedInvoice) {
         throw new Error('Invoice not found.');
     }
-    if (invoice.status !== 'archived') {
-        throw new Error('Only archived invoices can be restored.');
+    const invoice = normalizeArchivedRecord(storedInvoice, 'open');
+    if (!isArchivedRecord(invoice)) {
+        return Object.assign({}, context, { restoredStatus: invoice.status, transitioned: false });
     }
 
-    const restoreStatus = invoice.previousStatus || 'open';
-    await dataIntegrityService.updateInvoiceWithIntegrity(doc(db, COLLECTION, context.invoiceId), invoice, {
-        status: restoreStatus,
+    const restorePatch = {
+        archived: false,
+        archivedAt: null,
+        archivedBy: null,
         restoredAt: serverTimestamp(),
         restoredBy: getActorId(context.currentUser),
         updatedAt: serverTimestamp(),
         updatedBy: context.currentUser ? context.currentUser.uid : '',
         localUpdatedAt: new Date().toISOString(),
         syncState: 'synced'
-    }, {
+    };
+    if (hasLegacyArchivedStatus(storedInvoice)) {
+        restorePatch.status = invoice.status;
+        restorePatch.previousStatus = null;
+    }
+
+    await dataIntegrityService.updateInvoiceWithIntegrity(doc(db, COLLECTION, context.invoiceId), storedInvoice, restorePatch, {
         action: 'restore',
         actor: context.actor,
         source: 'ui'
     });
 
     return Object.assign({}, context, {
-        restoredStatus: restoreStatus
+        restoredStatus: invoice.status,
+        transitioned: true
     });
 }
 
@@ -299,7 +313,8 @@ async function emitRestoreArchivedInvoiceIntent(context) {
         message: 'Invoice restored successfully.',
         data: {
             invoiceId: context.invoiceId,
-            status: context.restoredStatus || 'open'
+            status: context.restoredStatus || 'open',
+            transitioned: context.transitioned !== false
         }
     };
 }
@@ -397,6 +412,7 @@ function buildInvoicePayload(order, settings, customer, orderId, adjustments, in
         discountAmount: discountAmount,
         totalAmount: totalAmount,
         status: 'draft',
+        archived: false,
         secureToken: secureToken,
         returnRequested: false,
         returnItems: [],
@@ -423,7 +439,7 @@ function getIntegrityAction(actionType, updates) {
         return 'restore';
     }
 
-    if (updates && updates.status === 'archived') {
+    if (updates && updates.archived === true) {
         return 'archive';
     }
 
@@ -577,7 +593,7 @@ export const invoiceService = {
     async getInvoice(id) {
         const localInvoice = await offlineQueueService.getLocalInvoiceSnapshot(id);
         if (!offlineStatusService.canAttemptCloudRead() && localInvoice) {
-            return localInvoice;
+            return normalizeArchivedRecord(localInvoice, 'open');
         }
 
         const docRef = doc(db, COLLECTION, id);
@@ -637,7 +653,7 @@ export const invoiceService = {
             });
         }
 
-        return invoice;
+        return normalizeArchivedRecord(invoice, 'open');
     },
 
     async getWorkingInvoices() {
@@ -754,7 +770,9 @@ export const invoiceService = {
         }
 
         return uniqueIds.map(function(orderId) {
-            return invoicesByOrderId[orderId] || null;
+            return invoicesByOrderId[orderId]
+                ? normalizeArchivedRecord(invoicesByOrderId[orderId], 'open')
+                : null;
         }).filter(function(invoice) {
             return invoice !== null;
         });
@@ -793,21 +811,45 @@ export const invoiceService = {
         }
 
         return Object.keys(byId).map(function(invoiceId) {
-            return byId[invoiceId];
+            return normalizeArchivedRecord(byId[invoiceId], 'open');
         }).sort(sortInvoicesByNewest);
     },
 
-    async getArchivedInvoices() {
-        const archivedQuery = query(
+    async getArchivedInvoices(options) {
+        const requestedLimit = Number(options && options.limit || DEFAULT_ARCHIVED_INVOICE_LIMIT);
+        const archiveLimit = Math.min(2000, Math.max(DEFAULT_ARCHIVED_INVOICE_LIMIT, requestedLimit));
+        const archivedFlagQuery = query(
+            collection(db, COLLECTION),
+            where('archived', '==', true),
+            limit(archiveLimit)
+        );
+        const legacyArchivedQuery = query(
             collection(db, COLLECTION),
             where('status', '==', 'archived'),
-            limit(ARCHIVED_INVOICE_LIMIT)
+            limit(archiveLimit)
         );
-        const rows = await getDocsWithCache(archivedQuery, {
-            collectionName: COLLECTION,
-            cacheKey: 'invoices:archived',
-            timeoutMs: 45000,
-            attempts: 2
+        const groups = await Promise.all([
+            getDocsWithCache(archivedFlagQuery, {
+                collectionName: COLLECTION,
+                cacheKey: 'invoices:archived:flag:' + archiveLimit,
+                timeoutMs: 45000,
+                attempts: 2
+            }),
+            getDocsWithCache(legacyArchivedQuery, {
+                collectionName: COLLECTION,
+                cacheKey: 'invoices:archived:legacy-status:' + archiveLimit,
+                timeoutMs: 45000,
+                attempts: 2
+            }).catch(function(error) {
+                console.warn('Legacy archived invoices could not be loaded.', error);
+                return [];
+            })
+        ]);
+        const byId = {};
+        mergeById(byId, groups[0] || []);
+        mergeById(byId, groups[1] || []);
+        const rows = Object.keys(byId).map(function(id) {
+            return normalizeArchivedRecord(byId[id], 'open');
         });
         return rows.filter(isArchivedInvoice).sort(function(a, b) {
             return getMillis(b.archivedAt || b.updatedAt || b.createdAt) - getMillis(a.archivedAt || a.updatedAt || a.createdAt);
@@ -891,6 +933,48 @@ export const invoiceService = {
         return RestoreArchivedInvoiceIntent.run({
             invoiceId: invoiceId
         });
+    },
+
+    async restoreArchivedInvoices(invoiceIds, options) {
+        const service = this;
+        const ids = Array.from(new Set((invoiceIds || []).map(id => String(id || '').trim()).filter(Boolean)));
+        const succeeded = [];
+        const skipped = [];
+        const failures = [];
+        const safeOptions = options || {};
+        let nextIndex = 0;
+        let completed = 0;
+
+        async function worker() {
+            while (nextIndex < ids.length) {
+                const invoiceId = ids[nextIndex++];
+                try {
+                    const result = await service.restoreArchivedInvoice(invoiceId);
+                    if (!result || result.ok !== true) throw new Error(result && result.message || 'Restore failed.');
+                    if (result.data && result.data.transitioned === false) skipped.push(invoiceId);
+                    else succeeded.push(invoiceId);
+                } catch (error) {
+                    failures.push({ invoiceId: invoiceId, message: error && error.message ? error.message : 'Restore failed.' });
+                }
+                completed += 1;
+                if (typeof safeOptions.onProgress === 'function') {
+                    safeOptions.onProgress({ completed: completed, total: ids.length, restored: succeeded.length, skipped: skipped.length, failed: failures.length, percent: Math.round((completed / ids.length) * 100) });
+                }
+            }
+        }
+
+        await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
+        return {
+            requested: ids.length,
+            restored: succeeded.length,
+            skipped: skipped.length,
+            failed: failures.length,
+            succeeded: succeeded,
+            alreadyActive: skipped,
+            processed: succeeded.concat(skipped),
+            failures: failures,
+            complete: failures.length === 0
+        };
     },
 
     async updateInvoiceDate(id, newDate) {
@@ -1074,7 +1158,9 @@ export const invoiceService = {
             timeoutMs: 45000,
             attempts: 2
         });
-        return rows.filter(function(invoice) {
+        return rows.map(function(invoice) {
+            return normalizeArchivedRecord(invoice, 'open');
+        }).filter(function(invoice) {
             if (Array.isArray(invoice.returns) && invoice.returns.length > 0) {
                 return true;
             }
@@ -1213,12 +1299,12 @@ export const invoiceService = {
                 for (let index = 0; index < localIds.length; index += 1) {
                     const localInvoice = localInvoices[localIds[index]];
                     if (localInvoice.orderId === orderId) {
-                        return localInvoice;
+                        return normalizeArchivedRecord(localInvoice, 'open');
                     }
                 }
                 return null;
             }
-            return rows[0];
+            return normalizeArchivedRecord(rows[0], 'open');
         } catch (error) {
             console.error("Error fetching invoice by order ID:", error);
             throw error;

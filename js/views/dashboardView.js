@@ -181,6 +181,19 @@ export const renderDashboard = async (params, routeContext) => {
     let pendingPrintOrderIds = new Set();
     let bulkPrintActive = false;
     let bulkArchiveActive = false;
+
+    const getBulkArchiveMode = () => archivedFilter === 'archived' ? 'restore' : 'archive';
+    const isBulkSelectableOrder = order => Boolean(order && order.id && (getBulkArchiveMode() === 'restore' ? isArchivedRecord(order) : !isArchivedRecord(order)));
+    const getBulkTransitionOrderIds = () => filteredOrders.filter(isBulkSelectableOrder).map(order => order.id).filter(id => selectedOrderIds.has(id));
+
+    function animateOrderRows(orderIds, animationClass) {
+        (orderIds || []).forEach(function(orderId) {
+            document.querySelectorAll('.data-row[data-id="' + CSS.escape(String(orderId)) + '"]').forEach(function(row) {
+                row.classList.add(animationClass);
+            });
+        });
+    }
+    const waitForArchiveAnimation = () => new Promise(resolve => window.setTimeout(resolve, 280));
     let currentPeriod = 'all';
     let revenueGranularity = 'day';
     let productChartMode = 'products';
@@ -211,26 +224,22 @@ export const renderDashboard = async (params, routeContext) => {
         return Boolean(order && order.id && pendingInvoiceOrderIds.has(order.id));
     }
 
-    function isOrderInvoiceSelectionDisabled(order) {
-        return isOrderInvoiceMissing(order) || isOrderInvoiceLookupPending(order);
-    }
-
     function getOrderInvoiceSelectionTitle(order) {
-        if (isOrderInvoiceLookupPending(order)) return 'Checking for a printable invoice…';
-        if (isOrderInvoiceMissing(order)) return 'No printable invoice has been created.';
-        if (isOrderPrintable(order)) return 'Select invoice for Quick Print';
-        return 'Select to verify invoice for Quick Print';
+        if (isOrderInvoiceLookupPending(order)) return 'Selected for archive; checking Quick Print availability…';
+        if (isOrderInvoiceMissing(order)) return 'Select order for archive. No printable invoice is available for Quick Print.';
+        if (isOrderPrintable(order)) return 'Select order for archive or Quick Print.';
+        return 'Select order for archive. Quick Print availability will be checked.';
     }
 
-    function getOrderedSelectedOrderIds() {
+    function getOrderedSelectedOrderIds(printableOnly) {
         const orderedIds = [];
         filteredOrders.forEach(function(order) {
-            if (order && selectedOrderIds.has(order.id)) {
+            if (order && selectedOrderIds.has(order.id) && (printableOnly !== true || printableInvoiceByOrderId[order.id])) {
                 orderedIds.push(order.id);
             }
         });
         selectedOrderIds.forEach(function(orderId) {
-            if (orderedIds.indexOf(orderId) === -1) {
+            if (orderedIds.indexOf(orderId) === -1 && (printableOnly !== true || printableInvoiceByOrderId[orderId])) {
                 orderedIds.push(orderId);
             }
         });
@@ -277,8 +286,6 @@ export const renderDashboard = async (params, routeContext) => {
             }
             if (!invoice || !invoice.id || !invoice.orderId || !invoice.invoiceNumber) {
                 confirmedMissingInvoiceOrderIds.add(orderId);
-                selectedOrderIds.delete(orderId);
-                notificationService.info('No printable invoice has been created for this order.');
                 return false;
             }
             printableInvoiceByOrderId[orderId] = {
@@ -287,12 +294,9 @@ export const renderDashboard = async (params, routeContext) => {
             };
             confirmedMissingInvoiceOrderIds.delete(orderId);
             sessionDataStore.updateInvoiceRecord(invoice.id, invoice, 'orders-printable-check');
-            selectedOrderIds.add(orderId);
             return true;
         } catch (error) {
             console.warn('Printable invoice lookup failed.', error);
-            selectedOrderIds.delete(orderId);
-            notificationService.error('Could not verify this invoice for Quick Print. Please try again.');
             return false;
         } finally {
             pendingInvoiceOrderIds.delete(orderId);
@@ -431,15 +435,9 @@ export const renderDashboard = async (params, routeContext) => {
     };
 
     function markOrderArchivedLocally(orderId, archiveResult) {
-        var currentOrder = allOrders.find(function(order) {
-            return order && order.id === orderId;
-        });
-        var previousStatus = currentOrder ? (currentOrder.previousStatus || (currentOrder.status === 'archived' ? '' : currentOrder.status || '')) : '';
         var result = archiveResult || {};
         var patch = {
             archived: true,
-            status: 'archived',
-            previousStatus: previousStatus,
             archivedAt: new Date(),
             updatedAt: new Date()
         };
@@ -449,6 +447,22 @@ export const renderDashboard = async (params, routeContext) => {
         }
         updateLocalOrder(orderId, patch);
         dashboardController.updateCachedOrder(orderId, patch, 'archive-selected-orders');
+    }
+
+    function markOrderRestoredLocally(orderId, restoreResult) {
+        var patch = {
+            archived: false,
+            archivedAt: null,
+            archivedBy: null,
+            unarchivedAt: new Date(),
+            updatedAt: new Date()
+        };
+        if (restoreResult && restoreResult.queued) {
+            patch.syncState = 'pending_sync';
+            patch.syncStatus = 'pending';
+        }
+        updateLocalOrder(orderId, patch);
+        dashboardController.updateCachedOrder(orderId, patch, 'restore-selected-orders');
     }
 
     const getDateKey = (value) => {
@@ -1382,7 +1396,7 @@ export const renderDashboard = async (params, routeContext) => {
             columns: [
                 {
                     key: 'select',
-                    label: `<input type="checkbox" id="select-all-orders" title="Select all shown printable invoices" aria-label="Select all shown printable invoices" style="cursor: pointer;">`,
+                    label: `<input type="checkbox" id="select-all-orders" title="Select all filtered orders" aria-label="Select all filtered orders" style="cursor: pointer;">`,
                     sortable: false,
                     align: 'center',
                     render: (val, row) => `
@@ -1391,10 +1405,10 @@ export const renderDashboard = async (params, routeContext) => {
                             class="order-select-checkbox"
                             data-id="${row.id}"
                             ${selectedOrderIds.has(row.id) ? 'checked' : ''}
-                            ${isOrderInvoiceSelectionDisabled(row) ? 'disabled' : ''}
+                            ${isBulkSelectableOrder(row) ? '' : 'disabled'}
                             title="${getOrderInvoiceSelectionTitle(row)}"
                             onclick="event.stopPropagation();"
-                            style="cursor: ${isOrderInvoiceSelectionDisabled(row) ? 'not-allowed' : 'pointer'};"
+                            style="cursor: ${isBulkSelectableOrder(row) ? 'pointer' : 'not-allowed'};"
                         >
                     `
                 },
@@ -1448,7 +1462,7 @@ export const renderDashboard = async (params, routeContext) => {
                                 class="order-select-checkbox"
                                 data-id="${row.id}"
                                 ${selectedOrderIds.has(row.id) ? 'checked' : ''}
-                                ${isOrderInvoiceSelectionDisabled(row) ? 'disabled' : ''}
+                                ${isBulkSelectableOrder(row) ? '' : 'disabled'}
                                 title="${getOrderInvoiceSelectionTitle(row)}"
                                 onclick="event.stopPropagation();"
                             >
@@ -1525,27 +1539,25 @@ export const renderDashboard = async (params, routeContext) => {
                     updateBulkArchiveControls();
                     return;
                 }
-                if (printableInvoiceByOrderId[id]) {
-                    selectedOrderIds.add(id);
-                    updateBulkArchiveControls();
-                    return;
+                selectedOrderIds.add(id);
+                updateBulkArchiveControls();
+                if (!printableInvoiceByOrderId[id] && !confirmedMissingInvoiceOrderIds.has(id) && !pendingInvoiceOrderIds.has(id)) {
+                    resolvePrintableInvoiceForOrder(id);
                 }
-                e.target.checked = false;
-                resolvePrintableInvoiceForOrder(id);
             });
         });
 
         const selectAll = wrapper.querySelector('#select-all-orders');
         if (selectAll) {
-            const printableVisibleOrders = visibleOrders.filter(function(order) { return isOrderPrintable(order); });
-            selectAll.disabled = printableVisibleOrders.length === 0;
-            selectAll.checked = printableVisibleOrders.length > 0 && printableVisibleOrders.every(function(order) { return selectedOrderIds.has(order.id); });
-            selectAll.indeterminate = printableVisibleOrders.some(function(order) { return selectedOrderIds.has(order.id); }) && !selectAll.checked;
+            const selectableOrders = filteredOrders.filter(isBulkSelectableOrder);
+            selectAll.disabled = selectableOrders.length === 0;
+            selectAll.checked = selectableOrders.length > 0 && selectableOrders.every(function(order) { return selectedOrderIds.has(order.id); });
+            selectAll.indeterminate = selectableOrders.some(function(order) { return selectedOrderIds.has(order.id); }) && !selectAll.checked;
             selectAll.addEventListener('click', e => {
                 e.stopPropagation();
             });
             selectAll.addEventListener('change', e => {
-                printableVisibleOrders.forEach(order => {
+                selectableOrders.forEach(function updateSelectedOrder(order) {
                     if (e.target.checked) {
                         selectedOrderIds.add(order.id);
                     } else {
@@ -1566,7 +1578,9 @@ export const renderDashboard = async (params, routeContext) => {
     };
 
     const updateBulkArchiveControls = () => {
-        const count = selectedOrderIds.size;
+        const mode = getBulkArchiveMode();
+        const count = getBulkTransitionOrderIds().length;
+        const printableCount = getOrderedSelectedOrderIds(true).length;
         const countEl = document.getElementById('selected-orders-count');
         const archiveBtn = document.getElementById('archive-selected-orders');
         const actionBar = document.getElementById('bulk-invoice-action-bar');
@@ -1580,19 +1594,25 @@ export const renderDashboard = async (params, routeContext) => {
         }
         if (archiveBtn) {
             archiveBtn.disabled = count === 0 || bulkPrintActive || bulkArchiveActive;
-            archiveBtn.textContent = count > 0 ? `Archive ${count} Selected` : 'Archive Selected';
+            archiveBtn.textContent = count > 0
+                ? `${mode === 'restore' ? 'Restore' : 'Archive'} ${count} Selected`
+                : `${mode === 'restore' ? 'Restore' : 'Archive'} Selected`;
         }
         if (actionBar) {
             actionBar.style.display = count > 0 ? 'flex' : 'none';
         }
         if (actionLabel) {
-            actionLabel.textContent = `${count} invoice${count === 1 ? '' : 's'} selected`;
+            actionLabel.textContent = `${count} order${count === 1 ? '' : 's'} selected`;
         }
         if (fullButton) {
-            fullButton.disabled = count === 0 || bulkPrintActive || bulkArchiveActive;
+            fullButton.disabled = printableCount === 0 || bulkPrintActive || bulkArchiveActive;
+            fullButton.textContent = printableCount > 0 ? `Quick Print — Full (${printableCount})` : 'Quick Print — Full';
+            fullButton.title = printableCount < count ? `Quick Print ${printableCount} of ${count} selected orders with prepared invoices.` : '';
         }
         if (twoUpButton) {
-            twoUpButton.disabled = count === 0 || bulkPrintActive || bulkArchiveActive;
+            twoUpButton.disabled = printableCount === 0 || bulkPrintActive || bulkArchiveActive;
+            twoUpButton.textContent = printableCount > 0 ? `Quick Print — 2-Up (${printableCount})` : 'Quick Print — 2-Up Portrait';
+            twoUpButton.title = printableCount < count ? `Quick Print ${printableCount} of ${count} selected orders with prepared invoices.` : '';
         }
     };
 
@@ -1641,10 +1661,10 @@ export const renderDashboard = async (params, routeContext) => {
     }
 
     async function quickPrintSelectedInvoices(layout) {
-        if (bulkPrintActive || selectedOrderIds.size === 0) {
+        const orderedOrderIds = getOrderedSelectedOrderIds(true);
+        if (bulkPrintActive || orderedOrderIds.length === 0) {
             return;
         }
-        const orderedOrderIds = getOrderedSelectedOrderIds();
         let previewWindow = null;
         let progressModal = null;
         try {
@@ -1689,7 +1709,7 @@ export const renderDashboard = async (params, routeContext) => {
             }
             progressModal.close();
             progressModal = null;
-            notificationService.success('Combined invoice PDF is ready in one preview tab.');
+            notificationService.success(String(orderedOrderIds.length) + ' selected printable invoice' + (orderedOrderIds.length === 1 ? ' is' : 's are') + ' ready in one preview tab.');
         } catch (error) {
             if (progressModal) {
                 progressModal.close();
@@ -1699,7 +1719,7 @@ export const renderDashboard = async (params, routeContext) => {
             }
             const failureModal = new Modal({
                 title: 'Quick Print failed',
-                content: '<p style="color:#991b1b;font-weight:700;">' + escapeHtml(error.message || 'Combined invoice PDF preparation failed.') + '</p><p>Your invoice selection has been kept. No invoice was silently omitted.</p>',
+                content: '<p style="color:#991b1b;font-weight:700;">' + escapeHtml(error.message || 'Combined invoice PDF preparation failed.') + '</p><p>Your full order selection has been kept. Quick Print includes only the printable count shown on its button.</p>',
                 confirmText: 'Close',
                 cancelText: 'Close'
             });
@@ -1879,11 +1899,13 @@ export const renderDashboard = async (params, routeContext) => {
         document.getElementById('open-inventory-btn')?.addEventListener('click', () => router.navigate(ROUTES.INVENTORY));
         document.getElementById('end-of-day-report-btn')?.addEventListener('click', renderEndOfDaySummaryModal);
         document.getElementById('archive-selected-orders')?.addEventListener('click', async function() {
-            var ids = Array.from(selectedOrderIds);
+            var mode = getBulkArchiveMode();
+            var ids = getBulkTransitionOrderIds();
             if (ids.length === 0 || bulkArchiveActive) {
                 return;
             }
-            if (!confirm('Archive ' + ids.length + ' selected order' + (ids.length === 1 ? '' : 's') + '? They will be hidden from the active Orders list.')) {
+            var actionLabel = mode === 'restore' ? 'Restore' : 'Archive';
+            if (!confirm(actionLabel + ' ' + ids.length + ' selected order' + (ids.length === 1 ? '' : 's') + '?')) {
                 return;
             }
 
@@ -1894,22 +1916,24 @@ export const renderDashboard = async (params, routeContext) => {
                 var orderServiceModule = await import("../services/orderService.js");
                 var gamificationModule = await import("../services/gamificationService.js");
                 archiveProgressModal = new Modal({
-                    title: 'Archiving selected orders',
+                    title: actionLabel + ' selected orders',
                     footer: false,
                     closeOnBackdrop: false,
                     closeOnEsc: false,
                     content: '<div id="bulk-archive-progress" style="display:grid;gap:12px;">' +
+                        '<div class="archive-motion-icon ' + (mode === 'restore' ? 'is-restoring' : '') + '">📦</div>' +
                         '<strong id="bulk-archive-progress-label">Preparing 0 of ' + ids.length + ' orders...</strong>' +
                         '<div style="height:14px;background:var(--color-gray-100);border-radius:999px;overflow:hidden;border:1px solid var(--color-gray-200);">' +
                             '<div id="bulk-archive-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--color-primary-500),var(--color-primary-700));transition:width 600ms ease;border-radius:999px;"></div>' +
                         '</div>' +
                         '<span id="bulk-archive-progress-percent" style="font-size:12px;font-weight:900;color:var(--color-primary-700);">0%</span>' +
-                        '<span id="bulk-archive-progress-message" style="font-size:12px;color:var(--color-gray-600);">Starting archive...</span>' +
+                        '<span id="bulk-archive-progress-message" style="font-size:12px;color:var(--color-gray-600);">Starting ' + actionLabel.toLowerCase() + '...</span>' +
                     '</div>'
                 });
                 archiveProgressModal.open();
 
-                var result = await orderServiceModule.orderService.archiveOrders(ids, {
+                var transitionMethod = mode === 'restore' ? 'unarchiveOrders' : 'archiveOrders';
+                var result = await orderServiceModule.orderService[transitionMethod](ids, {
                     source: 'orders-dashboard',
                     onProgress: function(progress) {
                         var bar = document.getElementById('bulk-archive-progress-bar');
@@ -1917,20 +1941,22 @@ export const renderDashboard = async (params, routeContext) => {
                         var percent = document.getElementById('bulk-archive-progress-percent');
                         var message = document.getElementById('bulk-archive-progress-message');
                         if (progress.ok && progress.orderId) {
-                            markOrderArchivedLocally(progress.orderId, progress.result);
+                            animateOrderRows([progress.orderId], mode === 'restore' ? 'archive-row-restore-out' : 'archive-row-exit');
+                            if (mode === 'restore') markOrderRestoredLocally(progress.orderId, progress.result);
+                            else markOrderArchivedLocally(progress.orderId, progress.result);
                             selectedOrderIds.delete(progress.orderId);
                         }
                         if (bar) {
                             bar.style.width = String(progress.percent || 0) + '%';
                         }
                         if (label) {
-                            label.textContent = 'Archived ' + progress.archived + ' of ' + progress.total + ' orders';
+                            label.textContent = actionLabel + 'd ' + (progress.archived !== undefined ? progress.archived : progress.succeeded || 0) + ' of ' + progress.total + ' orders';
                         }
                         if (percent) {
                             percent.textContent = String(progress.percent || 0) + '%';
                         }
                         if (message) {
-                            message.textContent = progress.message || 'Archiving...';
+                            message.textContent = progress.message || actionLabel + ' in progress...';
                         }
                     }
                 });
@@ -1950,9 +1976,10 @@ export const renderDashboard = async (params, routeContext) => {
                 }
 
                 activeOrders = getActiveOrders(allOrders);
-                if (result.archived > 0) {
+                var transitionedCount = mode === 'restore' ? result.transitioned : result.archived;
+                if (mode === 'archive' && transitionedCount > 0) {
                     archivedFilter = 'active';
-                    gamificationModule.gamificationService.awardAction('ordersArchived', result.archived).catch(function(error) {
+                    gamificationModule.gamificationService.awardAction('ordersArchived', transitionedCount).catch(function(error) {
                         console.warn('Archived orders, but could not record the reward.', error);
                     });
                 }
@@ -1963,21 +1990,21 @@ export const renderDashboard = async (params, routeContext) => {
                         return '<li><strong>' + escapeHtml(failure.orderId) + '</strong>: ' + escapeHtml(failure.message) + '</li>';
                     }).join('');
                     var failureModal = new Modal({
-                        title: 'Some orders still need archiving',
-                        content: '<p>' + result.archived + ' of ' + result.requested + ' orders were archived. The remaining orders stay selected so you can retry.</p><ul style="margin-top:12px;padding-left:20px;display:grid;gap:6px;">' + failureNames + '</ul>',
+                        title: 'Some orders still need ' + (mode === 'restore' ? 'restoring' : 'archiving'),
+                        content: '<p>' + transitionedCount + ' of ' + result.requested + ' orders were processed. The remaining orders stay selected so you can retry.</p><ul style="margin-top:12px;padding-left:20px;display:grid;gap:6px;">' + failureNames + '</ul>',
                         confirmText: 'Close',
                         cancelText: 'Close'
                     });
                     failureModal.open();
-                    notificationService.error(String(result.failed) + ' order' + (result.failed === 1 ? '' : 's') + ' could not be archived.');
+                    notificationService.error(String(result.failed) + ' order' + (result.failed === 1 ? '' : 's') + ' could not be ' + (mode === 'restore' ? 'restored.' : 'archived.'));
                 } else {
-                    notificationService.success(String(result.archived) + ' order' + (result.archived === 1 ? '' : 's') + ' archived.');
+                    notificationService.success(String(transitionedCount) + ' order' + (transitionedCount === 1 ? '' : 's') + (mode === 'restore' ? ' restored.' : ' archived.'));
                 }
             } catch (error) {
                 if (archiveProgressModal) {
                     archiveProgressModal.close();
                 }
-                notificationService.error(error.message || 'Could not archive the selected orders.');
+                notificationService.error(error.message || 'Could not ' + (mode === 'restore' ? 'restore' : 'archive') + ' the selected orders.');
             } finally {
                 bulkArchiveActive = false;
                 if (isNavigationStillCurrent(navigationId, expectedRoute)) {
@@ -2112,16 +2139,18 @@ export const renderDashboard = async (params, routeContext) => {
             renderDashboard();
         };
 
-        window.unarchiveOrder = async (id) => {
+    window.unarchiveOrder = async (id) => {
             try {
                 const { orderService } = await import("../services/orderService.js");
                 const result = await orderService.unarchiveOrder(id);
-                const currentOrder = allOrders.find(order => order.id === id);
-                const restoredStatus = currentOrder ? (currentOrder.previousStatus || 'draft') : 'draft';
+                if (result && result.transitioned === false) {
+                    notificationService.info('Order is already active.');
+                    return;
+                }
+                animateOrderRows([id], 'archive-row-restore-out');
+                await waitForArchiveAnimation();
                 updateLocalOrder(id, {
                     archived: false,
-                    status: restoredStatus,
-                    previousStatus: '',
                     archivedAt: null,
                     archivedBy: null,
                     unarchivedAt: new Date(),
@@ -2129,7 +2158,7 @@ export const renderDashboard = async (params, routeContext) => {
                     syncState: result && result.queued ? 'pending_sync' : undefined,
                     syncStatus: result && result.queued ? 'pending' : undefined
                 });
-                dashboardController.updateCachedOrder(id, { archived: false, status: restoredStatus, previousStatus: '', archivedAt: null, archivedBy: null, unarchivedAt: new Date(), updatedAt: new Date() }, 'unarchive-order');
+                dashboardController.updateCachedOrder(id, { archived: false, archivedAt: null, archivedBy: null, unarchivedAt: new Date(), updatedAt: new Date() }, 'unarchive-order');
                 activeOrders = getActiveOrders(allOrders);
                 notificationService.success(result && result.queued ? 'Order unarchive queued.' : 'Order unarchived.');
                 renderUI();
@@ -2149,6 +2178,8 @@ export const renderDashboard = async (params, routeContext) => {
                     });
                     notificationService.success('Local pending order removed.');
                 } else {
+                    animateOrderRows([id], 'archive-row-exit');
+                    await waitForArchiveAnimation();
                     markOrderArchivedLocally(id, result);
                     notificationService.success('Order archived.');
                 }

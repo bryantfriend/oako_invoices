@@ -304,6 +304,9 @@ export const renderInvoices = async (params, routeContext) => {
     let activeInvoiceTab = 'active';
     let archivedInvoices = [];
     let archivedLoaded = false;
+    let archivedInvoiceLimit = 50;
+    let archivedSearch = '';
+    let selectedArchivedInvoiceIds = new Set();
 
     function renderInvoiceTabs() {
         return `
@@ -413,7 +416,7 @@ export const renderInvoices = async (params, routeContext) => {
         if (!forceRefresh && archivedLoaded) {
             return archivedInvoices;
         }
-        archivedInvoices = await invoiceController.loadArchivedInvoices();
+        archivedInvoices = await invoiceController.loadArchivedInvoices({ limit: archivedInvoiceLimit });
         archivedLoaded = true;
         return archivedInvoices;
     }
@@ -443,15 +446,31 @@ export const renderInvoices = async (params, routeContext) => {
     }
 
     function renderArchivedTable() {
+        const normalizedSearch = archivedSearch.trim().toLowerCase();
+        const visibleArchivedInvoices = archivedInvoices.filter(function(invoice) {
+            if (!normalizedSearch) return true;
+            return [invoice.invoiceNumber, invoice.customerName, invoice.status]
+                .some(value => String(value || '').toLowerCase().includes(normalizedSearch));
+        });
+        const visibleSelectedArchivedCount = visibleArchivedInvoices.filter(invoice => selectedArchivedInvoiceIds.has(invoice.id)).length;
         const archivedTable = new DataTable({
             columns: [
+                {
+                    key: 'select',
+                    label: '<input type="checkbox" id="select-all-archived-invoices" aria-label="Select all filtered archived invoices">',
+                    sortable: false,
+                    align: 'center',
+                    render: function(val, row) {
+                        return '<input type="checkbox" class="archived-invoice-checkbox" data-id="' + escapeHtml(row.id) + '" ' + (selectedArchivedInvoiceIds.has(row.id) ? 'checked' : '') + ' onclick="event.stopPropagation();">';
+                    }
+                },
                 { key: 'invoiceNumber', label: t('table_invoice_num'), sortable: false, render: function(val) { return `<span style="font-family: monospace; font-weight: 700; color: #1e3318;">${escapeHtml(val || '-')}</span>`; } },
                 { key: 'customerName', label: 'Customer', sortable: false, render: function(val) { return `<span style="font-weight: 700;">${escapeHtml(val || '-')}</span>`; } },
                 { key: 'totalAmount', label: 'Amount', sortable: false, render: function(val) { return `<span style="font-weight: 700; color: #1e3318;">${formatCurrency(val || 0)}</span>`; } },
                 { key: 'archivedAt', label: 'Archived At', sortable: false, render: function(val) { return `<span style="color: #5a7052;">${escapeHtml(toDisplayDate(val))}</span>`; } },
                 { key: 'archivedBy', label: 'Archived By', sortable: false, render: function(val) { return `<span>${escapeHtml(val || '-')}</span>`; } }
             ],
-            data: archivedInvoices,
+            data: visibleArchivedInvoices,
             sortKey: 'archivedAt',
             sortOrder: 'desc',
             onRowClick: true,
@@ -475,15 +494,18 @@ export const renderInvoices = async (params, routeContext) => {
                 <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 12px 16px; border-radius: var(--radius-lg); border: 1px solid var(--color-gray-200); gap: 12px; flex-wrap: wrap;">
                     <div style="display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap;">
                         ${renderInvoiceTabs()}
+                        <input id="archived-invoice-search" type="search" value="${escapeAttribute(archivedSearch)}" placeholder="Search archived invoices" style="min-width:220px;padding:7px 10px;border:1px solid var(--color-gray-200);border-radius:8px;">
                     </div>
-                    <button id="refresh-archived-invoices" class="btn btn-secondary btn-sm" style="white-space: nowrap;">
-                        Refresh
-                    </button>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="restore-selected-invoices" class="btn btn-primary btn-sm" ${visibleSelectedArchivedCount ? '' : 'disabled'}>Restore ${visibleSelectedArchivedCount || ''} Selected</button>
+                        <button id="archive-migration-check" class="btn btn-secondary btn-sm">Check legacy data</button>
+                        <button id="refresh-archived-invoices" class="btn btn-secondary btn-sm">Refresh</button>
+                    </div>
                 </div>
 
                 ${createCard({
                     title: 'Archived Invoices',
-                    content: archivedTable.render()
+                    content: archivedTable.render() + (archivedInvoices.length >= archivedInvoiceLimit ? '<div style="display:flex;justify-content:center;padding:14px;"><button id="load-more-archived-invoices" class="btn btn-secondary btn-sm">Load 50 more</button></div>' : '')
                 })}
             </div>
         `;
@@ -491,12 +513,98 @@ export const renderInvoices = async (params, routeContext) => {
         attachInvoiceTabListeners();
         attachArchivedRowListeners();
 
+        const searchInput = document.getElementById('archived-invoice-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', function(event) {
+                archivedSearch = event.target.value || '';
+                renderArchivedTable();
+                const nextInput = document.getElementById('archived-invoice-search');
+                if (nextInput) { nextInput.focus(); nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length); }
+            });
+        }
+
+        container.querySelectorAll('.archived-invoice-checkbox').forEach(function(checkbox) {
+            checkbox.addEventListener('change', function(event) {
+                if (event.target.checked) selectedArchivedInvoiceIds.add(event.target.dataset.id);
+                else selectedArchivedInvoiceIds.delete(event.target.dataset.id);
+                renderArchivedTable();
+            });
+        });
+        const selectAllArchived = document.getElementById('select-all-archived-invoices');
+        if (selectAllArchived) {
+            selectAllArchived.checked = visibleArchivedInvoices.length > 0 && visibleArchivedInvoices.every(invoice => selectedArchivedInvoiceIds.has(invoice.id));
+            selectAllArchived.indeterminate = visibleArchivedInvoices.some(invoice => selectedArchivedInvoiceIds.has(invoice.id)) && !selectAllArchived.checked;
+            selectAllArchived.addEventListener('change', function(event) {
+                visibleArchivedInvoices.forEach(function(invoice) {
+                    if (event.target.checked) selectedArchivedInvoiceIds.add(invoice.id);
+                    else selectedArchivedInvoiceIds.delete(invoice.id);
+                });
+                renderArchivedTable();
+            });
+        }
+
         const refreshArchivedButton = document.getElementById('refresh-archived-invoices');
         if (refreshArchivedButton) {
             refreshArchivedButton.addEventListener('click', async function() {
                 refreshArchivedButton.disabled = true;
                 refreshArchivedButton.textContent = 'Loading...';
                 await loadArchivedInvoices(true);
+                renderArchivedTable();
+            });
+        }
+
+        const loadMoreArchivedButton = document.getElementById('load-more-archived-invoices');
+        if (loadMoreArchivedButton) {
+            loadMoreArchivedButton.addEventListener('click', async function() {
+                archivedInvoiceLimit += 50;
+                loadMoreArchivedButton.disabled = true;
+                await loadArchivedInvoices(true);
+                renderArchivedTable();
+            });
+        }
+
+        const restoreSelectedButton = document.getElementById('restore-selected-invoices');
+        if (restoreSelectedButton) {
+            restoreSelectedButton.addEventListener('click', async function() {
+                const ids = visibleArchivedInvoices.map(invoice => invoice.id).filter(id => selectedArchivedInvoiceIds.has(id));
+                if (!ids.length || !confirm('Restore ' + ids.length + ' selected invoice' + (ids.length === 1 ? '' : 's') + '?')) return;
+                restoreSelectedButton.disabled = true;
+                restoreSelectedButton.innerHTML = '<span class="archive-motion-icon is-restoring" style="width:24px;height:24px;display:inline-grid;margin:0 6px 0 0;">📦</span>Restoring…';
+                const result = await invoiceController.restoreArchivedInvoices(ids);
+                if (result) {
+                    const processedIds = result.processed || result.succeeded || [];
+                    processedIds.forEach(function(id) {
+                        const row = container.querySelector('.data-row[data-id="' + CSS.escape(id) + '"]');
+                        if (row) row.classList.add('archive-row-restore-out');
+                    });
+                    if (processedIds.length) await new Promise(resolve => window.setTimeout(resolve, 280));
+                    processedIds.forEach(id => selectedArchivedInvoiceIds.delete(id));
+                    await loadArchivedInvoices(true);
+                }
+                renderArchivedTable();
+            });
+        }
+
+        const migrationCheckButton = document.getElementById('archive-migration-check');
+        if (migrationCheckButton) {
+            migrationCheckButton.addEventListener('click', async function() {
+                migrationCheckButton.disabled = true;
+                migrationCheckButton.textContent = 'Scanning…';
+                try {
+                    const module = await import('../services/archiveMigrationService.js');
+                    const report = await module.archiveMigrationService.migrate({ dryRun: true });
+                    if (!report.totalChanges) {
+                        notificationService.success('Archive data is already fully migrated.');
+                    } else if (confirm(report.totalChanges + ' legacy archive record' + (report.totalChanges === 1 ? '' : 's') + ' need migration. Apply the migration now?')) {
+                        migrationCheckButton.textContent = 'Migrating…';
+                        const completed = await module.archiveMigrationService.migrate({ dryRun: false });
+                        notificationService.success(completed.committed + ' archive records migrated.');
+                        archivedLoaded = false;
+                        await loadArchivedInvoices(true);
+                    }
+                } catch (error) {
+                    notificationService.error(error.message || 'Archive migration failed.');
+                }
                 renderArchivedTable();
             });
         }
@@ -716,6 +824,9 @@ export const renderInvoices = async (params, routeContext) => {
                 async function() {
                     const restored = await invoiceController.restoreArchivedInvoice(id);
                     if (restored) {
+                        const row = container.querySelector('.data-row[data-id="' + CSS.escape(id) + '"]');
+                        if (row) row.classList.add('archive-row-restore-out');
+                        await new Promise(resolve => window.setTimeout(resolve, 280));
                         allInvoices = await invoiceController.loadAllInvoices();
                         customers = [...new Set(allInvoices.map(function(invoiceRow) {
                             return invoiceRow.customerName;
@@ -744,6 +855,9 @@ export const renderInvoices = async (params, routeContext) => {
                 async function() {
                     const archived = await invoiceController.archiveInvoice(id);
                     if (archived) {
+                        const row = container.querySelector('.data-row[data-id="' + CSS.escape(id) + '"]');
+                        if (row) row.classList.add('archive-row-exit');
+                        await new Promise(resolve => window.setTimeout(resolve, 280));
                         renderInvoices();
                     }
                 }

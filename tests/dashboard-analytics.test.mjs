@@ -19,14 +19,13 @@ test('dashboard analytics can include archived data by default and hide it on de
     assert.match(dashboardView, /showArchivedAnalytics\s*=\s*event\.target\.checked;/);
 });
 
-test('archived orders retain previous status for included analytics', function() {
+test('archived orders retain their workflow status for included analytics', function() {
     const today = new Date().toISOString();
     const stats = statsService.getDashboardStats([
         {
             id: 'archived-paid-order',
             archived: true,
-            status: 'archived',
-            previousStatus: 'paid',
+            status: 'paid',
             orderDate: today,
             totalAmount: 250,
             items: [{ name: 'Dried Apricot', quantity: 2, price: 125 }]
@@ -41,11 +40,13 @@ test('archived orders retain previous status for included analytics', function()
     assert.equal(stats.charts.statusPipeline.data[archivedIndex], 1);
 });
 
-test('order archiving preserves previousStatus for future analytics', function() {
+test('order archiving changes only the binary archive field', function() {
     const orderService = readText('js/services/orderService.js');
+    const archiveMethod = orderService.slice(orderService.indexOf('async archiveOrder(id)'), orderService.indexOf('async unarchiveOrder(id)'));
 
-    assert.match(orderService, /const\s+previousStatus\s*=\s*existingOrder/);
-    assert.match(orderService, /previousStatus:\s*previousStatus/);
+    assert.match(archiveMethod, /archived:\s*true/);
+    assert.doesNotMatch(archiveMethod, /status:\s*['"]archived['"]/);
+    assert.doesNotMatch(archiveMethod, /previousStatus:/);
     assert.match(orderService, /LEGACY_ARCHIVE_COLLECTION\s*=\s*'orders_archive'/);
     assert.match(orderService, /mergeLegacyArchivedOrders/);
 });
@@ -143,9 +144,9 @@ test('confirmed revenue normalizes amounts, deducts returns, and explains exclud
         { id: 'draft', status: 'draft', orderDate: '2026-08-10', totalAmount: 400, items: [] },
         { id: 'pending', status: 'pending', orderDate: '2026-08-10', totalAmount: 500, items: [] },
         { id: 'cancelled', status: 'cancelled', orderDate: '2026-08-10', totalAmount: 600, items: [] },
-        { id: 'archived-paid', status: 'archived', archived: true, previousStatus: 'paid', orderDate: '2026-08-10', totalAmount: 700, items: [] },
+        { id: 'archived-paid', status: 'paid', archived: true, orderDate: '2026-08-10', totalAmount: 700, items: [] },
         { id: 'archived-flag-paid', status: 'paid', archived: true, orderDate: '2026-08-10', totalAmount: 50, items: [] },
-        { id: 'archived-unknown', status: 'archived', archived: true, orderDate: '2026-08-10', totalAmount: 800, items: [] },
+        { id: 'archived-unknown', status: 'unknown', archived: true, orderDate: '2026-08-10', totalAmount: 800, items: [] },
         {
             id: 'partial-return',
             status: 'paid',

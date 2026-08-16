@@ -11,8 +11,7 @@ var ALLOWED_STATUSES = [
   "fully_returned",
   "fulfilled",
   "paid",
-  "cancelled",
-  "archived"
+  "cancelled"
 ];
 
 /**

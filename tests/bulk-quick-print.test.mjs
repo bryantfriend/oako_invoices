@@ -27,8 +27,10 @@ test('Quick Print normalization removes duplicates without changing Orders-list 
 test('Orders Quick Print selection survives rerenders and filters', () => {
     const source = read('js/views/dashboardView.js');
     assert.doesNotMatch(source, /selectedOrderIds\s*=\s*new Set\(\[\.\.\.selectedOrderIds\]\.filter/);
-    assert.match(source, /Select all shown printable invoices/);
-    assert.match(source, /No printable invoice has been created\./);
+    assert.match(source, /Select all filtered orders/);
+    assert.match(source, /const selectableOrders = filteredOrders\.filter/);
+    assert.doesNotMatch(source, /isOrderInvoiceSelectionDisabled/);
+    assert.match(source, /selectedOrderIds\.add\(id\);\s*updateBulkArchiveControls\(\);/);
     assert.match(source, /getOrderedSelectedOrderIds/);
     assert.match(source, /quickPrintSelectedInvoices\('full'\)/);
     assert.match(source, /quickPrintSelectedInvoices\('two-up-portrait'\)/);
@@ -40,7 +42,9 @@ test('Orders Quick Print eligibility avoids eager full-invoice loading', () => {
 
     assert.match(dashboardSource, /getKnownPrintableInvoiceReferences\(\)/);
     assert.match(dashboardSource, /invoiceService\.getInvoiceByOrderId\(orderId\)/);
-    assert.match(dashboardSource, /Select to verify invoice for Quick Print/);
+    assert.match(dashboardSource, /getOrderedSelectedOrderIds\(true\)/);
+    assert.match(dashboardSource, /const printableCount = getOrderedSelectedOrderIds\(true\)\.length/);
+    assert.match(dashboardSource, /Quick Print includes only the printable count shown on its button/);
     assert.match(dashboardSource, /orders-printable-check/);
     assert.doesNotMatch(dashboardSource, /getInvoicesByOrderIds\(missingOrderIds\)/);
     assert.doesNotMatch(dashboardSource, /orders-printable-map/);
@@ -105,7 +109,7 @@ test('Recent Orders defaults to Active and successful archives remain in Active 
 
     assert.match(dashboardSource, /let archivedFilter = 'active';/);
     assert.doesNotMatch(dashboardSource, /archivedFilter = showArchivedAnalytics \? 'all' : 'active';/);
-    assert.match(dashboardSource, /if \(result\.archived > 0\) \{\s*archivedFilter = 'active';/);
+    assert.match(dashboardSource, /if \(mode === 'archive' && transitionedCount > 0\) \{\s*archivedFilter = 'active';/);
     assert.match(dashboardSource, /filterRecordsByArchivedMode\(allOrders, archivedFilter\)/);
     assert.match(dashboardSource, /markOrderArchivedLocally\(id, result\);/);
     assert.match(dashboardSource, /selectedOrderIds\.delete\(id\);\s*activeOrders = getActiveOrders\(allOrders\);\s*archivedFilter = 'active';\s*renderUI\(\);/);

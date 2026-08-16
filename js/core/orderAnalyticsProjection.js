@@ -1,4 +1,5 @@
 import { getMillis, isArchivedRecord } from "./orderRecordHelpers.js";
+import { normalizeArchivedRecord } from "./archiveRecordHelpers.js";
 import { getReturnState } from "./returnStatus.js";
 
 var REVENUE_STATUSES = ["confirmed", "fulfilled", "paid", "returned"];
@@ -31,17 +32,14 @@ function normalizeLifecycleStatus(status) {
 }
 
 function getLifecycleStatus(order, warnings) {
-    var source = order || {};
+    var source = normalizeArchivedRecord(order || {}, "unknown");
     var storedStatus = String(source.status || "").trim().toLowerCase();
 
     if (isArchivedRecord(source)) {
-        if (source.previousStatus) {
-            return normalizeLifecycleStatus(source.previousStatus);
-        }
-        if (storedStatus && storedStatus !== "archived") {
+        if (storedStatus && storedStatus !== "unknown") {
             return normalizeLifecycleStatus(storedStatus);
         }
-        warnings.push("missing_previous_status");
+        warnings.push("missing_status");
         return "unknown";
     }
 
@@ -144,7 +142,7 @@ function getExclusionReason(lifecycleStatus, analyticsDate) {
 }
 
 function buildOrderAnalyticsProjection(order) {
-    var source = order || {};
+    var source = normalizeArchivedRecord(order || {}, "unknown");
     var warnings = [];
     var lifecycleStatus = getLifecycleStatus(source, warnings);
     var analyticsDate = getAnalyticsDate(source, warnings);

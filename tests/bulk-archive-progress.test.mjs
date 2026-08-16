@@ -76,3 +76,23 @@ test('bulk archive reports permanent failures and never shows false 100 percent'
         return value.percent < 100;
     }));
 });
+
+test('bulk archive treats already archived orders as skipped idempotent successes', async function() {
+    const result = await processorModule.processArchiveSelectedOrders({
+        payload: { orderIds: ['already', 'new'] },
+        context: {
+            archiveApi: {
+                archiveOrder: async function(orderId) {
+                    return orderId === 'already'
+                        ? { archived: true, transitioned: false }
+                        : { archived: true, transitioned: true };
+                }
+            }
+        }
+    });
+
+    const data = result.intent.context.archiveSelectedOrdersResult;
+    assert.equal(data.archived, 1);
+    assert.equal(data.skippedCount, 1);
+    assert.equal(data.complete, true);
+});

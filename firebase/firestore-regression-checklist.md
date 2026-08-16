@@ -24,7 +24,8 @@ Run this checklist after deploying `firebase/firestore.rules`.
 - Admin users can read `orders`.
 - Admin users can read `customers`.
 - Admin users can create and update `invoices`.
-- Admin users can read archived invoices through `invoices` where `status == "archived"`.
+- Admin users can read archived invoices through `invoices` where `archived == true`.
+- Legacy invoice records with `status == "archived"` remain readable during migration and are normalized to their previous workflow status.
 - Admin users can read and write `orders_archive` if that collection is used by legacy data.
 - Admin users can read and write `inventory`, `inventory_templates`, `paymentRequests`, `audit_logs`, `companies`, and `store_media`.
 

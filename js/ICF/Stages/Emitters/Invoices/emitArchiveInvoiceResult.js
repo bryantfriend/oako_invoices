@@ -16,7 +16,8 @@ function emitArchiveInvoiceResult(intent) {
   var archiveResult = getArchiveResult(intent);
   var updatedIntent = resultHelpers.addResultDataToIntent(intent, {
     invoiceId: archiveResult.invoiceId,
-    previousStatus: archiveResult.previousStatus,
+    archived: archiveResult.archived,
+    transitioned: archiveResult.transitioned,
     status: archiveResult.status,
     message: "Invoice archived successfully."
   });
@@ -27,7 +28,8 @@ function emitArchiveInvoiceResult(intent) {
       "ArchiveInvoiceIntentCompleted",
       {
         invoiceId: archiveResult.invoiceId,
-        previousStatus: archiveResult.previousStatus,
+        archived: archiveResult.archived,
+        transitioned: archiveResult.transitioned,
         status: archiveResult.status
       }
     )
@@ -46,16 +48,18 @@ function getArchiveResult(intent) {
   if (!intent.context) {
     return {
       invoiceId: "",
-      previousStatus: "open",
-      status: "archived"
+      archived: true,
+      transitioned: false,
+      status: "open"
     };
   }
 
   if (!intent.context.archiveResult) {
     return {
       invoiceId: "",
-      previousStatus: "open",
-      status: "archived"
+      archived: true,
+      transitioned: false,
+      status: "open"
     };
   }
 

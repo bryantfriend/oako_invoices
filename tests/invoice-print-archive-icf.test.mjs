@@ -59,6 +59,7 @@ test('printing and archiving are wired through complete ICF flows', function() {
     const invoiceView = readText('js/views/invoiceView.js');
     const invoiceController = readText('js/controllers/invoiceController.js');
     const invoiceService = readText('js/services/invoiceService.js');
+    const archiveProcessor = readText('js/ICF/Stages/Processors/Invoices/processArchiveInvoice.js');
 
     ['Validate', 'Normalize', 'AddContext', 'Authorize', 'Process', 'Emit'].forEach(function(stageName) {
         assert.match(printIntent, new RegExp(stageName + ': \{'));
@@ -72,6 +73,9 @@ test('printing and archiving are wired through complete ICF flows', function() {
     assert.ok(invoiceController.includes("sessionDataStore.removeInvoiceRecord(invoiceId, 'archive-invoice')"));
     assert.ok(invoiceService.includes('archiveInvoiceIntentModule.createArchiveInvoiceIntent'));
     assert.ok(invoiceService.includes('markInvoicePrintedIntentModule.createMarkInvoicePrintedIntent'));
+    assert.match(archiveProcessor, /archived:\s*true/);
+    assert.doesNotMatch(archiveProcessor, /status:\s*["']archived["']/);
+    assert.match(invoiceService, /where\('archived',\s*'==',\s*true\)/);
 });
 
 test('post-print flow reuses trusted records and supports queued offline status updates', function() {

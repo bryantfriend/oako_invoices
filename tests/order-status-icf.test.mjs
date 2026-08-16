@@ -91,12 +91,23 @@ test('UpdateOrderStatusIntent rejects unsupported actors and statuses', async fu
         status: 'not-a-status',
         orderApi
     });
+    const archivedStatusIntent = createIntent({
+        id: 'admin@example.com',
+        role: 'admin'
+    }, {
+        orderId: 'order-123',
+        status: 'archived',
+        orderApi
+    });
 
     const unauthorizedResult = await icfPipeline.run(unauthorizedIntent);
     const invalidStatusResult = await icfPipeline.run(invalidStatusIntent);
+    const archivedStatusResult = await icfPipeline.run(archivedStatusIntent);
 
     assert.equal(unauthorizedResult.ok, false);
     assert.equal(unauthorizedResult.stage, 'Authorize');
     assert.equal(invalidStatusResult.ok, false);
     assert.equal(invalidStatusResult.stage, 'Validate');
+    assert.equal(archivedStatusResult.ok, false);
+    assert.equal(archivedStatusResult.stage, 'Validate');
 });

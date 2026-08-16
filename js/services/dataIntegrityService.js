@@ -405,21 +405,21 @@ function buildInvoiceAuditEntries(previousInvoice, nextInvoice, action, options)
     } else if (action === 'archive') {
         var archiveEntry = buildBaseAuditEntry('INVOICE_ARCHIVED', 'invoice', invoiceId, Object.assign({}, options || {}, scope));
         archiveEntry.invoiceId = invoiceId;
-        archiveEntry.previousStatus = previousInvoice ? previousInvoice.status || '' : '';
+        archiveEntry.status = previousInvoice ? previousInvoice.status || '' : '';
         archiveEntry.details = {
-            previousStatus: archiveEntry.previousStatus
+            status: archiveEntry.status,
+            archived: true
         };
         addAuditEntry(entries, archiveEntry);
-        addStatusChangeAudit(entries, previousInvoice, nextInvoice, options);
     } else if (action === 'restore') {
         var restoreEntry = buildBaseAuditEntry('INVOICE_RESTORED', 'invoice', invoiceId, Object.assign({}, options || {}, scope));
         restoreEntry.invoiceId = invoiceId;
         restoreEntry.status = nextInvoice ? nextInvoice.status || '' : '';
         restoreEntry.details = {
-            restoredStatus: restoreEntry.status
+            status: restoreEntry.status,
+            archived: false
         };
         addAuditEntry(entries, restoreEntry);
-        addStatusChangeAudit(entries, previousInvoice, nextInvoice, options);
     } else if (action === 'return') {
         addReturnAudits(entries, nextInvoice || previousInvoice, options && options.returnItems ? options.returnItems : getReturnItemsFromRecords(nextInvoice), options);
         addStatusChangeAudit(entries, previousInvoice, nextInvoice, options);
@@ -704,6 +704,21 @@ async function updateInvoiceWithIntegrity(invoiceRef, previousInvoice, updatePay
             return processedSnapshot.data().result || { updated: true, alreadyProcessed: true };
         }
 
+        var liveInvoiceSnapshot = await transaction.get(invoiceRef);
+        if (!liveInvoiceSnapshot.exists()) {
+            throw new Error('Invoice not found.');
+        }
+        var liveInvoice = liveInvoiceSnapshot.data();
+        var liveArchived = liveInvoice.archived === true || String(liveInvoice.status || '').toLowerCase() === 'archived';
+        if ((action === 'archive' && liveArchived) || (action === 'restore' && !liveArchived)) {
+            return {
+                invoiceId: invoiceRef.id,
+                updated: false,
+                alreadyProcessed: true,
+                transitioned: false
+            };
+        }
+
         await applyInventoryDeltasInTransaction(transaction, deltas, {
             action: 'invoice_' + action
         });
@@ -718,7 +733,8 @@ async function updateInvoiceWithIntegrity(invoiceRef, previousInvoice, updatePay
         return {
             invoiceId: invoiceRef.id,
             updated: true,
-            alreadyProcessed: false
+            alreadyProcessed: false,
+            transitioned: action === 'archive' || action === 'restore'
         };
     });
 

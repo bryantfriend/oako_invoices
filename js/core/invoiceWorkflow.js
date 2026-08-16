@@ -1,9 +1,13 @@
+import {
+    isArchivedRecord,
+    normalizeArchivedRecord
+} from "./archiveRecordHelpers.js";
+
 const WORKFLOW_STATE = {
     DRAFT: 'draft',
     SUBMITTED: 'submitted',
     APPROVED: 'approved',
-    FULFILLED: 'fulfilled',
-    ARCHIVED: 'archived'
+    FULFILLED: 'fulfilled'
 };
 
 function normalizeInvoiceWorkflowState(recordOrStatus) {
@@ -11,8 +15,8 @@ function normalizeInvoiceWorkflowState(recordOrStatus) {
 
     if (typeof recordOrStatus === 'string') {
         status = recordOrStatus;
-    } else if (recordOrStatus && recordOrStatus.status) {
-        status = recordOrStatus.status;
+    } else if (recordOrStatus) {
+        status = normalizeArchivedRecord(recordOrStatus, 'draft').status;
     }
 
     status = String(status || 'draft').toLowerCase();
@@ -27,10 +31,6 @@ function normalizeInvoiceWorkflowState(recordOrStatus) {
 
     if (status === 'approved' || status === 'confirmed') {
         return WORKFLOW_STATE.APPROVED;
-    }
-
-    if (status === 'archived') {
-        return WORKFLOW_STATE.ARCHIVED;
     }
 
     if (isFulfilledAlias(status)) {
@@ -73,10 +73,17 @@ function canFulfillInvoice(recordOrStatus) {
 }
 
 function isInvoiceReadOnly(recordOrStatus) {
-    return normalizeInvoiceWorkflowState(recordOrStatus) === WORKFLOW_STATE.ARCHIVED;
+    if (!recordOrStatus || typeof recordOrStatus === 'string') {
+        return false;
+    }
+    return isArchivedRecord(normalizeArchivedRecord(recordOrStatus, 'draft'));
 }
 
 function getInvoiceWorkflowLockMessage(recordOrStatus) {
+    if (isInvoiceReadOnly(recordOrStatus)) {
+        return 'Archived invoices are read only.';
+    }
+
     var state = normalizeInvoiceWorkflowState(recordOrStatus);
 
     if (state === WORKFLOW_STATE.DRAFT) {
@@ -85,10 +92,6 @@ function getInvoiceWorkflowLockMessage(recordOrStatus) {
 
     if (state === WORKFLOW_STATE.FULFILLED) {
         return 'Fulfilled invoices are locked. Only returns can be recorded.';
-    }
-
-    if (state === WORKFLOW_STATE.ARCHIVED) {
-        return 'Archived invoices are read only.';
     }
 
     if (state === WORKFLOW_STATE.SUBMITTED) {

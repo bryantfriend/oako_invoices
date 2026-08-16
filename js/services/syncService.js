@@ -94,7 +94,7 @@ function getIntegrityAction(queueItem, patch) {
         return 'restore';
     }
 
-    if (patch && patch.status === 'archived') {
+    if (patch && patch.archived === true) {
         return 'archive';
     }
 
@@ -337,6 +337,21 @@ function prepareOrderPatchForSync(queueItem) {
 async function writeOrderArchive(queueItem) {
     const orderRef = doc(db, 'orders', queueItem.entityId);
     const localVersion = getLocalOrderSnapshot(queueItem);
+    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder') {
+        const serverSnapshot = await getDoc(orderRef);
+        if (!serverSnapshot.exists()) {
+            throw new Error('Order not found during archive synchronization.');
+        }
+        const serverVersion = serverSnapshot.data();
+        const desiredArchived = queueItem.actionType === 'archiveOrder';
+        if (Boolean(serverVersion.archived) === desiredArchived) {
+            return;
+        }
+        if (serverChangedSinceBase(queueItem, serverVersion)) {
+            await conflictService.saveConflict(queueItem, serverVersion, localVersion);
+            throw new Error('sync_conflict');
+        }
+    }
     const patch = prepareOrderPatchForSync(queueItem);
     await updateDoc(orderRef, patch);
     await googleSheetsService.syncOrderLifecycle(Object.assign({ id: queueItem.entityId }, localVersion, patch)).catch(function(error) {
