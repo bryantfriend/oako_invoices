@@ -17,6 +17,9 @@ Valid admin roles are:
 
 - `admin`
 - `superadmin`
+- `owner`
+- `manager`
+- `super_admin` (legacy spelling)
 
 Create the first admin profile from trusted tooling only, such as the Firebase Console or a Firebase Admin SDK script run by a project owner. Do not add a public client-side setup page that lets users choose or update their own `role`.
 

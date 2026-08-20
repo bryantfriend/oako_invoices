@@ -22,7 +22,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return userRole() in ['admin', 'superadmin'];
+      // Keep this in sync with js/core/authService.js. Older staff profiles
+      // use owner/manager/super_admin, while newer profiles use admin roles.
+      return userRole() in ['admin', 'superadmin', 'owner', 'manager', 'super_admin'];
     }
 
     function isOwnUserProfile(userId) {

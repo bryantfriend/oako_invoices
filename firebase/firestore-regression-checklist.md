@@ -21,6 +21,7 @@ Run this checklist after deploying `firebase/firestore.rules`.
 - Logged in users without `/users/{uid}` cannot read `invoices`.
 - Logged in users with `/users/{uid}.role == "admin"` can read `invoices`.
 - Logged in users with `/users/{uid}.role == "superadmin"` can read `invoices`.
+- Logged in staff with the legacy `owner`, `manager`, or `super_admin` role can read and write admin collections.
 - Admin users can read `orders`.
 - Admin users can read `customers`.
 - Admin users can create and update `invoices`.
@@ -36,4 +37,4 @@ Run this checklist after deploying `firebase/firestore.rules`.
 - Logged out users cannot read `orders_archive`.
 - Signed-in non-admin users cannot read `customers`, `invoices`, or `orders_archive`.
 - A user can create/update their own profile fields for XP/profile data, but cannot create or update their own `role`.
-- Only an existing admin/superadmin can create, update, or delete another user's admin profile fields through client-side Firestore rules.
+- Only an existing authorized staff user can create or update another user's admin profile fields through client-side Firestore rules.

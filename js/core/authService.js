@@ -12,7 +12,10 @@ import {
 import { store } from "./store.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 
-const ADMIN_ROLES = ['admin', 'superadmin'];
+// Keep this in sync with firebase/firestore.rules. These legacy staff roles
+// are still used by existing profiles and by the app's intent authorizers.
+const ADMIN_ROLES = ['admin', 'superadmin', 'owner', 'manager', 'super_admin'];
+const ADMIN_ROLE_DESCRIPTION = ADMIN_ROLES.join(', ');
 const ADMIN_PROFILE_TIMEOUT_MS = 12000;
 const ADMIN_PROFILE_CACHE_KEY = 'kyrgyz-organics-admin-profile';
 
@@ -90,7 +93,7 @@ class AuthService {
                 });
                 return {
                     success: false,
-                    error: 'This account is signed in, but it does not have a /users/{uid} profile with role admin or superadmin.'
+                    error: 'This account is signed in, but it does not have an authorized /users/{uid} staff profile. Expected one of: ' + ADMIN_ROLE_DESCRIPTION + '.'
                 };
             }
 
@@ -198,7 +201,7 @@ class AuthService {
             console.info('[auth] Admin profile check source=' + source + ' uid=' + user.uid + ' profileExists=' + snapshot.exists() + ' role=' + (role || 'none') + ' isAdmin=' + isAdminRole);
 
             if (!profile) {
-                console.warn('[auth] Missing admin profile. Create users/' + user.uid + ' with role "admin" or "superadmin".');
+                console.warn('[auth] Missing staff profile. Create users/' + user.uid + ' with an authorized role: ' + ADMIN_ROLE_DESCRIPTION + '.');
             } else if (!ADMIN_ROLES.includes(role)) {
                 console.warn('[auth] User profile role is not authorized for the invoice app.', {
                     uid: user.uid,

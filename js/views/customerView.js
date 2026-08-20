@@ -371,7 +371,9 @@ window.editCustomer = async (id) => {
             if (!data.name && data.companyName) data.name = data.companyName;
             if (!data.companyName && data.name) data.companyName = data.name;
 
-            await customerController.handleUpdateCustomer(id, data);
+            const success = await customerController.handleUpdateCustomer(id, data);
+            if (!success) return false;
+
             renderCustomers();
             return true;
         }
