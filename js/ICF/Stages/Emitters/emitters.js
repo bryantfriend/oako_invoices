@@ -16,6 +16,7 @@ import emitMarkInvoicePrintedResultModule from "./Invoices/emitMarkInvoicePrinte
 import emitDashboardAnalyticsRangeResultModule from "./Dashboard/emitDashboardAnalyticsRangeResult.js";
 import emitArchiveSelectedOrdersResultModule from "./Orders/emitArchiveSelectedOrdersResult.js";
 import emitPreparePrintableInvoiceResultModule from "./Invoices/emitPreparePrintableInvoiceResult.js";
+import emitSaveDailyOrderResultModule from "./Orders/emitSaveDailyOrderResult.js";
 
 /**
  * Emitters
@@ -54,6 +55,8 @@ var emitters = {
     emitArchiveSelectedOrdersResultModule.emitArchiveSelectedOrdersResult,
   emitPreparePrintableInvoiceResult:
     emitPreparePrintableInvoiceResultModule.emitPreparePrintableInvoiceResult,
+  emitSaveDailyOrderResult:
+    emitSaveDailyOrderResultModule.emitSaveDailyOrderResult,
 
   createAddSuccessMessageEmitter:
     addSuccessMessageModule.createAddSuccessMessageEmitter,

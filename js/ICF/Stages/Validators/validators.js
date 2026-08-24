@@ -20,6 +20,7 @@ import validateMarkInvoicePrintedPayloadModule from "./Invoices/validateMarkInvo
 import validateDashboardAnalyticsRangePayloadModule from "./Dashboard/validateDashboardAnalyticsRangePayload.js";
 import validateArchiveSelectedOrdersPayloadModule from "./Orders/validateArchiveSelectedOrdersPayload.js";
 import validatePreparePrintableInvoicePayloadModule from "./Invoices/validatePreparePrintableInvoicePayload.js";
+import validateSaveDailyOrderPayloadModule from "./Orders/validateSaveDailyOrderPayload.js";
 
 /**
  * Validators
@@ -70,6 +71,8 @@ var validators = {
     validateArchiveSelectedOrdersPayloadModule.validateArchiveSelectedOrdersPayload,
   validatePreparePrintableInvoicePayload:
     validatePreparePrintableInvoicePayloadModule.validatePreparePrintableInvoicePayload,
+  validateSaveDailyOrderPayload:
+    validateSaveDailyOrderPayloadModule.validateSaveDailyOrderPayload,
 
   createRequireActorRoleValidator: requireActorRoleModule.createRequireActorRoleValidator
 };

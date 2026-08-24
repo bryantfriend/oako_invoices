@@ -39,6 +39,7 @@ window.clearAppCacheAndReload = async function clearAppCacheAndReload() {
 import { renderLogin } from "./views/loginView.js";
 import { renderDashboard } from "./views/dashboardView.js";
 import { renderCreateOrder } from "./views/createOrderView.js";
+import { renderDailyOrders } from "./views/dailyOrdersView.js";
 import { renderOrderDetail } from "./views/orderDetailView.js";
 import { renderInvoices, renderInvoiceDetail } from "./views/invoiceView.js";
 import { renderCustomers } from "./views/customerView.js";
@@ -80,6 +81,7 @@ async function initApp() {
         router.addRoute(ROUTES.LOGIN, renderLogin);
         router.addRoute(ROUTES.DASHBOARD, renderDashboard);
         router.addRoute(ROUTES.CREATE_ORDER, renderCreateOrder);
+        router.addRoute(ROUTES.DAILY_ORDERS, renderDailyOrders);
         router.addRoute(ROUTES.ORDER_DETAIL, renderOrderDetail);
         router.addRoute(ROUTES.INVOICES, renderInvoices);
         router.addRoute(ROUTES.INVOICE_DETAIL, renderInvoiceDetail);

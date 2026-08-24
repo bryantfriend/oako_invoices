@@ -14,6 +14,7 @@ export const ROUTES = {
     DASHBOARD: '/',
     LOGIN: '/login',
     CREATE_ORDER: '/orders/create',
+    DAILY_ORDERS: '/daily-orders',
     ORDER_DETAIL: '/orders/:id',
     INVOICES: '/invoices',
     INVOICE_DETAIL: '/invoices/:id',

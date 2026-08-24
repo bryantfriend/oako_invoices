@@ -29,15 +29,24 @@ export const renderSettings = async () => {
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const [loadedSettings, allCategories, inventorySettings] = await Promise.all([
+    const [loadedSettings, allCategories, allProducts, inventorySettings] = await Promise.all([
         settingsController.loadSettings(),
         productService.getAllCategories(),
+        productService.getAllProducts(),
         inventoryService.getInventorySettings()
     ]);
 
     const settings = loadedSettings || {};
 
     const enabledCatIds = inventorySettings.enabledCategories || [];
+    const savedDailyCategoryIds = Array.isArray(settings.dailyOrderCategoryIds) ? settings.dailyOrderCategoryIds : [];
+    const savedDailyProductIds = Array.isArray(settings.dailyOrderProductIds) ? settings.dailyOrderProductIds : [];
+    const hasSavedDailyFilter = settings.dailyOrderFilterConfigured === true || savedDailyCategoryIds.length > 0 || savedDailyProductIds.length > 0;
+    const defaultBreadCategoryIds = allCategories.filter(function(category) {
+        const label = [category.name, category.name_en, category.name_ru, category.name_kg, category.slug].filter(Boolean).join(' ').toLowerCase();
+        return label.includes('bread') || label.includes('хлеб') || label.includes('нан');
+    }).map(function(category) { return category.id; });
+    const dailyCategoryIds = hasSavedDailyFilter ? savedDailyCategoryIds : defaultBreadCategoryIds;
     const googleSheetId = getGoogleSheetId(settings.googleSheetId);
     const googleSheetUrl = buildGoogleSheetUrl(googleSheetId);
 
@@ -223,6 +232,40 @@ export const renderSettings = async () => {
     })}
 
                 ${createCard({
+        title: 'Daily Orders',
+        content: `
+                        <div class="daily-settings-intro">
+                            <span class="daily-settings-icon">
+                                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M16 2v4M8 2v4M3 9h18"></path><path d="m8 14 2 2 5-5"></path></svg>
+                            </span>
+                            <div><strong>Choose what appears in the Daily Orders tab</strong><p>Category and individual product selections are combined. Bread categories are selected automatically until you save a different choice.</p></div>
+                        </div>
+                        <div class="daily-settings-group">
+                            <span class="daily-card-kicker">Categories</span>
+                            <div class="daily-settings-check-grid">
+                                ${allCategories.map(function(category) { return `
+                                    <label class="daily-settings-check">
+                                        <input type="checkbox" name="daily_order_cat" value="${escapeAttribute(category.id)}" ${dailyCategoryIds.includes(category.id) ? 'checked' : ''}>
+                                        <span><strong>${escapeAttribute(category.name)}</strong><small>Show every product in this category</small></span>
+                                    </label>
+                                `; }).join('')}
+                            </div>
+                        </div>
+                        <details class="daily-product-filter-details">
+                            <summary>Add specific products <span>${allProducts.length} available</span></summary>
+                            <div class="daily-settings-check-grid daily-product-check-grid">
+                                ${allProducts.map(function(product) { return `
+                                    <label class="daily-settings-check">
+                                        <input type="checkbox" name="daily_order_product" value="${escapeAttribute(product.id)}" ${savedDailyProductIds.includes(product.id) ? 'checked' : ''}>
+                                        <span><strong>${escapeAttribute(product.displayName || product.name)}</strong><small>Individual product</small></span>
+                                    </label>
+                                `; }).join('')}
+                            </div>
+                        </details>
+                    `
+    })}
+
+                ${createCard({
         title: 'Inventory Categories',
         content: `
                         <p style="font-size: 13px; color: var(--color-gray-500); margin-bottom: 16px;">
@@ -282,6 +325,9 @@ export const renderSettings = async () => {
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
             data.syncEnabled = formData.get('syncEnabled') === 'true';
+            data.dailyOrderCategoryIds = formData.getAll('daily_order_cat');
+            data.dailyOrderProductIds = formData.getAll('daily_order_product');
+            data.dailyOrderFilterConfigured = true;
 
             const result = await settingsController.updateSettings(data);
             saveStatus.textContent = result && result.pending ? "Logo saved on this device. Will sync when online." : "Logo saved!";
@@ -318,6 +364,9 @@ export const renderSettings = async () => {
             data.showNotes = formData.get('showNotes') === 'true';
             data.showFooter = formData.get('showFooter') === 'true';
             data.syncEnabled = formData.get('syncEnabled') === 'true';
+            data.dailyOrderCategoryIds = formData.getAll('daily_order_cat');
+            data.dailyOrderProductIds = formData.getAll('daily_order_product');
+            data.dailyOrderFilterConfigured = true;
 
             const result = await settingsController.updateSettings(data);
             saveStatus.textContent = result && result.pending ? "Payment QR saved on this device. Will sync when online." : "Payment QR saved!";
@@ -344,6 +393,9 @@ export const renderSettings = async () => {
         data.showNotes = formData.get('showNotes') === 'true';
         data.showFooter = formData.get('showFooter') === 'true';
         data.syncEnabled = formData.get('syncEnabled') === 'true';
+        data.dailyOrderCategoryIds = formData.getAll('daily_order_cat');
+        data.dailyOrderProductIds = formData.getAll('daily_order_product');
+        data.dailyOrderFilterConfigured = true;
 
         // Extract inventory categories
         const enabledCategories = formData.getAll('inventory_cat');

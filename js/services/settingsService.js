@@ -43,7 +43,10 @@ export const DEFAULT_INVOICE_SETTINGS = {
     googleSheetId: '',
     googleSheetsWebhookUrl: '',
     syncEnabled: false,
-    defaultOrderPriceMode: 'retail'
+    defaultOrderPriceMode: 'retail',
+    dailyOrderCategoryIds: [],
+    dailyOrderProductIds: [],
+    dailyOrderFilterConfigured: false
 };
 
 export function getGoogleSheetId(value = '') {
@@ -79,7 +82,10 @@ function normalizeInvoiceSettings(data = {}) {
         defaultInvoiceDateOffsetDays,
         approvalLinkExpirationHours,
         googleSheetId: getGoogleSheetId(data.googleSheetId),
-        googleSheetsWebhookUrl: String(data.googleSheetsWebhookUrl || '').trim()
+        googleSheetsWebhookUrl: String(data.googleSheetsWebhookUrl || '').trim(),
+        dailyOrderCategoryIds: Array.isArray(data.dailyOrderCategoryIds) ? data.dailyOrderCategoryIds.map(String) : [],
+        dailyOrderProductIds: Array.isArray(data.dailyOrderProductIds) ? data.dailyOrderProductIds.map(String) : [],
+        dailyOrderFilterConfigured: data.dailyOrderFilterConfigured === true
     };
 }
 

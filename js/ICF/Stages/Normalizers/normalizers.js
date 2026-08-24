@@ -18,6 +18,7 @@ import normalizeMarkInvoicePrintedPayloadModule from "./Invoices/normalizeMarkIn
 import normalizeDashboardAnalyticsRangePayloadModule from "./Dashboard/normalizeDashboardAnalyticsRangePayload.js";
 import normalizeArchiveSelectedOrdersPayloadModule from "./Orders/normalizeArchiveSelectedOrdersPayload.js";
 import normalizePreparePrintableInvoicePayloadModule from "./Invoices/normalizePreparePrintableInvoicePayload.js";
+import normalizeSaveDailyOrderPayloadModule from "./Orders/normalizeSaveDailyOrderPayload.js";
 
 /**
  * Normalizers
@@ -55,6 +56,8 @@ var normalizers = {
     normalizeArchiveSelectedOrdersPayloadModule.normalizeArchiveSelectedOrdersPayload,
   normalizePreparePrintableInvoicePayload:
     normalizePreparePrintableInvoicePayloadModule.normalizePreparePrintableInvoicePayload,
+  normalizeSaveDailyOrderPayload:
+    normalizeSaveDailyOrderPayloadModule.normalizeSaveDailyOrderPayload,
 
   createTrimPayloadStringFieldNormalizer:
     trimPayloadStringFieldModule.createTrimPayloadStringFieldNormalizer,

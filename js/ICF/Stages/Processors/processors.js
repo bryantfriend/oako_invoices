@@ -17,6 +17,7 @@ import processMarkInvoicePrintedModule from "./Invoices/processMarkInvoicePrinte
 import processDashboardAnalyticsRangeModule from "./Dashboard/processDashboardAnalyticsRange.js";
 import processArchiveSelectedOrdersModule from "./Orders/processArchiveSelectedOrders.js";
 import processPreparePrintableInvoiceModule from "./Invoices/processPreparePrintableInvoice.js";
+import processSaveDailyOrderModule from "./Orders/processSaveDailyOrder.js";
 
 /**
  * Processors
@@ -56,6 +57,8 @@ var processors = {
     processArchiveSelectedOrdersModule.processArchiveSelectedOrders,
   processPreparePrintableInvoice:
     processPreparePrintableInvoiceModule.processPreparePrintableInvoice,
+  processSaveDailyOrder:
+    processSaveDailyOrderModule.processSaveDailyOrder,
 
   createSetResultDataProcessor:
     setResultDataModule.createSetResultDataProcessor,

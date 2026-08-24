@@ -9,6 +9,7 @@ import { runSingleFlight } from "../core/singleFlight.js";
 const NAV_ICONS = {
     orders: '<path d="M6 2h9l3 3v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M14 2v4h4"/><path d="M8 11h8"/><path d="M8 15h6"/>',
     plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+    daily: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18"/><path d="m8 14 2 2 5-5"/>',
     invoices: '<path d="M4 3h16v18l-3-2-3 2-3-2-3 2-4-2Z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/>',
     inventory: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
     collections: '<path d="M3 6h18v12H3z"/><path d="M7 10h6"/><path d="M17 14h.01"/>',
@@ -48,6 +49,7 @@ export class Sidebar {
             <nav class="sidebar-nav">
                 ${this.createNavItem(t('sidebar_orders'), ROUTES.DASHBOARD, 'orders', 'orders')}
                 ${this.createNavItem(t('dash_new_order'), ROUTES.CREATE_ORDER, 'plus')}
+                ${this.createNavItem('Daily Orders', ROUTES.DAILY_ORDERS, 'daily', 'dailyOrders')}
                 ${this.createNavItem(t('sidebar_invoices'), ROUTES.INVOICES, 'invoices', 'invoices')}
                 ${this.createNavItem('Collections', ROUTES.COLLECTIONS, 'collections')}
                 ${this.createNavItem('Production Plan', ROUTES.PRODUCTION_PLANNER, 'production')}
@@ -143,6 +145,11 @@ export class Sidebar {
             }
 
             setBadge('orders', (orders || []).filter(function(order) { return order && order.archived !== true; }).length);
+            var today = new Date();
+            var todayKey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+            setBadge('dailyOrders', (orders || []).filter(function(order) {
+                return order && order.archived !== true && String(order.orderDate || '').slice(0, 10) === todayKey;
+            }).length);
             setBadge('invoices', (invoices || []).length);
             setBadge('conflicts', conflicts.length);
             setBadge('lowStock', 0);

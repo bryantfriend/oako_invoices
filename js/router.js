@@ -29,6 +29,9 @@ function getRouteName(path) {
     if (safePath === ROUTES.CREATE_ORDER) {
         return 'create-order';
     }
+    if (safePath === ROUTES.DAILY_ORDERS) {
+        return 'daily-orders';
+    }
     if (safePath.indexOf('/orders/') === 0) {
         return 'order-detail';
     }
