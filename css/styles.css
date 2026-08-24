@@ -2122,6 +2122,12 @@ table {
 .grain-two { left: 2px; bottom: 12px; animation-delay: -1.2s; }
 .grain-three { right: 13px; bottom: -4px; animation-delay: -2.4s; }
 
+.daily-data-notice { display: flex; align-items: flex-start; gap: 11px; padding: 12px 14px; border: 1px solid #efd7ac; border-radius: 13px; color: #80551f; background: #fff9ed; }
+.daily-data-notice > span { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 10px; background: #ffefce; }
+.daily-data-notice svg { width: 19px; height: 19px; }
+.daily-data-notice strong { display: block; font-size: 11px; }
+.daily-data-notice p { margin: 3px 0 0; color: #87673e; font-size: 10px; line-height: 1.45; }
+
 .daily-date-toolbar,
 .daily-orders-card {
     border: 1px solid var(--color-gray-200);
@@ -2349,6 +2355,7 @@ table {
 .daily-empty-state h3 { margin: 17px 0 6px; color: var(--color-gray-800); font-size: 16px; }
 .daily-empty-state p { max-width: 480px; margin: 0 0 17px; color: var(--color-gray-500); font-size: 12px; line-height: 1.55; }
 .daily-empty-state .btn { gap: 7px; }
+.daily-orders-unavailable .daily-empty-illustration { color: #9a642a; background: #fff4dc; }
 
 .daily-editor { display: grid; gap: 18px; }
 .daily-editor-actions { position: sticky; z-index: 4; top: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 10px; border: 1px solid #d9e8da; border-radius: 13px; background: rgba(248, 252, 246, .96); box-shadow: 0 7px 18px rgba(43, 75, 44, .08); backdrop-filter: blur(9px); }

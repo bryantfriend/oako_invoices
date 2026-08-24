@@ -106,3 +106,14 @@ test('Daily Orders editor uses searchable modal pickers and an explicit close bu
     assert.doesNotMatch(source, /id="daily-new-product"/);
     assert.doesNotMatch(source, /id="daily-editor-customer"/);
 });
+
+test('Daily Orders reuses session and offline order caches when Firestore is unavailable', function() {
+    var controllerSource = fs.readFileSync(new URL('../js/controllers/dailyOrdersController.js', import.meta.url), 'utf8');
+    var viewSource = fs.readFileSync(new URL('../js/views/dailyOrdersView.js', import.meta.url), 'utf8');
+    assert.match(controllerSource, /getOrdersSnapshot\(\)/);
+    assert.match(controllerSource, /sessionDataStore\.loadOrders/);
+    assert.match(controllerSource, /readCachedRowsAsync\('orders:all:createdAt_desc'\)/);
+    assert.doesNotMatch(controllerSource, /orderService\.getAllOrders\(\)\.catch/);
+    assert.match(viewSource, /Orders could not be loaded/);
+    assert.match(viewSource, /Showing cached orders/);
+});

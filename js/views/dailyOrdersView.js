@@ -88,12 +88,32 @@ function renderProductBadges(items) {
 }
 
 function renderEmptyState(state) {
+    if (state.orderDataSource === 'unavailable') {
+        return '<div class="daily-empty-state daily-orders-unavailable">'
+            + '<div class="daily-empty-illustration">' + ICONS.calendar + '</div>'
+            + '<h3>Orders could not be loaded</h3>'
+            + '<p>Firestore is temporarily unavailable and this device does not have a cached order list yet. Your orders have not been deleted.</p>'
+            + '<a href="#/offline" class="btn btn-secondary">Check offline data</a>'
+            + '</div>';
+    }
+    var loadedMessage = state.orders.length > 0
+        ? ' ' + state.orders.length + ' total orders are loaded; choose another date to review them.'
+        : '';
     return '<div class="daily-empty-state">'
         + '<div class="daily-empty-illustration">' + ICONS.bread + '<span class="daily-empty-spark spark-one"></span><span class="daily-empty-spark spark-two"></span></div>'
         + '<h3>No orders for ' + escapeHtml(formatDateLabel(state.selectedDate)) + '</h3>'
-        + '<p>Create an order for this day or choose another date.</p>'
+        + '<p>Create an order for this day or choose another date.' + escapeHtml(loadedMessage) + '</p>'
         + '<button type="button" class="btn btn-primary daily-empty-create">' + ICONS.plus + ' Create new order</button>'
         + '</div>';
+}
+
+function renderOrderDataNotice(state) {
+    if (state.orderDataSource !== 'offline-read-cache' && state.orderDataSource !== 'session-after-error') {
+        return '';
+    }
+    return '<section class="daily-data-notice" role="status">'
+        + '<span>' + ICONS.calendar + '</span><div><strong>Showing cached orders</strong>'
+        + '<p>Firestore is temporarily unavailable, so Daily Orders is using the latest order list saved on this device.</p></div></section>';
 }
 
 function renderOrdersTable(state, visibleOrders) {
@@ -159,6 +179,7 @@ function renderPageShell(container, state) {
         + '<button type="button" id="daily-create-order" class="btn btn-primary daily-create-button">' + ICONS.plus + '<span>Create new order</span></button>'
         + '<div class="daily-hero-art" aria-hidden="true">' + ICONS.bread + '<span class="daily-grain grain-one"></span><span class="daily-grain grain-two"></span><span class="daily-grain grain-three"></span></div>'
         + '</section>'
+        + renderOrderDataNotice(state)
         + '<section class="daily-date-toolbar">'
         + '<div><span class="daily-toolbar-label">Orders for</span><strong id="daily-selected-label">' + escapeHtml(formatDateLabel(state.selectedDate)) + '</strong></div>'
         + '<div class="daily-date-controls">'

@@ -1,13 +1,81 @@
 import { authService } from "../core/authService.js";
 import { store } from "../core/store.js";
 import { notificationService } from "../core/notificationService.js";
-import { orderService } from "../services/orderService.js";
 import { productService } from "../services/productService.js";
 import { settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
 import sessionDataStore from "../services/sessionDataStore.js";
+import { connectionStateService } from "../services/connectionStateService.js";
+import { readCachedRowsAsync } from "../core/firestoreRead.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import saveDailyOrderIntentModule from "../ICF/Intents/SaveDailyOrderIntent.js";
+
+function buildOrderLoadResult(records, source, error) {
+    return {
+        records: Array.isArray(records) ? records : [],
+        source: source || 'unknown',
+        error: error || null
+    };
+}
+
+function shouldPreferCachedOrderRecords() {
+    try {
+        var connection = connectionStateService.getSnapshot();
+        return connection.browserOnline === false
+            || connection.mode === 'offline'
+            || connection.mode === 'degraded'
+            || (connection.checkedAt && connection.firestoreReachable !== true);
+    } catch (error) {
+        return false;
+    }
+}
+
+async function loadDailyOrderRecords() {
+    var snapshot = sessionDataStore.getOrdersSnapshot();
+    if (snapshot && Array.isArray(snapshot.records) && snapshot.records.length > 0) {
+        return buildOrderLoadResult(snapshot.records, snapshot.source || 'session-memory', null);
+    }
+
+    if (shouldPreferCachedOrderRecords()) {
+        var preferredCachedRecords = await readCachedRowsAsync('orders:all:createdAt_desc').catch(function() {
+            return [];
+        });
+        if (preferredCachedRecords.length > 0) {
+            return buildOrderLoadResult(preferredCachedRecords, 'offline-read-cache', null);
+        }
+    }
+
+    try {
+        var loaded = await sessionDataStore.loadOrders({ source: 'daily-orders' });
+        var loadedRecords = loaded && Array.isArray(loaded.records) ? loaded.records : [];
+        if (loadedRecords.length > 0) {
+            return buildOrderLoadResult(loadedRecords, loaded && loaded.meta ? loaded.meta.source : 'session-store', null);
+        }
+
+        var cachedAfterEmptyLoad = await readCachedRowsAsync('orders:all:createdAt_desc').catch(function() {
+            return [];
+        });
+        if (cachedAfterEmptyLoad.length > 0) {
+            return buildOrderLoadResult(cachedAfterEmptyLoad, 'offline-read-cache', null);
+        }
+
+        return buildOrderLoadResult([], loaded && loaded.meta ? loaded.meta.source : 'session-store', null);
+    } catch (error) {
+        snapshot = sessionDataStore.getOrdersSnapshot();
+        if (snapshot && Array.isArray(snapshot.records) && snapshot.records.length > 0) {
+            return buildOrderLoadResult(snapshot.records, 'session-after-error', error);
+        }
+
+        var cachedRecords = await readCachedRowsAsync('orders:all:createdAt_desc').catch(function() {
+            return [];
+        });
+        if (cachedRecords.length > 0) {
+            return buildOrderLoadResult(cachedRecords, 'offline-read-cache', error);
+        }
+
+        return buildOrderLoadResult([], 'unavailable', error);
+    }
+}
 
 function getActor() {
     var state = store.getState ? store.getState() : {};
@@ -29,14 +97,16 @@ function getPipelineError(result) {
 export const dailyOrdersController = {
     async loadWorkspace() {
         var results = await Promise.all([
-            orderService.getAllOrders().catch(function() { return []; }),
+            loadDailyOrderRecords(),
             productService.getAllProducts(),
             productService.getAllCategories(),
             settingsService.getInvoiceSettings(),
             customerService.getAllCustomers().catch(function() { return []; })
         ]);
         return {
-            orders: results[0] || [],
+            orders: results[0].records || [],
+            orderDataSource: results[0].source || 'unknown',
+            orderLoadError: results[0].error || null,
             products: results[1] || [],
             categories: results[2] || [],
             settings: results[3] || {},
