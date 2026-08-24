@@ -4,6 +4,7 @@ import { notificationService } from "../core/notificationService.js";
 import { orderService } from "../services/orderService.js";
 import { productService } from "../services/productService.js";
 import { settingsService } from "../services/settingsService.js";
+import { customerService } from "../services/customerService.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import saveDailyOrderIntentModule from "../ICF/Intents/SaveDailyOrderIntent.js";
@@ -31,13 +32,15 @@ export const dailyOrdersController = {
             orderService.getAllOrders().catch(function() { return []; }),
             productService.getAllProducts(),
             productService.getAllCategories(),
-            settingsService.getInvoiceSettings()
+            settingsService.getInvoiceSettings(),
+            customerService.getAllCustomers().catch(function() { return []; })
         ]);
         return {
             orders: results[0] || [],
             products: results[1] || [],
             categories: results[2] || [],
-            settings: results[3] || {}
+            settings: results[3] || {},
+            customers: results[4] || []
         };
     },
 

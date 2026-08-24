@@ -35,17 +35,19 @@ test('Daily Orders defaults to bread categories until its filter is configured',
 test('Daily Orders filters the chosen day and summarizes visible quantities', function() {
     var orders = [
         { id: 'one', orderDate: '2026-08-24', items: [{ productId: 'loaf', name: 'Country loaf', quantity: 3 }, { productId: 'juice', name: 'Apple juice', quantity: 2 }] },
+        { id: 'drink-only', orderDate: '2026-08-24', items: [{ productId: 'juice', name: 'Apple juice', quantity: 4 }] },
+        { id: 'archived', archived: true, orderDate: '2026-08-24', items: [{ productId: 'loaf', name: 'Country loaf', quantity: 1 }] },
         { id: 'two', orderDate: '2026-08-25', items: [{ productId: 'loaf', name: 'Country loaf', quantity: 5 }] }
     ];
     var selected = getOrdersForDate(orders, '2026-08-24', products, categories, {});
     var items = getVisibleOrderItems(selected[0], products, categories, {});
     var summary = summarizeDailyOrders(selected, products, categories, {});
 
-    assert.deepEqual(selected.map(function(order) { return order.id; }), ['one']);
+    assert.deepEqual(selected.map(function(order) { return order.id; }), ['one', 'drink-only', 'archived']);
     assert.deepEqual(items.map(function(item) { return item.productId; }), ['loaf']);
-    assert.equal(summary.orderCount, 1);
+    assert.equal(summary.orderCount, 3);
     assert.equal(summary.productCount, 1);
-    assert.equal(summary.unitCount, 3);
+    assert.equal(summary.unitCount, 4);
 });
 
 test('SaveDailyOrder stages reject zero-only drafts and create normalized orders', async function() {
@@ -62,6 +64,7 @@ test('SaveDailyOrder stages reject zero-only drafts and create normalized orders
     var calls = [];
     var intent = {
         payload: {
+            customerId: 'customer-1',
             customerName: ' Cafe ',
             orderDate: '2026-08-24',
             notes: ' Morning ',
@@ -80,6 +83,7 @@ test('SaveDailyOrder stages reject zero-only drafts and create normalized orders
     emitSaveDailyOrderResultModule.emitSaveDailyOrderResult(intent);
 
     assert.equal(intent.payload.customerName, 'Cafe');
+    assert.equal(calls[0].order.customerId, 'customer-1');
     assert.equal(intent.payload.totalAmount, 200);
     assert.equal(calls[0].userId, 'admin-1');
     assert.equal(intent.context.resultData.orderId, 'new-order');
@@ -91,4 +95,14 @@ test('SaveDailyOrderIntent registers every required ICF stage', function() {
     ['Validate', 'Normalize', 'AddContext', 'Authorize', 'Process', 'Emit'].forEach(function(stageName) {
         assert.match(source, new RegExp(stageName + ':\\s*\\{'));
     });
+});
+
+test('Daily Orders editor uses searchable modal pickers and an explicit close button', function() {
+    var source = fs.readFileSync(new URL('../js/views/dailyOrdersView.js', import.meta.url), 'utf8');
+    assert.match(source, /Close without saving/);
+    assert.match(source, /Choose customer/);
+    assert.match(source, /Choose product to add/);
+    assert.match(source, /daily-editor-customer-button/);
+    assert.doesNotMatch(source, /id="daily-new-product"/);
+    assert.doesNotMatch(source, /id="daily-editor-customer"/);
 });

@@ -19,6 +19,8 @@ var ICONS = {
     minus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
     print: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/><path d="M18 12h.01"/></svg>',
     bread: '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M14 52h36c5 0 8-4 7-9l-5-25c-1-6-6-10-12-10H24c-6 0-11 4-12 10L7 43c-1 5 2 9 7 9Z"/><path d="M23 20c2-4 5-6 9-6M30 28c2-4 5-6 9-6M20 38c2-4 5-6 9-6"/></svg>',
+    close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
+    search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
     chevronLeft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
     chevronRight: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>'
 };
@@ -88,8 +90,8 @@ function renderProductBadges(items) {
 function renderEmptyState(state) {
     return '<div class="daily-empty-state">'
         + '<div class="daily-empty-illustration">' + ICONS.bread + '<span class="daily-empty-spark spark-one"></span><span class="daily-empty-spark spark-two"></span></div>'
-        + '<h3>No matching orders for ' + escapeHtml(formatDateLabel(state.selectedDate)) + '</h3>'
-        + '<p>Create an order for this day, or adjust the Daily Orders product filters in Settings.</p>'
+        + '<h3>No orders for ' + escapeHtml(formatDateLabel(state.selectedDate)) + '</h3>'
+        + '<p>Create an order for this day or choose another date.</p>'
         + '<button type="button" class="btn btn-primary daily-empty-create">' + ICONS.plus + ' Create new order</button>'
         + '</div>';
 }
@@ -101,13 +103,16 @@ function renderOrdersTable(state, visibleOrders) {
 
     var rows = visibleOrders.map(function(order) {
         var items = getVisibleOrderItems(order, state.products, state.categories, state.settings);
-        var status = String(order.status || 'draft').replace(/_/g, ' ');
+        var status = order.archived === true ? 'archived' : String(order.status || 'draft').replace(/_/g, ' ');
+        var productContent = items.length
+            ? renderProductBadges(items)
+            : '<span class="daily-no-matching-products">No products match the current visibility filter</span>';
         return '<tr>'
             + '<td><button type="button" class="daily-customer-link daily-order-edit" data-order-id="' + escapeHtml(order.id) + '">'
             + '<span class="daily-customer-avatar">' + escapeHtml(String(order.customerName || 'O').charAt(0).toUpperCase()) + '</span>'
             + '<span><strong>' + escapeHtml(order.customerName || 'Unnamed customer') + '</strong><small>Open and edit order</small></span>'
             + '</button></td>'
-            + '<td><div class="daily-product-badges">' + renderProductBadges(items) + '</div></td>'
+            + '<td><div class="daily-product-badges">' + productContent + '</div></td>'
             + '<td><span class="daily-status-badge status-' + escapeHtml(status.replace(/\s/g, '-')) + '"><span></span>' + escapeHtml(status) + '</span></td>'
             + '<td class="daily-row-action"><button type="button" class="daily-icon-button daily-order-edit" data-order-id="' + escapeHtml(order.id) + '" aria-label="Edit order">' + ICONS.chevronRight + '</button></td>'
             + '</tr>';
@@ -171,10 +176,8 @@ function renderPageShell(container, state) {
 }
 
 function syncEditorDraft(root, draft) {
-    var customer = root.querySelector('#daily-editor-customer');
     var date = root.querySelector('#daily-editor-date');
     var notes = root.querySelector('#daily-editor-notes');
-    draft.customerName = customer ? customer.value.trim() : draft.customerName;
     draft.orderDate = date ? date.value : draft.orderDate;
     draft.notes = notes ? notes.value : draft.notes;
     root.querySelectorAll('[data-daily-quantity]').forEach(function(input) {
@@ -183,6 +186,190 @@ function syncEditorDraft(root, draft) {
             draft.items[index].quantity = Math.max(0, Number(input.value) || 0);
         }
     });
+}
+
+function addModalCloseButton(modal, label) {
+    var shell = modal.modalEl ? modal.modalEl.querySelector('.modal-content') : null;
+    if (!shell) {
+        return;
+    }
+    shell.classList.add('daily-modal-shell');
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'daily-modal-close';
+    button.setAttribute('aria-label', label || 'Close without saving');
+    button.innerHTML = ICONS.close;
+    button.addEventListener('click', function() {
+        modal.close();
+    });
+    shell.appendChild(button);
+}
+
+function getCustomerName(customer) {
+    var source = customer || {};
+    return source.companyName || source.name || 'Unnamed customer';
+}
+
+function updateCustomerSelection(root, draft) {
+    var button = root.querySelector('#daily-editor-customer-button');
+    if (!button) {
+        return;
+    }
+    var name = draft.customerName || '';
+    button.classList.toggle('has-selection', Boolean(name));
+    button.innerHTML = '<span class="daily-customer-avatar">' + escapeHtml((name || 'C').charAt(0).toUpperCase()) + '</span>'
+        + '<span class="daily-customer-select-copy"><strong>' + escapeHtml(name || 'Choose a customer') + '</strong>'
+        + '<small>' + (name ? 'Click to choose a different customer' : 'Search saved customers by name or phone') + '</small></span>'
+        + ICONS.chevronRight;
+}
+
+function openCustomerPicker(root, state, draft) {
+    syncEditorDraft(root, draft);
+    var categories = ['A', 'B', 'C'];
+    (Array.isArray(state.customers) ? state.customers : []).forEach(function(customer) {
+        var category = String(customer.category || '').trim();
+        if (category && categories.indexOf(category) === -1) {
+            categories.push(category);
+        }
+    });
+    var categoryOptions = categories.map(function(category) {
+        return '<option value="' + escapeHtml(category) + '">Category ' + escapeHtml(category) + '</option>';
+    }).join('');
+    var modal = new Modal({
+        title: 'Choose customer',
+        size: 'large',
+        footer: false,
+        content: '<div class="daily-picker">'
+            + '<div class="daily-picker-toolbar"><label class="daily-picker-search">' + ICONS.search + '<input type="search" class="input" id="daily-customer-search" placeholder="Search name or phone…" autocomplete="off"></label>'
+            + '<select class="input" id="daily-customer-category" aria-label="Filter customers by category"><option value="all">All categories</option>' + categoryOptions + '</select></div>'
+            + '<div class="daily-picker-status" id="daily-customer-status"></div>'
+            + '<div class="daily-customer-picker-list" id="daily-customer-results"></div></div>'
+    });
+    modal.open();
+    addModalCloseButton(modal, 'Close customer picker');
+    var pickerRoot = modal.modalEl;
+    var search = pickerRoot.querySelector('#daily-customer-search');
+    var categorySelect = pickerRoot.querySelector('#daily-customer-category');
+    var results = pickerRoot.querySelector('#daily-customer-results');
+    var status = pickerRoot.querySelector('#daily-customer-status');
+
+    function renderCustomers() {
+        var query = String(search.value || '').trim().toLowerCase();
+        var category = categorySelect.value;
+        var filtered = (Array.isArray(state.customers) ? state.customers : []).filter(function(customer) {
+            var haystack = [getCustomerName(customer), customer.phone, customer.city, customer.email].filter(Boolean).join(' ').toLowerCase();
+            var matchesCategory = category === 'all' || String(customer.category || '') === category;
+            return matchesCategory && (!query || haystack.indexOf(query) !== -1);
+        });
+        status.textContent = filtered.length + (filtered.length === 1 ? ' customer' : ' customers') + ' found';
+        if (!filtered.length) {
+            results.innerHTML = '<div class="daily-picker-empty">' + ICONS.search + '<strong>No customers found</strong><span>Try another name, phone number, or category.</span></div>';
+            return;
+        }
+        results.innerHTML = filtered.map(function(customer, index) {
+            var name = getCustomerName(customer);
+            return '<button type="button" class="daily-customer-picker-card" data-customer-index="' + index + '">'
+                + '<span class="daily-customer-avatar">' + escapeHtml(name.charAt(0).toUpperCase()) + '</span>'
+                + '<span><strong>' + escapeHtml(name) + '</strong><small>' + escapeHtml(customer.phone || 'No phone number') + (customer.city ? ' · ' + escapeHtml(customer.city) : '') + '</small></span>'
+                + '<em>' + escapeHtml(customer.category || 'C') + '</em>' + ICONS.chevronRight + '</button>';
+        }).join('');
+        results.querySelectorAll('[data-customer-index]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var customer = filtered[parseInt(button.getAttribute('data-customer-index'), 10)];
+                if (!customer) {
+                    return;
+                }
+                draft.customerId = customer.id || '';
+                draft.customerName = getCustomerName(customer);
+                updateCustomerSelection(root, draft);
+                modal.close();
+            });
+        });
+    }
+
+    search.addEventListener('input', renderCustomers);
+    categorySelect.addEventListener('change', renderCustomers);
+    renderCustomers();
+    search.focus();
+}
+
+function getProductCategoryId(product) {
+    var source = product || {};
+    return String(source.categoryId || source.category_id || source.category || '');
+}
+
+function addProductToDraft(product, state, draft) {
+    var priceMode = normalizeDefaultOrderPriceMode(draft.selectedPriceMode || state.settings.defaultOrderPriceMode);
+    try {
+        draft.items.push(buildPricedOrderItemFromProduct(product, priceMode, 1));
+    } catch (error) {
+        draft.items.push(buildPricedOrderItemFromProduct(product, 'retail', 1));
+    }
+}
+
+function openProductPicker(root, state, draft, editorState) {
+    syncEditorDraft(root, draft);
+    var categoryOptions = (Array.isArray(state.categories) ? state.categories : []).map(function(category) {
+        return '<option value="' + escapeHtml(category.id) + '">' + escapeHtml(category.name || category.displayName || 'Category') + '</option>';
+    }).join('');
+    var modal = new Modal({
+        title: 'Choose product to add',
+        size: 'large',
+        footer: false,
+        content: '<div class="daily-picker">'
+            + '<div class="daily-picker-toolbar"><label class="daily-picker-search">' + ICONS.search + '<input type="search" class="input" id="daily-product-search" placeholder="Search products…" autocomplete="off"></label>'
+            + '<select class="input" id="daily-product-category" aria-label="Filter products by category"><option value="all">All categories</option>' + categoryOptions + '</select></div>'
+            + '<div class="daily-picker-status" id="daily-product-status"></div>'
+            + '<div class="daily-product-picker-grid" id="daily-product-results"></div></div>'
+    });
+    modal.open();
+    addModalCloseButton(modal, 'Close product picker');
+    var pickerRoot = modal.modalEl;
+    var search = pickerRoot.querySelector('#daily-product-search');
+    var categorySelect = pickerRoot.querySelector('#daily-product-category');
+    var results = pickerRoot.querySelector('#daily-product-results');
+    var status = pickerRoot.querySelector('#daily-product-status');
+
+    function renderProducts() {
+        var query = String(search.value || '').trim().toLowerCase();
+        var category = categorySelect.value;
+        var selectedIds = draft.items.map(function(item) { return String(item.productId || item.id || ''); });
+        var filtered = (Array.isArray(state.products) ? state.products : []).filter(function(product) {
+            var haystack = [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg, product.sku].filter(Boolean).join(' ').toLowerCase();
+            var matchesCategory = category === 'all' || getProductCategoryId(product) === category;
+            return matchesCategory && (!query || haystack.indexOf(query) !== -1);
+        });
+        status.textContent = filtered.length + (filtered.length === 1 ? ' product' : ' products') + ' found';
+        if (!filtered.length) {
+            results.innerHTML = '<div class="daily-picker-empty">' + ICONS.search + '<strong>No products found</strong><span>Try another product name or category.</span></div>';
+            return;
+        }
+        results.innerHTML = filtered.map(function(product, index) {
+            var selected = selectedIds.indexOf(String(product.id || '')) !== -1;
+            var image = product.imageUrl
+                ? '<img src="' + escapeHtml(product.imageUrl) + '" alt="" loading="lazy">'
+                : '<span class="daily-product-picker-icon">' + ICONS.bread + '</span>';
+            return '<button type="button" class="daily-product-picker-card ' + (selected ? 'is-selected' : '') + '" data-product-index="' + index + '" ' + (selected ? 'disabled' : '') + '>'
+                + image + '<span><strong>' + escapeHtml(product.displayName || product.name || 'Product') + '</strong><small>' + (selected ? 'Already in order' : 'Click to add with Qty 1') + '</small></span>'
+                + (selected ? '<em>Added</em>' : ICONS.plus) + '</button>';
+        }).join('');
+        results.querySelectorAll('[data-product-index]:not([disabled])').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var product = filtered[parseInt(button.getAttribute('data-product-index'), 10)];
+                if (!product) {
+                    return;
+                }
+                addProductToDraft(product, state, draft);
+                modal.close();
+                renderEditorItems(root, state, draft, editorState);
+            });
+        });
+    }
+
+    search.addEventListener('input', renderProducts);
+    categorySelect.addEventListener('change', renderProducts);
+    renderProducts();
+    search.focus();
 }
 
 function renderEditorItems(root, state, draft, editorState) {
@@ -200,20 +387,10 @@ function renderEditorItems(root, state, draft, editorState) {
             + '</div>';
     }).join('');
 
-    var selectedIds = draft.items.map(function(item) { return String(item.productId || item.id || ''); });
-    var options = state.products.filter(function(product) {
-        return selectedIds.indexOf(String(product.id || '')) === -1;
-    }).map(function(product) {
-        return '<option value="' + escapeHtml(product.id) + '">' + escapeHtml(product.displayName || product.name || 'Product') + '</option>';
-    }).join('');
-
     mount.innerHTML = itemRows
         + (!draft.items.length ? '<div class="daily-editor-empty">' + ICONS.bread + '<div><strong>No products yet</strong><span>Use the plus button below to build this order.</span></div></div>' : '')
         + '<div class="daily-add-product-area">'
-        + '<button type="button" id="daily-toggle-product-picker" class="daily-add-product-button">' + ICONS.plus + '<span>Add a new product</span></button>'
-        + '<div id="daily-product-picker" class="daily-product-picker ' + (editorState.pickerOpen ? 'is-open' : '') + '">'
-        + '<label for="daily-new-product">Choose product</label><div><select id="daily-new-product" class="input"><option value="">Select a product…</option>' + options + '</select>'
-        + '<button type="button" id="daily-confirm-product" class="btn btn-secondary" ' + (options ? '' : 'disabled') + '>' + ICONS.plus + ' Add</button></div></div></div>';
+        + '<button type="button" id="daily-open-product-picker" class="daily-add-product-button">' + ICONS.plus + '<span>Add a new product</span></button></div>';
 
     attachEditorItemEvents(root, state, draft, editorState);
 }
@@ -250,41 +427,10 @@ function attachEditorItemEvents(root, state, draft, editorState) {
             renderEditorItems(root, state, draft, editorState);
         });
     });
-    var toggle = root.querySelector('#daily-toggle-product-picker');
-    if (toggle) {
-        toggle.addEventListener('click', function() {
-            editorState.pickerOpen = !editorState.pickerOpen;
-            var picker = root.querySelector('#daily-product-picker');
-            if (picker) {
-                picker.classList.toggle('is-open', editorState.pickerOpen);
-                if (editorState.pickerOpen) {
-                    var select = root.querySelector('#daily-new-product');
-                    if (select) select.focus();
-                }
-            }
-        });
-    }
-    var addButton = root.querySelector('#daily-confirm-product');
+    var addButton = root.querySelector('#daily-open-product-picker');
     if (addButton) {
         addButton.addEventListener('click', function() {
-            syncEditorDraft(root, draft);
-            var select = root.querySelector('#daily-new-product');
-            var selectedId = select ? select.value : '';
-            var product = state.products.find(function(candidate) {
-                return String(candidate.id) === selectedId;
-            });
-            if (!product) {
-                notificationService.error('Choose a product to add.');
-                return;
-            }
-            var priceMode = normalizeDefaultOrderPriceMode(draft.selectedPriceMode || state.settings.defaultOrderPriceMode);
-            try {
-                draft.items.push(buildPricedOrderItemFromProduct(product, priceMode, 1));
-            } catch (error) {
-                draft.items.push(buildPricedOrderItemFromProduct(product, 'retail', 1));
-            }
-            editorState.pickerOpen = false;
-            renderEditorItems(root, state, draft, editorState);
+            openProductPicker(root, state, draft, editorState);
         });
     }
 }
@@ -339,6 +485,7 @@ function openOrderEditor(container, state, sourceOrder) {
     var source = sourceOrder || {};
     var draft = {
         orderId: source.id || '',
+        customerId: source.customerId || '',
         customerName: source.customerName || '',
         orderDate: getOrderDateKey(source) || state.selectedDate,
         notes: source.notes || '',
@@ -348,7 +495,7 @@ function openOrderEditor(container, state, sourceOrder) {
             return Object.assign({}, item);
         })
     };
-    var editorState = { pickerOpen: false, saving: false };
+    var editorState = { saving: false };
     var content = '<div class="daily-editor">'
         + '<div class="daily-editor-actions">'
         + '<button type="button" class="btn btn-secondary" data-save-mode="save"><span class="daily-save-icon">' + ICONS.calendar + '</span>Save order</button>'
@@ -357,7 +504,7 @@ function openOrderEditor(container, state, sourceOrder) {
         + '</div>'
         + '<div class="daily-editor-date-row"><div><span class="daily-card-kicker">Order date</span><div class="daily-date-choice"><button type="button" id="daily-editor-today" class="btn btn-secondary">Today</button><button type="button" id="daily-editor-custom" class="btn btn-secondary">Custom date</button></div></div>'
         + '<label><span>Selected date</span><input type="date" class="input" id="daily-editor-date" value="' + escapeHtml(draft.orderDate) + '"></label></div>'
-        + '<div class="daily-editor-field-grid"><label><span>Customer / Company</span><input type="text" class="input" id="daily-editor-customer" value="' + escapeHtml(draft.customerName) + '" placeholder="Enter customer name" required></label>'
+        + '<div class="daily-editor-field-grid"><div class="daily-editor-field"><span>Customer / Company</span><button type="button" id="daily-editor-customer-button" class="daily-customer-select-button"></button></div>'
         + '<label><span>Notes</span><input type="text" class="input" id="daily-editor-notes" value="' + escapeHtml(draft.notes) + '" placeholder="Optional instructions"></label></div>'
         + '<div class="daily-editor-section-heading"><div><span class="daily-card-kicker">Products</span><h4>Order quantities</h4></div><span>Qty 0 removes a product</span></div>'
         + '<div id="daily-editor-items"></div></div>';
@@ -370,10 +517,18 @@ function openOrderEditor(container, state, sourceOrder) {
     });
     modal.open();
     var root = modal.modalEl;
+    addModalCloseButton(modal, 'Close without saving');
+    updateCustomerSelection(root, draft);
     renderEditorItems(root, state, draft, editorState);
 
     var todayButton = root.querySelector('#daily-editor-today');
     var customButton = root.querySelector('#daily-editor-custom');
+    var customerButton = root.querySelector('#daily-editor-customer-button');
+    if (customerButton) {
+        customerButton.addEventListener('click', function() {
+            openCustomerPicker(root, state, draft);
+        });
+    }
     if (todayButton) {
         todayButton.addEventListener('click', function() {
             var input = root.querySelector('#daily-editor-date');
@@ -394,7 +549,7 @@ function openOrderEditor(container, state, sourceOrder) {
             syncEditorDraft(root, draft);
             draft.items = draft.items.filter(function(item) { return Number(item.quantity) > 0; });
             if (!draft.customerName) {
-                notificationService.error('Enter a customer or company name.');
+                notificationService.error('Choose a customer or company.');
                 return;
             }
             if (!draft.orderDate) {

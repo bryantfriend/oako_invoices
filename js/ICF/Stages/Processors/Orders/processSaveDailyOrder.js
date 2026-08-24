@@ -3,6 +3,7 @@ import resultHelpers from "../../../engine/resultHelpers.js";
 async function processSaveDailyOrder(intent) {
     var payload = intent.payload;
     var orderRecord = {
+        customerId: payload.customerId,
         customerName: payload.customerName,
         orderDate: payload.orderDate,
         notes: payload.notes,

@@ -104,10 +104,7 @@ function getVisibleOrderItems(order, products, categories, settings) {
 
 function getOrdersForDate(orders, dateKey, products, categories, settings) {
     return (Array.isArray(orders) ? orders : []).filter(function(order) {
-        if (!order || order.archived === true || getOrderDateKey(order) !== dateKey) {
-            return false;
-        }
-        return getVisibleOrderItems(order, products, categories, settings).length > 0;
+        return Boolean(order && getOrderDateKey(order) === dateKey);
     });
 }
 

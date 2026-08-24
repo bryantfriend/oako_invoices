@@ -16,6 +16,7 @@ function normalizeSaveDailyOrderPayload(intent) {
 
     intent.payload = Object.assign({}, payload, {
         orderId: String(payload.orderId || '').trim(),
+        customerId: String(payload.customerId || '').trim(),
         customerName: String(payload.customerName || '').trim(),
         orderDate: String(payload.orderDate || '').slice(0, 10),
         notes: String(payload.notes || '').trim(),
