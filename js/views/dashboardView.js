@@ -1,5 +1,6 @@
 import { dashboardController } from "../controllers/dashboardController.js";
 import { inventoryController } from "../controllers/inventoryController.js";
+import { getLocalDateKey } from "../core/dailyOrders.js";
 import { layoutView } from "./layoutView.js";
 import { DataTable } from "../components/dataTable.js";
 import { createStatusBadge } from "../components/statusBadge.js";
@@ -174,6 +175,7 @@ export const renderDashboard = async (params, routeContext) => {
     let intelligenceSettings = {};
     let filteredOrders = [];
     let inventoryCategories = [];
+    var inventoryDate = '';
     let selectedOrderIds = new Set();
     let printableInvoiceByOrderId = {};
     let confirmedMissingInvoiceOrderIds = new Set();
@@ -307,7 +309,6 @@ export const renderDashboard = async (params, routeContext) => {
     }
 
     // Initial Fetch
-    const today = new Date().toISOString().split('T')[0];
     let shouldRunBackgroundRefresh = false;
     let initialDashboardResult = cachedDashboard;
     let initialInventoryData = [];
@@ -355,13 +356,17 @@ export const renderDashboard = async (params, routeContext) => {
         console.info('[PIPELINE_FILTER] scrolledToTop: true');
     };
 
-    const refreshDashboardDataPreservingState = async () => {
+    const refreshDashboardDataPreservingState = async function refreshDashboardDataPreservingState() {
         const scrollTop = getScrollPosition();
         console.info('[DASHBOARD_REFRESH] started navigationId=' + navigationId);
-        const [{ orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [], intelligenceSettings: refreshedIntelligenceSettings = {} }, refreshedInventoryData] = await Promise.all([
-            dashboardController.refreshDashboard({ source: 'orders-background-refresh' }),
-            inventoryController.loadInventoryData(today, { routeName: expectedRoute, navigationId: navigationId })
-        ]);
+        const { orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [], intelligenceSettings: refreshedIntelligenceSettings = {} } = await dashboardController.refreshDashboard({ source: 'orders-background-refresh' });
+        if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
+            ignoreStaleRouteResult('dashboard-background-refresh', expectedRoute, navigationId);
+            return;
+        }
+        // Stock depends on the refreshed orders. Loading both in parallel can keep old reservations.
+        var refreshedInventoryDate = getLocalDateKey(new Date());
+        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId });
         console.info('[DASHBOARD_REFRESH] cache updated');
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             console.info('[DASHBOARD_REFRESH] render skipped stale route');
@@ -375,6 +380,7 @@ export const renderDashboard = async (params, routeContext) => {
         returnInvoices = refreshedReturnInvoices;
         intelligenceSettings = refreshedIntelligenceSettings;
         inventoryCategories = refreshedInventoryData;
+        inventoryDate = refreshedInventoryDate;
         pendingCheckmarkUpdates.clear();
         updatedCheckmarkUpdates.clear();
         renderUI();
@@ -386,20 +392,47 @@ export const renderDashboard = async (params, routeContext) => {
     };
 
 
-    const refreshInventoryStrip = async () => {
-        const refreshedInventoryData = await inventoryController.loadInventoryData(today, { routeName: expectedRoute, navigationId: navigationId });
+    const refreshInventoryStrip = async function refreshInventoryStrip() {
+        var refreshedInventoryDate = getLocalDateKey(new Date());
+        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId });
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             ignoreStaleRouteResult('dashboard-inventory-strip', expectedRoute, navigationId);
             return;
         }
         inventoryCategories = refreshedInventoryData;
+        inventoryDate = refreshedInventoryDate;
         const inventoryMount = document.getElementById('inventory-strip-wrapper');
         if (inventoryMount) {
             inventoryMount.innerHTML = renderInventoryStrip(inventoryCategories);
+            attachInventoryStripListeners();
         } else {
             renderUI();
         }
     };
+
+    function attachInventoryStripListeners() {
+        var openInventoryButton = document.getElementById('open-inventory-btn');
+        if (openInventoryButton) {
+            openInventoryButton.addEventListener('click', function openInventory() {
+                router.navigate(ROUTES.INVENTORY);
+            });
+        }
+        var refreshStockButton = document.getElementById('refresh-stock-btn');
+        if (refreshStockButton) {
+            refreshStockButton.addEventListener('click', async function refreshStock() {
+                refreshStockButton.disabled = true;
+                refreshStockButton.textContent = 'Refreshing…';
+                try {
+                    await refreshDashboardDataPreservingState();
+                } catch (error) {
+                    notificationService.error(error.message || 'Could not refresh stock.');
+                } finally {
+                    refreshStockButton.disabled = false;
+                    refreshStockButton.textContent = 'Refresh Stock';
+                }
+            });
+        }
+    }
 
     const scheduleInvoiceListRefresh = (delayMs = 6000) => {
         if (invoiceRefreshTimer) {
@@ -1032,9 +1065,12 @@ export const renderDashboard = async (params, routeContext) => {
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
                     <div>
                         <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Inventory Left Today</h3>
-                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">Live stock remaining from the Inventory tab</div>
+                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">${escapeHtml(inventoryDate)} · Stock remaining after saved orders, as shown in Inventory</div>
                     </div>
-                    <button id="open-inventory-btn" class="btn btn-secondary btn-sm" style="font-size: 11px;">Open Inventory</button>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <button id="refresh-stock-btn" class="btn btn-secondary btn-sm" style="font-size: 11px;">Refresh Stock</button>
+                        <button id="open-inventory-btn" class="btn btn-secondary btn-sm" style="font-size: 11px;">Open Inventory</button>
+                    </div>
                 </div>
 
                 <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch;">
@@ -1896,7 +1932,7 @@ export const renderDashboard = async (params, routeContext) => {
             });
         });
 
-        document.getElementById('open-inventory-btn')?.addEventListener('click', () => router.navigate(ROUTES.INVENTORY));
+        attachInventoryStripListeners();
         document.getElementById('end-of-day-report-btn')?.addEventListener('click', renderEndOfDaySummaryModal);
         document.getElementById('archive-selected-orders')?.addEventListener('click', async function() {
             var mode = getBulkArchiveMode();
@@ -2202,16 +2238,17 @@ export const renderDashboard = async (params, routeContext) => {
         });
     }, 0);
 
-    window.setTimeout(function() {
-        refreshInventoryStrip().catch(function(error) {
-            console.warn('Inventory strip refresh failed.', error);
-        });
-    }, 0);
-
+    // Initial stock refresh shares the background order refresh when one is needed.
     if (shouldRunBackgroundRefresh) {
         refreshDashboardDataPreservingState().catch(function(error) {
             console.warn('Orders background refresh failed.', error);
             notificationService.error('Orders refresh failed. Cached data is still visible.');
         });
+    } else {
+        window.setTimeout(function refreshInitialInventory() {
+            refreshInventoryStrip().catch(function(error) {
+                console.warn('Inventory strip refresh failed.', error);
+            });
+        }, 0);
     }
 };
