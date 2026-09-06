@@ -30,7 +30,10 @@ import emitSaveDailyOrderResultModule from "./Orders/emitSaveDailyOrderResult.js
  * analytics instructions, or UI feedback instructions.
  */
 
+import emitConfirmProductMatchModule from "./Products/emitConfirmProductMatch.js";
+
 var emitters = {
+  emitConfirmProductMatch: emitConfirmProductMatchModule.emitConfirmProductMatch,
   passEmit: passEmitModule.passEmit,
   emitArchiveInvoiceResult:
     emitArchiveInvoiceResultModule.emitArchiveInvoiceResult,

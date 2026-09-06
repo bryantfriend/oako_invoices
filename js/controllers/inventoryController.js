@@ -8,6 +8,7 @@ import { isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeG
 import { productBelongsToCategory } from "../core/productCategories.js";
 import { getDefaultBreadCategoryIds } from "../core/dailyOrders.js";
 import { buildInventoryOrderTotals, getInventoryProductQuantities } from "../core/inventoryQuantities.js";
+import { productReconciliationService } from "../services/productReconciliationService.js";
 
 export const inventoryController = {
     /**
@@ -68,7 +69,9 @@ export const inventoryController = {
                 ignoreStaleRouteResult('inventory-load', safeOptions.routeName, safeOptions.navigationId);
                 return [];
             }
-            var orderTotals = buildInventoryOrderTotals(allOrders, date);
+            await productReconciliationService.loadContext(allProducts, allCategories);
+            var reconciledOrders = productReconciliationService.projectRecords(allOrders, 'inventory');
+            var orderTotals = buildInventoryOrderTotals(reconciledOrders, date);
 
             // 7. Group products by category
             const categoriesWithProducts = enabledCategories

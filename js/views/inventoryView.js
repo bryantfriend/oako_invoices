@@ -5,6 +5,7 @@ import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { Modal } from "../components/modal.js";
 import { t } from "../core/i18n.js";
 import { getLocalDateKey } from "../core/dailyOrders.js";
+import { mountProductReconciliation } from "../components/productReconciliationModal.js";
 
 export async function renderInventory(options) {
     layoutView.render();
@@ -32,7 +33,8 @@ export async function renderInventory(options) {
     }
 
     renderMainView(container, today, data);
-    if (!hasData) {
+    var needsMatches = mountProductReconciliation(container, renderInventory, 'inventory');
+    if (!hasData && !needsMatches) {
         showInitializationModal(today, data);
     }
 }

@@ -33,7 +33,7 @@ function buildInventoryOrderTotals(orders, date) {
         }
         // A saved draft reserves stock. Archiving preserves the order's business status.
         (Array.isArray(order.items) ? order.items : []).forEach(function(item) {
-            if (!item) {
+            if (!item || item.productMatchPending === true) {
                 return;
             }
             // Legacy order items use id where current items use productId.

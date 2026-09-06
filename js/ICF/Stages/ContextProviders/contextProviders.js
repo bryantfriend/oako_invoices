@@ -27,7 +27,10 @@ import addPreparePrintableInvoiceContextModule from "./Invoices/addPreparePrinta
  * AddContext should attach trusted system data needed by later stages.
  */
 
+import addConfirmProductMatchContextModule from "./Products/addConfirmProductMatchContext.js";
+
 var contextProviders = {
+  addConfirmProductMatchContext: addConfirmProductMatchContextModule.addConfirmProductMatchContext,
   passContext: passContextModule.passContext,
   passAddContext: passAddContextModule.passAddContext,
 

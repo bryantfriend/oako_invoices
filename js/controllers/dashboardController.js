@@ -3,16 +3,17 @@ import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
 import { t } from "../core/i18n.js";
 import { getAnalyticsStatus } from "../core/orderRecordHelpers.js";
+import { productReconciliationService } from "../services/productReconciliationService.js";
 
 function buildDashboardResult(loadResult) {
     var result = loadResult || {};
     var extras = result.extras || {};
-    var orders = result.records || [];
+    var orders = productReconciliationService.projectRecords(result.records || [], 'orders');
 
     return {
         orders: orders,
-        returnOrders: extras.returnOrders || orders,
-        returnInvoices: extras.returnInvoices || [],
+        returnOrders: orders,
+        returnInvoices: productReconciliationService.projectRecords(extras.returnInvoices || [], 'order-returns'),
         intelligenceSettings: extras.intelligenceSettings || {},
         metrics: dashboardController.calculateMetrics(orders),
         meta: result.meta || {}
@@ -21,6 +22,7 @@ function buildDashboardResult(loadResult) {
 
 export const dashboardController = {
     getCachedDashboard: function() {
+        if (!productReconciliationService.getContext().products.length) { return null; }
         var snapshot = sessionDataStore.getOrdersSnapshot();
         if (!snapshot) {
             return null;
@@ -51,6 +53,7 @@ export const dashboardController = {
 
     async loadDashboard(options) {
         try {
+            await productReconciliationService.loadContext();
             var result = await sessionDataStore.loadOrders(options || {});
             return buildDashboardResult(result);
         } catch (error) {
@@ -62,6 +65,7 @@ export const dashboardController = {
 
     async refreshDashboard(options) {
         try {
+            await productReconciliationService.loadContext(null, null, true);
             var result = await sessionDataStore.refreshOrders(options || {});
             return buildDashboardResult(result);
         } catch (error) {

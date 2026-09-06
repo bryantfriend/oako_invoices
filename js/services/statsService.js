@@ -796,18 +796,20 @@ export const statsService = {
 
         orders.forEach(order => {
             (order.items || []).forEach(item => {
+                if (item.productMatchPending === true) return;
                 if (categoryId && (item.categoryId || 'uncategorized') !== categoryId) return;
 
                 const name = item.name || item.name_en || item.name_ru || 'Unknown product';
-                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                const qty = Number(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity) || 0;
                 if (!qty) return;
 
-                if (!products[name]) {
-                    products[name] = { units: 0, revenue: 0, id: item.productId || name };
+                var productKey = item.productId || name;
+                if (!products[productKey]) {
+                    products[productKey] = { name: name, units: 0, revenue: 0, id: productKey };
                 }
 
-                products[name].units += qty;
-                products[name].revenue += (item.price || 0) * qty;
+                products[productKey].units += qty;
+                products[productKey].revenue += (item.price || 0) * qty;
             });
         });
 
@@ -819,11 +821,11 @@ export const statsService = {
             .slice(0, 5);
 
         return {
-            labels: sorted.map(([name]) => name.length > 18 ? name.slice(0, 16) + '...' : name),
+            labels: sorted.map(function(entry) { var name = entry[1].name; return name.length > 18 ? name.slice(0, 16) + '...' : name; }),
             data: sorted.map(([, stats]) => stats.units),
             revenue: sorted.map(([, stats]) => stats.revenue),
             ids: sorted.map(([, stats]) => stats.id),
-            fullLabels: sorted.map(([name]) => name)
+            fullLabels: sorted.map(function(entry) { return entry[1].name; })
         };
     },
 
@@ -832,9 +834,10 @@ export const statsService = {
 
         orders.forEach(order => {
             (order.items || []).forEach(item => {
+                if (item.productMatchPending === true) return;
                 const categoryId = item.categoryId || 'uncategorized';
                 const categoryName = item.categoryName || 'Uncategorized';
-                const qty = item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity;
+                const qty = Number(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity) || 0;
                 if (!qty) return;
 
                 if (!categories[categoryId]) {

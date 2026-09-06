@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { build } from 'esbuild';
 import { buildProductionPlan } from '../js/services/operationsPlanningService.js';
+import { reconcileProductRecords } from '../js/core/productReconciliation.js';
 
 var root = fileURLToPath(new URL('../', import.meta.url));
 var bundle = await build({
@@ -51,6 +52,12 @@ function createHarness() {
         inventoryService: {
             getInventorySettings: async function() { return { enabledCategories: ['bread', 'other'] }; },
             getDailyInventory: async function() { return state.records; }
+        },
+        productReconciliationService: {
+            loadContext: async function() {},
+            projectRecords: function(orders) {
+                return reconcileProductRecords(orders, { products: products, categories: categories, mappings: {} }).records;
+            }
         },
         orderService: {
             createOrder: async function() { return 'order-' + (state.orders.length + 1); },

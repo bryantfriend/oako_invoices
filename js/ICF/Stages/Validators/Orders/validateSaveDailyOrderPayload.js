@@ -3,6 +3,9 @@ import resultHelpers from "../../../engine/resultHelpers.js";
 function validateSaveDailyOrderPayload(intent) {
     var payload = intent && intent.payload ? intent.payload : {};
     var errors = [];
+    if (Array.isArray(payload.items) && payload.items.some(function(item) { return item && item.productMatchPending === true; })) {
+        errors.push('Confirm the historical product matches before saving this order.');
+    }
 
     if (!String(payload.customerName || '').trim()) {
         errors.push('Customer name is required.');

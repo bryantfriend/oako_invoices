@@ -37,6 +37,8 @@ function createHarness() {
     var context = vm.createContext({
         Date: BishkekDate,
         getLocalDateKey: getLocalDateKey,
+        mountProductReconciliation: function() {},
+        container: {},
         console: { info: function() {} },
         dashboardController: {
             refreshDashboard: async function() {

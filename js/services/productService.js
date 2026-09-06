@@ -6,13 +6,14 @@ import { logCollectionError } from "../core/firestoreDiagnostics.js";
 import { getDocsWithCache, readCachedRowsAsync } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 import { tryGetProductPriceByMode } from "../core/pricing.js";
+import { getCurrentProductName } from "../core/productReconciliation.js";
 
 const COLLECTION = 'products';
 const CATEGORIES_COLLECTION = 'categories';
 function normalizeProducts(rows) {
     return (Array.isArray(rows) ? rows : []).map(row => {
         const data = row || {};
-        const name = data.name || data.name_en || data.title || data.title_en || 'Unknown Product';
+        const name = getCurrentProductName(data);
         const retailPrice = tryGetProductPriceByMode(data, 'retail');
         const businessPrice = tryGetProductPriceByMode(data, 'business');
         return {

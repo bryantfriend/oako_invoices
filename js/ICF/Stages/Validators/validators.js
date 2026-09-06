@@ -38,7 +38,10 @@ import validateSaveDailyOrderPayloadModule from "./Orders/validateSaveDailyOrder
  * }
  */
 
+import validateConfirmProductMatchModule from "./Products/validateConfirmProductMatch.js";
+
 var validators = {
+  validateConfirmProductMatch: validateConfirmProductMatchModule.validateConfirmProductMatch,
   passValidation: passValidationModule.passValidation,
   passValidate: passValidateModule.passValidate,
 

@@ -1,6 +1,7 @@
 import { dashboardController } from "../controllers/dashboardController.js";
 import { inventoryController } from "../controllers/inventoryController.js";
 import { getLocalDateKey } from "../core/dailyOrders.js";
+import { mountProductReconciliation } from "../components/productReconciliationModal.js";
 import { layoutView } from "./layoutView.js";
 import { DataTable } from "../components/dataTable.js";
 import { createStatusBadge } from "../components/statusBadge.js";
@@ -405,6 +406,7 @@ export const renderDashboard = async (params, routeContext) => {
         if (inventoryMount) {
             inventoryMount.innerHTML = renderInventoryStrip(inventoryCategories);
             attachInventoryStripListeners();
+            mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute);
         } else {
             renderUI();
         }
@@ -813,6 +815,7 @@ export const renderDashboard = async (params, routeContext) => {
         attachFinancialIntelligencePanel();
         attachListeners();
         applyFilters();
+        mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute);
     };
 
     const getProductChartData = (charts) => {

@@ -95,7 +95,7 @@ function buildDailyOrderProductColumns(orders, products, categories, settings) {
             if (!columnsByKey[key]) {
                 columnsByKey[key] = {
                     key: key,
-                    name: item.name || item.displayName || item.productName || productNames[key] || 'Product',
+                    name: productNames[key] || item.name || item.displayName || item.productName || 'Product',
                     total: 0,
                     productOrder: productOrder[key] !== undefined ? productOrder[key] : Number.MAX_SAFE_INTEGER
                 };
@@ -153,7 +153,7 @@ function getVisibleOrderItems(order, products, categories, settings) {
     var productMap = buildProductMap(products, categories);
     var filter = getDailyOrderFilter(settings, categories);
     return (Array.isArray(order && order.items) ? order.items : []).filter(function(item) {
-        return Number(item && item.quantity) > 0 && itemMatchesFilter(item, productMap, filter);
+        return item && item.productMatchPending !== true && Number(item.quantity) > 0 && itemMatchesFilter(item, productMap, filter);
     });
 }
 

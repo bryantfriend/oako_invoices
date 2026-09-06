@@ -10,6 +10,7 @@ import { connectionStateService } from "../services/connectionStateService.js";
 import { readCachedRowsAsync } from "../core/firestoreRead.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import saveDailyOrderIntentModule from "../ICF/Intents/SaveDailyOrderIntent.js";
+import { productReconciliationService } from "../services/productReconciliationService.js";
 
 function buildOrderLoadResult(records, source, error) {
     return {
@@ -119,8 +120,9 @@ export const dailyOrdersController = {
             settingsService.getInvoiceSettings(),
             customerService.getAllCustomers().catch(function() { return []; })
         ]);
+        await productReconciliationService.loadContext(results[1], results[2]);
         return {
-            orders: results[0].records || [],
+            orders: productReconciliationService.projectRecords(results[0].records || [], 'daily-orders'),
             orderDataSource: results[0].source || 'unknown',
             orderLoadError: results[0].error || null,
             products: results[1] || [],

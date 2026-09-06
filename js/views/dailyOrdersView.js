@@ -13,6 +13,7 @@ import {
     summarizeDailyOrders
 } from "../core/dailyOrders.js";
 import { dailyOrdersController } from "../controllers/dailyOrdersController.js";
+import { mountProductReconciliation } from "../components/productReconciliationModal.js";
 
 var ICONS = {
     calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="m8.5 15 2 2 4-4"/></svg>',
@@ -654,6 +655,7 @@ export async function renderDailyOrders() {
         selectedDate: getLocalDateKey(new Date())
     });
     renderPageShell(container, state);
+    mountProductReconciliation(container, renderDailyOrders, 'daily-orders');
     attachPageEvents(container, state);
     renderDailyContent(container, state);
 }

@@ -30,7 +30,10 @@ import processSaveDailyOrderModule from "./Orders/processSaveDailyOrder.js";
  * Process should perform the main state change.
  */
 
+import processConfirmProductMatchModule from "./Products/processConfirmProductMatch.js";
+
 var processors = {
+  processConfirmProductMatch: processConfirmProductMatchModule.processConfirmProductMatch,
   doNothing: doNothingModule.doNothing,
   passProcess: passProcessModule.passProcess,
   exampleSetCreatedProductResult:

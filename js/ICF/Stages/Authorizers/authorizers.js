@@ -28,7 +28,10 @@ import authorizePreparePrintableInvoiceModule from "./Invoices/authorizePrepareP
  * Authorize should decide whether the actor is allowed to perform the Intent.
  */
 
+import authorizeConfirmProductMatchModule from "./Products/authorizeConfirmProductMatch.js";
+
 var authorizers = {
+  authorizeConfirmProductMatch: authorizeConfirmProductMatchModule.authorizeConfirmProductMatch,
   allow: allowModule.allow,
   deny: denyModule.deny,
   passAuthorize: passAuthorizeModule.passAuthorize,

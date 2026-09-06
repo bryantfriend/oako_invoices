@@ -29,7 +29,10 @@ import normalizeSaveDailyOrderPayloadModule from "./Orders/normalizeSaveDailyOrd
  * Intent files should import this file, then choose the normalizers they need.
  */
 
+import normalizeConfirmProductMatchModule from "./Products/normalizeConfirmProductMatch.js";
+
 var normalizers = {
+  normalizeConfirmProductMatch: normalizeConfirmProductMatchModule.normalizeConfirmProductMatch,
   passNormalization: passNormalizationModule.passNormalization,
   passNormalize: passNormalizeModule.passNormalize,
   exampleTrimProductName: exampleTrimProductNameModule.exampleTrimProductName,
