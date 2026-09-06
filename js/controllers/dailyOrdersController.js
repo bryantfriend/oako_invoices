@@ -4,6 +4,7 @@ import { notificationService } from "../core/notificationService.js";
 import { productService } from "../services/productService.js";
 import { settingsService } from "../services/settingsService.js";
 import { customerService } from "../services/customerService.js";
+import { orderService } from "../services/orderService.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { connectionStateService } from "../services/connectionStateService.js";
 import { readCachedRowsAsync } from "../core/firestoreRead.js";
@@ -94,6 +95,21 @@ function getPipelineError(result) {
     return 'The order could not be saved.';
 }
 
+function buildDailyOrderApi(trustedOrder) {
+    function createOrder(orderRecord, userId) {
+        return orderService.createOrder(orderRecord, userId);
+    }
+
+    function updateOrder(orderId, orderRecord) {
+        return orderService.updateOrderFromDailyOrders(orderId, orderRecord, trustedOrder);
+    }
+
+    return {
+        createOrder: createOrder,
+        updateOrder: updateOrder
+    };
+}
+
 export const dailyOrdersController = {
     async loadWorkspace() {
         var results = await Promise.all([
@@ -122,10 +138,7 @@ export const dailyOrdersController = {
 
         var payload = Object.assign({}, draft || {}, {
             userId: user.uid,
-            orderApi: {
-                createOrder: orderService.createOrder.bind(orderService),
-                updateOrder: orderService.updateOrder.bind(orderService)
-            }
+            orderApi: buildDailyOrderApi(draft)
         });
         var intent = saveDailyOrderIntentModule.createSaveDailyOrderIntent(getActor(), payload, {
             source: 'daily-orders-modal'

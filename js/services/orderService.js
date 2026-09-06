@@ -26,6 +26,7 @@ import icfPipeline from "../ICF/engine/pipeline.js";
 import updateOrderStatusIntentModule from "../ICF/Intents/UpdateOrderStatusIntent.js";
 import archiveSelectedOrdersIntentModule from "../ICF/Intents/ArchiveSelectedOrdersIntent.js";
 import { normalizeArchivedRecord } from "../core/archiveRecordHelpers.js";
+import { classifySyncError } from "./syncRetryPolicy.js";
 
 const COLLECTION = 'orders';
 const LEGACY_ARCHIVE_COLLECTION = 'orders_archive';
@@ -422,6 +423,47 @@ export const orderService = {
             console.error("Error updating order:", error);
             throw error;
         }
+    },
+
+    async updateOrderFromDailyOrders(id, updates, trustedOrder) {
+        if (offlineStatusService.isOnline()) {
+            try {
+                return await this.updateOrder(id, updates);
+            } catch (error) {
+                var classification = classifySyncError(error);
+                if (classification.retryable !== true) {
+                    throw error;
+                }
+                console.warn('Daily order update will be saved locally after a temporary cloud failure.', error);
+            }
+        }
+
+        var compactedOrder = await offlineQueueService.compactPendingOrderCreate(id, updates);
+        if (compactedOrder) {
+            return true;
+        }
+
+        var now = new Date();
+        var source = trustedOrder || await getLocalOrderSnapshot(id) || { id: id };
+        var localSnapshot = Object.assign({}, source, updates || {}, {
+            id: id,
+            updatedAt: now.toISOString(),
+            localUpdatedAt: now.toISOString(),
+            localUpdatedAtMillis: now.getTime(),
+            syncState: 'pending_sync',
+            syncStatus: 'pending',
+            syncAction: 'update'
+        });
+        await offlineQueueService.enqueue('updateOrder', 'order', id, {
+            firestorePatch: Object.assign({}, updates || {}),
+            localOrderSnapshot: localSnapshot,
+            order: localSnapshot,
+            localUpdatedAt: now.toISOString(),
+            baseUpdatedAtMillis: getMillis(source.updatedAt || source.localUpdatedAt)
+        }, {
+            storeId: localSnapshot.storeId || localSnapshot.companyId || 'KORG'
+        });
+        return true;
     },
 
     async updateOrderAfterPrint(id, updates, trustedOrder) {

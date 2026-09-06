@@ -337,15 +337,17 @@ function prepareOrderPatchForSync(queueItem) {
 async function writeOrderArchive(queueItem) {
     const orderRef = doc(db, 'orders', queueItem.entityId);
     const localVersion = getLocalOrderSnapshot(queueItem);
-    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder') {
+    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder' || queueItem.actionType === 'updateOrder') {
         const serverSnapshot = await getDoc(orderRef);
         if (!serverSnapshot.exists()) {
-            throw new Error('Order not found during archive synchronization.');
+            throw new Error('Order not found during synchronization.');
         }
         const serverVersion = serverSnapshot.data();
-        const desiredArchived = queueItem.actionType === 'archiveOrder';
-        if (Boolean(serverVersion.archived) === desiredArchived) {
-            return;
+        if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder') {
+            const desiredArchived = queueItem.actionType === 'archiveOrder';
+            if (Boolean(serverVersion.archived) === desiredArchived) {
+                return;
+            }
         }
         if (serverChangedSinceBase(queueItem, serverVersion)) {
             await conflictService.saveConflict(queueItem, serverVersion, localVersion);
@@ -365,7 +367,7 @@ async function processOrderQueueItem(queueItem) {
         return;
     }
 
-    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder' || queueItem.actionType === 'markOrderPrinted') {
+    if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder' || queueItem.actionType === 'markOrderPrinted' || queueItem.actionType === 'updateOrder') {
         await writeOrderArchive(queueItem);
         return;
     }
