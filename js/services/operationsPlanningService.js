@@ -238,6 +238,10 @@ export function buildProductionPlan(orders, inventoryCategories, dateKey) {
             inventory = inventoryIndex[demandRow.productId] || {};
         }
         var available = Number(inventory.left || 0);
+        if (inventory.reservesSavedOrders === true && inventory.inventoryDate === dateKey) {
+            // The selected orders are already deducted from Left; restore their allocation before planning.
+            available += demandRow.demand;
+        }
         var required = Math.max(0, demandRow.demand - available);
         return {
             productId: demandRow.productId,

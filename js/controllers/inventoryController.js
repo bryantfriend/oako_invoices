@@ -1,7 +1,5 @@
 import { inventoryService } from "../services/inventoryService.js";
 import { productService } from "../services/productService.js";
-import { orderService } from "../services/orderService.js";
-import { ORDER_STATUS } from "../core/constants.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
 import sessionDataStore from "../services/sessionDataStore.js";
@@ -9,6 +7,7 @@ import { runSingleFlight } from "../core/singleFlight.js";
 import { isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
 import { productBelongsToCategory } from "../core/productCategories.js";
 import { getDefaultBreadCategoryIds } from "../core/dailyOrders.js";
+import { buildInventoryOrderTotals, getInventoryProductQuantities } from "../core/inventoryQuantities.js";
 
 export const inventoryController = {
     /**
@@ -16,7 +15,7 @@ export const inventoryController = {
      */
     async loadInventoryData(date, options) {
         var safeOptions = options || {};
-        var key = 'inventory:daily:' + String(date || 'today');
+        var key = 'inventory:daily:' + String(date || 'today') + (safeOptions.forceRefresh === true ? ':refresh' : '');
         return runSingleFlight(key, function() {
             return inventoryController.loadInventoryDataOnce(date, safeOptions);
         });
@@ -54,34 +53,22 @@ export const inventoryController = {
             // 4. Fetch daily record (baked totals, lock status)
             const dailyRecords = await inventoryService.getDailyInventory(date);
 
-            // 5. Fetch all orders to calculate sales
-            // Note: For large datasets, this should be a scoped query by date & status
-            const orderSnapshot = sessionDataStore.getOrdersSnapshot();
-            let allOrders = orderSnapshot && Array.isArray(orderSnapshot.records) ? orderSnapshot.records : null;
-            if (!allOrders && safeOptions.routeName && safeOptions.routeName !== 'inventory') {
-                console.info('[SINGLE_FLIGHT] ignored stale key=inventory:daily:' + date);
-                allOrders = [];
-            }
-            if (!allOrders) {
-                allOrders = await orderService.getAllOrders();
+            // 5. Count saved orders for their scheduled date, including drafts.
+            var orderSnapshot = sessionDataStore.getOrdersSnapshot();
+            var shouldRefreshOrders = safeOptions.forceRefresh === true || Boolean(orderSnapshot && orderSnapshot.shouldRefresh);
+            var allOrders = orderSnapshot && Array.isArray(orderSnapshot.records) ? orderSnapshot.records : null;
+            if (!allOrders || shouldRefreshOrders) {
+                var loadedOrders = await sessionDataStore.loadOrders({
+                    source: 'inventory',
+                    forceRefresh: shouldRefreshOrders
+                });
+                allOrders = loadedOrders.records || [];
             }
             if (safeOptions.routeName && safeOptions.navigationId && !isNavigationStillCurrent(safeOptions.navigationId, safeOptions.routeName)) {
                 ignoreStaleRouteResult('inventory-load', safeOptions.routeName, safeOptions.navigationId);
                 return [];
             }
-            const fulfilledOrders = allOrders.filter(o =>
-                (o.status === ORDER_STATUS.FULFILLED || o.status === ORDER_STATUS.PAID) &&
-                o.fulfilledAt &&
-                this.isSameDate(o.fulfilledAt?.toDate?.() || new Date(o.fulfilledAt), new Date(date))
-            );
-
-            // 6. Calculate sales per product
-            const salesMap = {};
-            fulfilledOrders.forEach(order => {
-                order.items.forEach(item => {
-                    salesMap[item.productId] = (salesMap[item.productId] || 0) + (item.quantity || 0);
-                });
-            });
+            var orderTotals = buildInventoryOrderTotals(allOrders, date);
 
             // 7. Group products by category
             const categoriesWithProducts = enabledCategories
@@ -90,18 +77,13 @@ export const inventoryController = {
                         return productBelongsToCategory(product, category);
                     }).map(function(product) {
                         const record = dailyRecords[product.id] || { totalBaked: 0, locked: false };
-                        const automaticSold = record.invoiceQuantity !== undefined ? Number(record.invoiceQuantity) || 0 : null;
-                        const returned = Number(record.returnedQuantity || 0);
-                        const sold = automaticSold !== null ? automaticSold : (salesMap[product.id] || 0);
-                        const left = record.availableQuantity !== undefined
-                            ? Number(record.availableQuantity) || 0
-                            : record.totalBaked - sold + returned;
-                        return Object.assign({}, product, {
-                            totalBaked: record.totalBaked,
+                        // Invoice counters describe the same orders; adding them would reserve stock twice.
+                        var quantities = getInventoryProductQuantities(record, orderTotals[product.id]);
+                        return Object.assign({}, product, quantities, {
                             locked: record.locked,
-                            sold: sold,
-                            returned: returned,
-                            left: left
+                            sold: quantities.ordered,
+                            inventoryDate: date,
+                            reservesSavedOrders: true
                         });
                     });
                     return Object.assign({}, category, {

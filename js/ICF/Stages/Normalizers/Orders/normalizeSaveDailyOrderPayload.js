@@ -4,9 +4,14 @@ import { calculateOrderTotals, normalizeDefaultOrderPriceMode, normalizeOrderIte
 function normalizeSaveDailyOrderPayload(intent) {
     var payload = intent.payload || {};
     var items = (Array.isArray(payload.items) ? payload.items : []).map(function(item) {
-        return Object.assign({}, item, {
+        var normalizedItem = Object.assign({}, item, {
             quantity: Math.max(0, Number(item && item.quantity) || 0)
         });
+        // Daily Orders edits the effective quantity, including previously adjusted order lines.
+        if (normalizedItem.adjustedQuantity !== undefined) {
+            normalizedItem.adjustedQuantity = normalizedItem.quantity;
+        }
+        return normalizedItem;
     }).filter(function(item) {
         return item.quantity > 0;
     }).map(function(item) {

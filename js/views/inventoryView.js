@@ -6,7 +6,7 @@ import { Modal } from "../components/modal.js";
 import { t } from "../core/i18n.js";
 import { getLocalDateKey } from "../core/dailyOrders.js";
 
-export async function renderInventory() {
+export async function renderInventory(options) {
     layoutView.render();
     layoutView.updateTitle(t('inventory_title'));
 
@@ -14,7 +14,7 @@ export async function renderInventory() {
     container.innerHTML = LoadingSkeleton();
 
     const today = getLocalDateKey(new Date());
-    const data = await inventoryController.loadInventoryData(today);
+    const data = await inventoryController.loadInventoryData(today, options);
 
     // If no data is initialized (no total baked set for any item), show initialization modal
     const hasData = data.some(cat => cat.products.some(p => p.totalBaked > 0 || p.locked));
@@ -48,6 +48,7 @@ const renderMainView = (container, date, categories) => {
                 <div style="display: flex; align-items: center; gap: var(--space-4);">
                     <div style="font-size: 14px; color: var(--color-gray-500);">
                         Showing inventory for <strong>${date}</strong>
+                        <div style="margin-top: 4px; font-size: 12px;">Saved orders reserve stock for this day. Left = Total Baked − Ordered + Returned.</div>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button id="lock-all-btn" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">🔒 Lock All</button>
@@ -70,7 +71,7 @@ const renderMainView = (container, date, categories) => {
                                     <thead style="background: var(--color-gray-50); border-bottom: 1px solid var(--color-gray-200);">
                                         <tr>
                                             <th style="text-align: left; padding: 12px 16px;">${t('table_item')}</th>
-                                            <th style="text-align: center; padding: 12px 16px; width: 80px;">Sold</th>
+                                            <th style="text-align: center; padding: 12px 16px; width: 80px;">Ordered</th>
                                             <th style="text-align: center; padding: 12px 16px; width: 120px;">Total Baked</th>
                                             <th style="text-align: center; padding: 12px 16px; width: 80px;">${t('table_stock')}</th>
                                             <th style="text-align: center; padding: 12px 16px; width: 60px;">Lock</th>
@@ -94,7 +95,7 @@ const renderMainView = (container, date, categories) => {
                                                         </div>
                                                     </td>
                                                     <td style="text-align: center; padding: 12px 16px;">
-                                                        <span style="font-weight: 600; color: var(--color-gray-900);">${p.sold}</span>
+                                                        <span style="font-weight: 600; color: var(--color-gray-900);">${p.ordered}</span>
                                                     </td>
                                                     <td style="text-align: center; padding: 12px 16px;">
                                                         <input type="number" 
@@ -150,7 +151,12 @@ const renderMainView = (container, date, categories) => {
         });
     });
 
-    document.getElementById('refresh-inventory')?.addEventListener('click', () => renderInventory());
+    var refreshButton = document.getElementById('refresh-inventory');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', function() {
+            renderInventory({ forceRefresh: true });
+        });
+    }
 
     document.getElementById('lock-all-btn')?.addEventListener('click', async () => {
         await inventoryController.bulkUpdateLockStatus(date, categories, true);
