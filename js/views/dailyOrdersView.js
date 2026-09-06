@@ -4,11 +4,12 @@ import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { notificationService } from "../core/notificationService.js";
 import { buildPricedOrderItemFromProduct, normalizeDefaultOrderPriceMode } from "../core/pricing.js";
 import {
+    buildDailyOrderProductColumns,
+    getDailyOrderRowQuantities,
     getDailyOrderFilter,
     getLocalDateKey,
     getOrderDateKey,
     getOrdersForDate,
-    getVisibleOrderItems,
     summarizeDailyOrders
 } from "../core/dailyOrders.js";
 import { dailyOrdersController } from "../controllers/dailyOrdersController.js";
@@ -81,12 +82,6 @@ function renderFilterBadge(state) {
     return '<span class="daily-filter-badge"><span class="daily-filter-dot"></span>' + escapeHtml(label) + '</span>';
 }
 
-function renderProductBadges(items) {
-    return items.map(function(item) {
-        return '<span class="daily-product-badge"><span>' + escapeHtml(getProductName(item)) + '</span><strong>× ' + escapeHtml(formatQuantity(item.quantity)) + '</strong></span>';
-    }).join('');
-}
-
 function renderEmptyState(state) {
     if (state.orderDataSource === 'unavailable') {
         return '<div class="daily-empty-state daily-orders-unavailable">'
@@ -121,25 +116,32 @@ function renderOrdersTable(state, visibleOrders) {
         return renderEmptyState(state);
     }
 
+    var productColumns = buildDailyOrderProductColumns(visibleOrders, state.products, state.categories, state.settings);
+    var productHeaders = productColumns.map(function(column) {
+        return '<th class="daily-product-column"><strong class="daily-column-total">' + escapeHtml(formatQuantity(column.total)) + '</strong>'
+            + '<span class="daily-column-name">' + escapeHtml(column.name) + '</span></th>';
+    }).join('');
     var rows = visibleOrders.map(function(order) {
-        var items = getVisibleOrderItems(order, state.products, state.categories, state.settings);
+        var quantities = getDailyOrderRowQuantities(order, state.products, state.categories, state.settings);
         var status = order.archived === true ? 'archived' : String(order.status || 'draft').replace(/_/g, ' ');
-        var productContent = items.length
-            ? renderProductBadges(items)
-            : '<span class="daily-no-matching-products">No products match the current visibility filter</span>';
+        var quantityCells = productColumns.map(function(column) {
+            var quantity = Number(quantities[column.key] || 0);
+            return '<td class="daily-product-quantity ' + (quantity > 0 ? 'has-quantity' : 'is-empty') + '">'
+                + (quantity > 0 ? '<strong>' + escapeHtml(formatQuantity(quantity)) + '</strong>' : '<span>—</span>') + '</td>';
+        }).join('');
         return '<tr>'
             + '<td><button type="button" class="daily-customer-link daily-order-edit" data-order-id="' + escapeHtml(order.id) + '">'
             + '<span class="daily-customer-avatar">' + escapeHtml(String(order.customerName || 'O').charAt(0).toUpperCase()) + '</span>'
             + '<span><strong>' + escapeHtml(order.customerName || 'Unnamed customer') + '</strong><small>Open and edit order</small></span>'
             + '</button></td>'
-            + '<td><div class="daily-product-badges">' + productContent + '</div></td>'
+            + quantityCells
             + '<td><span class="daily-status-badge status-' + escapeHtml(status.replace(/\s/g, '-')) + '"><span></span>' + escapeHtml(status) + '</span></td>'
             + '<td class="daily-row-action"><button type="button" class="daily-icon-button daily-order-edit" data-order-id="' + escapeHtml(order.id) + '" aria-label="Edit order">' + ICONS.chevronRight + '</button></td>'
             + '</tr>';
     }).join('');
 
     return '<div class="daily-table-wrap"><table class="daily-orders-table">'
-        + '<thead><tr><th>Customer</th><th>Products & quantities</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>'
+        + '<thead><tr><th class="daily-customer-column">Customer</th>' + productHeaders + '<th class="daily-status-column">Status</th><th class="daily-actions-column"><span class="sr-only">Actions</span></th></tr></thead>'
         + '<tbody>' + rows + '</tbody></table></div>';
 }
 

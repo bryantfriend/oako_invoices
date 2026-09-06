@@ -4,24 +4,20 @@ import { createCard } from "../components/card.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { Modal } from "../components/modal.js";
 import { t } from "../core/i18n.js";
+import { getLocalDateKey } from "../core/dailyOrders.js";
 
-export const renderInventory = async () => {
+export async function renderInventory() {
     layoutView.render();
     layoutView.updateTitle(t('inventory_title'));
 
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey(new Date());
     const data = await inventoryController.loadInventoryData(today);
 
     // If no data is initialized (no total baked set for any item), show initialization modal
     const hasData = data.some(cat => cat.products.some(p => p.totalBaked > 0 || p.locked));
-
-    if (!hasData && data.length > 0) {
-        showInitializationModal(today, data);
-        return;
-    }
 
     if (data.length === 0) {
         container.innerHTML = `
@@ -29,18 +25,25 @@ export const renderInventory = async () => {
                 <div style="font-size: 48px;">📦</div>
                 <h3 style="font-weight: 700; color: var(--color-gray-800);">No Inventory Enabled</h3>
                 <p style="color: var(--color-gray-500); max-width: 400px;">Please go to Settings > Inventory and select which product categories you want to track production for.</p>
-                <button class="btn btn-primary" onclick="router.navigate(ROUTES.SETTINGS)">Go to Settings</button>
+                <a class="btn btn-primary" href="#/settings">Go to Settings</a>
             </div>
         `;
         return;
     }
 
     renderMainView(container, today, data);
-};
+    if (!hasData) {
+        showInitializationModal(today, data);
+    }
+}
 
 const renderMainView = (container, date, categories) => {
+    const usesBreadDefault = categories.some(function(category) {
+        return category && category.inventoryUsesBreadDefault === true;
+    });
     container.innerHTML = `
         <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-6); width: 100%;">
+            ${usesBreadDefault ? '<div class="daily-data-notice" role="status"><span>🥖</span><div><strong>Showing bread inventory by default</strong><p>Select different Inventory categories in Settings whenever you want to track other products.</p></div></div>' : ''}
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: var(--space-4);">
                     <div style="font-size: 14px; color: var(--color-gray-500);">

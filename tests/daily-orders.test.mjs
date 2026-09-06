@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import {
+    buildDailyOrderProductColumns,
+    getDailyOrderRowQuantities,
     getDailyOrderFilter,
     getOrdersForDate,
     getVisibleOrderItems,
@@ -48,6 +50,20 @@ test('Daily Orders filters the chosen day and summarizes visible quantities', fu
     assert.equal(summary.orderCount, 3);
     assert.equal(summary.productCount, 1);
     assert.equal(summary.unitCount, 4);
+});
+
+test('Daily Orders builds one product column with a top total and per-order quantities', function() {
+    var orderRows = [
+        { id: 'one', orderDate: '2026-08-24', items: [{ productId: 'loaf', name: 'Country loaf', quantity: 3 }] },
+        { id: 'two', orderDate: '2026-08-24', items: [{ productId: 'loaf', name: 'Country loaf', quantity: 2 }] }
+    ];
+    var columns = buildDailyOrderProductColumns(orderRows, products, categories, {});
+    var firstRow = getDailyOrderRowQuantities(orderRows[0], products, categories, {});
+
+    assert.equal(columns.length, 1);
+    assert.equal(columns[0].name, 'Country loaf');
+    assert.equal(columns[0].total, 5);
+    assert.equal(firstRow.loaf, 3);
 });
 
 test('SaveDailyOrder stages reject zero-only drafts and create normalized orders', async function() {
@@ -114,6 +130,25 @@ test('Daily Orders reuses session and offline order caches when Firestore is una
     assert.match(controllerSource, /sessionDataStore\.loadOrders/);
     assert.match(controllerSource, /readCachedRowsAsync\('orders:all:createdAt_desc'\)/);
     assert.doesNotMatch(controllerSource, /orderService\.getAllOrders\(\)\.catch/);
+    assert.match(controllerSource, /import \{ orderService \}/);
+    assert.match(controllerSource, /updateOrderFromDailyOrders/);
     assert.match(viewSource, /Orders could not be loaded/);
     assert.match(viewSource, /Showing cached orders/);
+});
+
+test('Daily Orders renders product columns and Inventory has a bread default with safe navigation', function() {
+    var dailyViewSource = fs.readFileSync(new URL('../js/views/dailyOrdersView.js', import.meta.url), 'utf8');
+    var inventoryControllerSource = fs.readFileSync(new URL('../js/controllers/inventoryController.js', import.meta.url), 'utf8');
+    var inventoryViewSource = fs.readFileSync(new URL('../js/views/inventoryView.js', import.meta.url), 'utf8');
+    var orderServiceSource = fs.readFileSync(new URL('../js/services/orderService.js', import.meta.url), 'utf8');
+    var syncServiceSource = fs.readFileSync(new URL('../js/services/syncService.js', import.meta.url), 'utf8');
+
+    assert.match(dailyViewSource, /daily-column-total/);
+    assert.match(dailyViewSource, /daily-product-quantity/);
+    assert.match(inventoryControllerSource, /getDefaultBreadCategoryIds/);
+    assert.match(inventoryViewSource, /Showing bread inventory by default/);
+    assert.match(inventoryViewSource, /href="#\/settings"/);
+    assert.doesNotMatch(inventoryViewSource, /onclick="router\.navigate/);
+    assert.match(orderServiceSource, /enqueue\('updateOrder'/);
+    assert.match(syncServiceSource, /actionType === 'updateOrder'/);
 });

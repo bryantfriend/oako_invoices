@@ -47,6 +47,12 @@ function isBreadCategory(category) {
         || label.indexOf('нан') !== -1;
 }
 
+function getDefaultBreadCategoryIds(categories) {
+    return (Array.isArray(categories) ? categories : []).filter(isBreadCategory).map(function(category) {
+        return String(category.id || '').trim();
+    }).filter(Boolean);
+}
+
 function getDailyOrderFilter(settings, categories) {
     var source = settings || {};
     var categoryIds = normalizeIdList(source.dailyOrderCategoryIds);
@@ -54,9 +60,7 @@ function getDailyOrderFilter(settings, categories) {
     var isConfigured = source.dailyOrderFilterConfigured === true || categoryIds.length > 0 || productIds.length > 0;
 
     if (!isConfigured) {
-        categoryIds = (Array.isArray(categories) ? categories : []).filter(isBreadCategory).map(function(category) {
-            return String(category.id || '').trim();
-        }).filter(Boolean);
+        categoryIds = getDefaultBreadCategoryIds(categories);
     }
 
     return {
@@ -66,6 +70,57 @@ function getDailyOrderFilter(settings, categories) {
         usesBreadDefault: !isConfigured
             && categoryIds.length > 0
     };
+}
+
+function getDailyOrderItemKey(item) {
+    var source = item || {};
+    return String(source.productId || source.id || source.name || source.displayName || source.productName || 'product').trim();
+}
+
+function buildDailyOrderProductColumns(orders, products, categories, settings) {
+    var columnsByKey = {};
+    var productOrder = {};
+    var productNames = {};
+    (Array.isArray(products) ? products : []).forEach(function(product, index) {
+        if (product && product.id) {
+            productOrder[String(product.id)] = index;
+            productNames[String(product.id)] = product.displayName || product.name || product.productName || 'Product';
+        }
+    });
+
+    (Array.isArray(orders) ? orders : []).forEach(function(order) {
+        getVisibleOrderItems(order, products, categories, settings).forEach(function(item) {
+            var key = getDailyOrderItemKey(item);
+            var quantity = Math.max(0, Number(item && item.quantity) || 0);
+            if (!columnsByKey[key]) {
+                columnsByKey[key] = {
+                    key: key,
+                    name: item.name || item.displayName || item.productName || productNames[key] || 'Product',
+                    total: 0,
+                    productOrder: productOrder[key] !== undefined ? productOrder[key] : Number.MAX_SAFE_INTEGER
+                };
+            }
+            columnsByKey[key].total += quantity;
+        });
+    });
+
+    return Object.keys(columnsByKey).map(function(key) {
+        return columnsByKey[key];
+    }).sort(function(first, second) {
+        if (first.productOrder !== second.productOrder) {
+            return first.productOrder - second.productOrder;
+        }
+        return String(first.name).localeCompare(String(second.name));
+    });
+}
+
+function getDailyOrderRowQuantities(order, products, categories, settings) {
+    var quantities = {};
+    getVisibleOrderItems(order, products, categories, settings).forEach(function(item) {
+        var key = getDailyOrderItemKey(item);
+        quantities[key] = (quantities[key] || 0) + Math.max(0, Number(item && item.quantity) || 0);
+    });
+    return quantities;
 }
 
 function buildProductMap(products, categories) {
@@ -128,6 +183,9 @@ function summarizeDailyOrders(orders, products, categories, settings) {
 }
 
 export {
+    buildDailyOrderProductColumns,
+    getDailyOrderRowQuantities,
+    getDefaultBreadCategoryIds,
     getDailyOrderFilter,
     getLocalDateKey,
     getOrderDateKey,

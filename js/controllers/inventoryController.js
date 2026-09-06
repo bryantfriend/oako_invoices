@@ -8,6 +8,7 @@ import sessionDataStore from "../services/sessionDataStore.js";
 import { runSingleFlight } from "../core/singleFlight.js";
 import { isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
 import { productBelongsToCategory } from "../core/productCategories.js";
+import { getDefaultBreadCategoryIds } from "../core/dailyOrders.js";
 
 export const inventoryController = {
     /**
@@ -26,13 +27,19 @@ export const inventoryController = {
         try {
             // 1. Fetch enabled categories
             const settings = await inventoryService.getInventorySettings();
-            const enabledCatIds = settings.enabledCategories || [];
+            var enabledCatIds = Array.isArray(settings.enabledCategories) ? settings.enabledCategories.slice() : [];
+            var usesBreadDefault = false;
 
             // 2. Fetch all products and categories
             const [allProducts, allCategories] = await Promise.all([
                 productService.getAllProducts(),
                 productService.getAllCategories()
             ]);
+
+            if (!enabledCatIds.length) {
+                enabledCatIds = getDefaultBreadCategoryIds(allCategories);
+                usesBreadDefault = enabledCatIds.length > 0;
+            }
 
             // 3. Resolve enabled categories while preserving legacy category field compatibility.
             var enabledCategories = allCategories.filter(function(category) {
@@ -97,7 +104,10 @@ export const inventoryController = {
                             left: left
                         });
                     });
-                    return Object.assign({}, category, { products: categoryProducts });
+                    return Object.assign({}, category, {
+                        products: categoryProducts,
+                        inventoryUsesBreadDefault: usesBreadDefault
+                    });
                 })
                 .filter(function(category) {
                     return category.products.length > 0;

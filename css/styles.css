@@ -2272,15 +2272,23 @@ table {
     font-size: 11px;
 }
 
-.daily-table-wrap { overflow-x: auto; }
-.daily-orders-table { width: 100%; border-collapse: collapse; }
-.daily-orders-table th { padding: 11px 16px; background: var(--color-gray-50); color: var(--color-gray-500); font-size: 10px; letter-spacing: .075em; text-align: left; text-transform: uppercase; }
-.daily-orders-table td { padding: 13px 16px; border-top: 1px solid #f0ece4; vertical-align: middle; }
+.daily-table-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.daily-orders-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.daily-orders-table th { position: sticky; z-index: 2; top: 0; padding: 10px 12px; border-bottom: 1px solid var(--color-gray-200); background: var(--color-gray-50); color: var(--color-gray-500); font-size: 10px; letter-spacing: .075em; text-align: left; text-transform: uppercase; }
+.daily-orders-table td { height: 62px; padding: 11px 12px; border-top: 1px solid #f0ece4; background: white; vertical-align: middle; }
 .daily-orders-table tbody tr { transition: background 160ms ease; }
-.daily-orders-table tbody tr:hover { background: #fbfdf9; }
-.daily-orders-table th:first-child { width: 25%; }
-.daily-orders-table th:nth-child(2) { width: 55%; }
-.daily-orders-table th:last-child { width: 55px; }
+.daily-orders-table tbody tr:hover td { background: #fbfdf9; }
+.daily-orders-table .daily-customer-column,
+.daily-orders-table tbody td:first-child { position: sticky; z-index: 3; left: 0; width: 250px; min-width: 250px; box-shadow: 1px 0 0 var(--color-gray-200); }
+.daily-orders-table .daily-customer-column { z-index: 5; background: var(--color-gray-50); }
+.daily-product-column { width: 122px; min-width: 122px; max-width: 150px; text-align: center !important; vertical-align: top; }
+.daily-column-total { display: block; color: var(--color-primary-700); font-size: 19px; line-height: 1; letter-spacing: 0; }
+.daily-column-name { display: block; margin-top: 6px; overflow-wrap: anywhere; color: var(--color-gray-600); font-size: 9px; line-height: 1.25; letter-spacing: .035em; }
+.daily-product-quantity { text-align: center; }
+.daily-product-quantity strong { display: inline-flex; min-width: 34px; height: 34px; align-items: center; justify-content: center; border: 1px solid #cfe2d1; border-radius: 10px; color: var(--color-primary-800); background: var(--color-primary-50); font-size: 14px; }
+.daily-product-quantity.is-empty span { color: var(--color-gray-300); font-size: 14px; }
+.daily-status-column { width: 92px; min-width: 92px; }
+.daily-actions-column { width: 55px; min-width: 55px; }
 
 .daily-customer-link {
     width: 100%;
@@ -2312,11 +2320,6 @@ table {
 
 .daily-customer-link strong { display: block; color: var(--color-gray-800); font-size: 13px; }
 .daily-customer-link small { display: block; margin-top: 3px; color: var(--color-gray-400); font-size: 9px; }
-.daily-product-badges { display: flex; flex-wrap: wrap; gap: 6px; }
-.daily-product-badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 8px; border: 1px solid #e7decb; border-radius: 8px; color: var(--color-gray-700); background: #fffdf8; font-size: 11px; }
-.daily-product-badge strong { min-width: 26px; color: #8a5529; font-size: 11px; }
-.daily-no-matching-products { display: inline-flex; max-width: 330px; padding: 7px 9px; border: 1px dashed var(--color-gray-300); border-radius: 8px; color: var(--color-gray-500); background: var(--color-gray-50); font-size: 10px; line-height: 1.35; }
-
 .daily-status-badge {
     display: inline-flex;
     align-items: center;
