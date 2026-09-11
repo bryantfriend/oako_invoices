@@ -13,6 +13,7 @@ export function attachCreateOrderWorkflow(options) {
     var orderId = saved ? saved.orderId : '';
     var busy = false;
     var resetting = false;
+    var recoveryMessage = '';
     var timer = createEntryTimer(saved ? saved.entryMs : 0);
     var historyRequest = 0;
     var suggestionRows = [];
@@ -46,9 +47,9 @@ export function attachCreateOrderWorkflow(options) {
         if (resetting) return;
         try {
             workflowLocalStore.write('draft', 'editor', draft());
-            status.textContent = orderId
+            status.textContent = recoveryMessage || (orderId
                 ? 'Order saved. You can retry printing without creating another.'
-                : 'Draft saved on this device.';
+                : 'Draft saved on this device.');
         } catch (error) {
             status.textContent = 'Draft recovery unavailable: device storage is full. Keep this page open.';
         }
@@ -57,11 +58,21 @@ export function attachCreateOrderWorkflow(options) {
         timer.touch();
         persist();
     }
+    function setRecovery(message) {
+        recoveryMessage = message || '';
+        actions.querySelector('#workflow-save').textContent = recoveryMessage
+            ? 'Save as new order'
+            : 'Save order';
+        actions.querySelector('#workflow-print').textContent = recoveryMessage
+            ? 'Save as new order & print'
+            : 'Save & print invoice';
+    }
     function reset() {
         var latest = workflowLocalStore.read('draft', 'editor', null);
         if (!latest || latest.requestId === requestId) workflowLocalStore.remove('draft', 'editor');
         requestId = createWorkflowId();
         orderId = '';
+        setRecovery('');
         timer = createEntryTimer();
         // Clearing the old form must not overwrite another tab's newer saved draft.
         resetting = true;
@@ -130,7 +141,17 @@ export function attachCreateOrderWorkflow(options) {
         try {
             // Reserve from the user's gesture before any asynchronous preparation.
             if (!saveOnly) popup = reserveInvoicePrintWindow();
+            if (recoveryMessage) {
+                // The labelled new-order action preserves every entry, but must
+                // replace BOTH identifiers. Save locally before any cloud write
+                // so a lost response/reload retries this same new order.
+                current.requestId = createWorkflowId();
+                current.orderId = '';
+            }
             workflowLocalStore.write('draft', 'editor', current);
+            requestId = current.requestId;
+            orderId = current.orderId;
+            setRecovery('');
             busy = true;
             Array.from(form.elements).forEach(function (element) {
                 element.disabled = true;
@@ -139,8 +160,9 @@ export function attachCreateOrderWorkflow(options) {
             var result = await saveAndPrepareInvoice(current, {
                 saveOnly: saveOnly,
                 checkpoint: function (checkpoint) {
-                    orderId = checkpoint.orderId;
                     workflowLocalStore.write('draft', 'editor', checkpoint);
+                    requestId = checkpoint.requestId;
+                    orderId = checkpoint.orderId;
                 },
             });
             orderId = result.order.id;
@@ -162,8 +184,20 @@ export function attachCreateOrderWorkflow(options) {
             status.textContent =
                 'Invoice ready in the print window. Confirm the paper there, or reopen printing here.';
         } catch (error) {
-            if (popup && !popup.closed && !popup.document.getElementById('job-print'))
-                popup.document.body.textContent = error.message + ' Return to the editor to retry.';
+            if (error.code === 'invoice-draft-needs-new-order') setRecovery(error.message);
+            if (popup && !popup.closed && !popup.document.getElementById('job-print')) {
+                popup.document.title = 'Invoice needs attention';
+                popup.document.body.textContent = error.message + ' Return to the editor to continue.';
+                var returnButton = popup.document.createElement('button');
+                returnButton.textContent = 'Return to editor';
+                returnButton.style.cssText = 'display:block;margin-top:24px;padding:12px 20px;font:inherit;cursor:pointer';
+                returnButton.onclick = function returnToEditor() {
+                    window.focus();
+                    popup.close();
+                    if (form.isConnected) actions.querySelector('#workflow-print').focus();
+                };
+                popup.document.body.append(returnButton);
+            }
             status.textContent = error.message;
             notificationService.error(error.message);
         } finally {

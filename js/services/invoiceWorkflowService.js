@@ -21,6 +21,24 @@ function checkResult(result) {
     return result.data;
 }
 
+function newOrderRequired(message) {
+    var error = new Error(message + ' Your entries are safe. Save them as a new order to continue.');
+    error.code = 'invoice-draft-needs-new-order';
+    return error;
+}
+
+function invoiceEntrySignature(source) {
+    var record = normalizeWorkflowOrder(source);
+    return JSON.stringify({
+        customerName: record.customerName,
+        orderDate: getLocalDateKey(record.orderDate),
+        notes: record.notes,
+        items: record.items.map(function savedItemFields(item) {
+            return [item.productId || item.id || item.name, item.quantity, item.unitPrice];
+        }),
+    });
+}
+
 async function save(draft, session) {
     var record = normalizeWorkflowOrder(draft);
     var settings = await settingsService.getInvoiceSettings();
@@ -28,10 +46,23 @@ async function save(draft, session) {
     var id = draft.orderId;
     if (id) {
         var existing = await orderService.getOrderById(id);
-        if (!existing || existing.archived) throw new Error('The saved order is unavailable or archived.');
+        // A confirmed missing/archived record needs an explicit new-order action.
+        // Read failures still throw normally, retaining the identity for a safe retry.
+        if (!existing) throw newOrderRequired('The previously saved order no longer exists.');
+        if (existing.archived) throw newOrderRequired('The previously saved order was archived.');
+        if (
+            record.customerName !== String(existing.customerName || '').trim() ||
+            getLocalDateKey(record.orderDate) !== getLocalDateKey(existing.orderDate)
+        ) {
+            throw newOrderRequired('The customer or delivery date differs from the saved order.');
+        }
         var invoice = await invoiceService.getInvoiceByOrderId(id);
-        if (invoice && !canEditInvoiceItems(invoice)) {
-            // A recovered printed order is ready to reprint, not editable.
+        if (invoice && invoice.archived) throw newOrderRequired('The saved invoice was archived.');
+        if (invoice && (invoice.isPrinted || !canEditInvoiceItems(invoice))) {
+            // Reprinting is safe only when the paper represents the current entries.
+            if (invoiceEntrySignature(record) !== invoiceEntrySignature(Object.assign({}, existing, invoice))) {
+                throw newOrderRequired('These entries differ from the saved, locked invoice.');
+            }
             return existing;
         }
         record.status = existing.status;
@@ -81,13 +112,24 @@ export async function saveAndPrepareInvoice(draft, options) {
     var safeOptions = options || {};
     var session = getWorkflowSession();
     var started = Date.now();
+    var saveError = null;
+    async function saveWithRecovery(currentDraft, currentSession) {
+        try {
+            return await save(currentDraft, currentSession);
+        } catch (error) {
+            // The shared pipeline intentionally reduces exceptions to messages.
+            // Preserve this action's typed recovery information for its editor.
+            saveError = error;
+            throw error;
+        }
+    }
     var intent = saveIntent.createSaveAndPrepareInvoiceIntent(
         { id: session.uid, role: session.role },
         { draft: draft, saveOnly: safeOptions.saveOnly === true },
         {
             api: {
                 getSession: getWorkflowSession,
-                save: save,
+                save: saveWithRecovery,
                 prepare: prepare,
                 checkpoint: safeOptions.checkpoint,
             },
@@ -103,7 +145,7 @@ export async function saveAndPrepareInvoice(draft, options) {
         return result;
     } catch (error) {
         workflowLocalStore.event('preparation_failed', { durationMs: Date.now() - started });
-        throw error;
+        throw saveError || error;
     }
 }
 
