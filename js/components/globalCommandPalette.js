@@ -19,6 +19,7 @@ function escapeHtml(value) {
 
 function createCommandRecords() {
     return [
+        { type: 'Command', title: 'Prepare daily invoice batch', subtitle: 'Review usual baskets and print the day together', route: ROUTES.DAILY_INVOICES, keywords: 'batch daily regular repeat print' },
         { type: 'Command', title: 'Create a new order', subtitle: 'Start an order', route: ROUTES.CREATE_ORDER, keywords: 'new add create order' },
         { type: 'Command', title: 'Open payment collections', subtitle: 'Follow up outstanding balances', route: ROUTES.COLLECTIONS, keywords: 'payment paid overdue collection money' },
         { type: 'Command', title: 'Open production plan', subtitle: 'See demand and shortages', route: ROUTES.PRODUCTION_PLANNER, keywords: 'production bake stock shortage demand' },

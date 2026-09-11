@@ -1,3 +1,4 @@
+import emitInvoiceWorkflowResultModule from './Workflow/emitInvoiceWorkflowResult.js';
 // ICF/Stages/Emitters/emitters.js
 
 import passEmitModule from "./Core/passEmit.js";
@@ -33,6 +34,7 @@ import emitSaveDailyOrderResultModule from "./Orders/emitSaveDailyOrderResult.js
 import emitConfirmProductMatchModule from "./Products/emitConfirmProductMatch.js";
 
 var emitters = {
+  emitInvoiceWorkflowResult: emitInvoiceWorkflowResultModule.emitInvoiceWorkflowResult,
   emitConfirmProductMatch: emitConfirmProductMatchModule.emitConfirmProductMatch,
   passEmit: passEmitModule.passEmit,
   emitArchiveInvoiceResult:

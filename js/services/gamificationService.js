@@ -1,9 +1,11 @@
+import { workflowLocalStore } from './workflowLocalStore.js';
 import { auth, db } from "../core/firebase.js";
 import {
     doc,
     getDoc,
     setDoc,
-    serverTimestamp
+    serverTimestamp,
+    runTransaction
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const COLLECTION = 'users';
@@ -97,6 +99,19 @@ const emptyProfile = user => ({
     updatedAt: new Date()
 });
 
+function buildRewardProfile(current, action, quantity) {
+    var actions = Object.assign({}, current.actions || {});
+    actions[action] = (Number(actions[action]) || 0) + quantity;
+    var xp = (Number(current.xp) || 0) + XP_BY_ACTION[action] * quantity;
+    var candidate = Object.assign({}, current, { actions: actions, xp: xp });
+    var currentBadges = current.badges || [];
+    var unlocked = BADGES.filter(function(badge) { return currentBadges.indexOf(badge.id) === -1 && badge.condition(candidate); });
+    return { unlocked: unlocked, profile: Object.assign({}, current, {
+        actions: actions, xp: xp, periodActions: incrementPeriodActions(current.periodActions, action, quantity),
+        badges: currentBadges.concat(unlocked.map(function(badge) { return badge.id; })), updatedAt: serverTimestamp()
+    }) };
+}
+
 export const gamificationService = {
     getBadgeDefinitions() {
         return BADGES;
@@ -132,47 +147,55 @@ export const gamificationService = {
         return next;
     },
 
+    async awardWorkflowAction(action, entityId) {
+        var user = auth.currentUser;
+        if (!user) throw new Error('Sign in before recording a reward.');
+        if (['ordersCreated', 'invoicesCreated', 'invoicesPrinted'].indexOf(action) === -1) throw new Error('Unknown invoice workflow reward.');
+        var entityType = action === 'ordersCreated' ? 'orders' : 'invoices';
+        var entityRef = doc(db, entityType, entityId);
+        var receiptRef = doc(db, 'workflow_rewards', action + '-' + entityId);
+        var profileRef = doc(db, COLLECTION, user.uid);
+        var result = await runTransaction(db, async function(transaction) {
+            var receipt = await transaction.get(receiptRef);
+            if (receipt.exists()) return { unlocked: [], alreadyProcessed: true };
+            var entity = await transaction.get(entityRef);
+            var profile = await transaction.get(profileRef);
+            if (!entity.exists()) throw new Error('Waiting for the saved record before awarding progress.');
+            var record = entity.data();
+            if (action === 'invoicesPrinted' && record.isPrinted !== true) throw new Error('Waiting for confirmed printing.');
+            if (action === 'ordersCreated' && record.createdBy !== user.uid) throw new Error('This order was created by another staff member.');
+            var current = Object.assign({}, emptyProfile(user), profile.exists() ? profile.data() : {});
+            var next = buildRewardProfile(current, action, 1);
+            transaction.set(profileRef, next.profile, { merge: true });
+            transaction.set(receiptRef, { actorId: user.uid, action: action, entityId: entityId, createdAt: serverTimestamp() });
+            return next;
+        });
+        result.unlocked.forEach(function(badge) { gamificationService.celebrateBadge(badge); });
+        return result;
+    },
+
     async awardAction(action, quantity = 1) {
-        const user = auth.currentUser;
+        var user = auth.currentUser;
         if (!user || !XP_BY_ACTION[action]) return null;
-
         try {
-            const current = await this.getProfile();
-            const actions = { ...(current.actions || {}) };
-            actions[action] = (actions[action] || 0) + quantity;
-            const periodActions = incrementPeriodActions(current.periodActions, action, quantity);
-
-            const xp = (current.xp || 0) + (XP_BY_ACTION[action] * quantity);
-            const currentBadges = current.badges || [];
-            const candidate = { ...current, actions, xp };
-            const unlocked = BADGES.filter(badge => !currentBadges.includes(badge.id) && badge.condition(candidate));
-            const badges = [...currentBadges, ...unlocked.map(badge => badge.id)];
-
-            const next = {
-                ...current,
-                actions,
-                periodActions,
-                xp,
-                badges,
-                updatedAt: serverTimestamp()
-            };
-
-            await setDoc(doc(db, COLLECTION, user.uid), next, { merge: true });
-
-            unlocked.forEach((badge, index) => {
-                setTimeout(() => this.celebrateBadge(badge), index * 1200);
+            var profileRef = doc(db, COLLECTION, user.uid);
+            var result = await runTransaction(db, async function(transaction) {
+                var snapshot = await transaction.get(profileRef);
+                var current = Object.assign({}, emptyProfile(user), snapshot.exists() ? snapshot.data() : {});
+                var next = buildRewardProfile(current, action, quantity);
+                transaction.set(profileRef, next.profile, { merge: true });
+                return next;
             });
-
-            return { profile: next, unlocked };
-        } catch (error) {
-            console.warn("Could not award XP:", error);
-            return null;
-        }
+            result.unlocked.forEach(function(badge) { gamificationService.celebrateBadge(badge); });
+            return result;
+        } catch (error) { console.warn('Could not award XP:', error); return null; }
     },
 
     celebrateBadge(badge) {
-        this.playBadgeSound();
-        this.launchConfetti();
+        var preferences = workflowLocalStore.preference();
+        if (!preferences.fun) return;
+        if (preferences.sound) this.playBadgeSound();
+        if (preferences.motion && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.launchConfetti();
         this.showBadgeToast(badge);
     },
 

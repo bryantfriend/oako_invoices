@@ -1,3 +1,4 @@
+import authorizeInvoiceWorkflowModule from './Workflow/authorizeInvoiceWorkflow.js';
 // ICF/Stages/Authorizers/authorizers.js
 
 import allowModule from "./Core/allow.js";
@@ -31,6 +32,7 @@ import authorizePreparePrintableInvoiceModule from "./Invoices/authorizePrepareP
 import authorizeConfirmProductMatchModule from "./Products/authorizeConfirmProductMatch.js";
 
 var authorizers = {
+  authorizeInvoiceWorkflow: authorizeInvoiceWorkflowModule.authorizeInvoiceWorkflow,
   authorizeConfirmProductMatch: authorizeConfirmProductMatchModule.authorizeConfirmProductMatch,
   allow: allowModule.allow,
   deny: denyModule.deny,

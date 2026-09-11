@@ -1,3 +1,4 @@
+import { workflowLocalStore } from '../services/workflowLocalStore.js';
 import { orderService } from "../services/orderService.js";
 import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
@@ -106,6 +107,7 @@ export const orderDetailController = {
                 updatedAt: new Date()
             }, 'update-order-items');
             await sessionDataStore.invalidateInvoicesCache('order-items-changed');
+            workflowLocalStore.event('correction');
             notificationService.success(t('msg_update_success'));
             return true;
         } catch (error) {

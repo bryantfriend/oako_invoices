@@ -1,3 +1,4 @@
+import { queueWorkflowEffect } from './workflowEffectsService.js';
 import { auth, db } from "../core/firebase.js";
 import {
     collection,
@@ -501,6 +502,7 @@ export const invoiceService = {
                 });
             }
             if (existingInvoice) {
+                if (existingInvoice.workflowCreateRewardEligible) queueWorkflowEffect('reward', existingInvoice.id, 'invoicesCreated');
                 if (offlineStatusService.isOnline()) {
                     this.syncInvoiceWithOrder(orderId, existingInvoice).catch(function() {
                         return null;
@@ -544,6 +546,7 @@ export const invoiceService = {
                 syncState: isOffline ? 'offline_created' : 'synced',
                 offlineCreated: isOffline
             });
+            payload.workflowCreateRewardEligible = true;
 
             if (isOffline) {
                 await offlineQueueService.enqueue('createInvoice', 'invoice', offlineInvoiceId, {
@@ -554,6 +557,7 @@ export const invoiceService = {
                 }, {
                     storeId: storeId
                 });
+                queueWorkflowEffect('reward', offlineInvoiceId, 'invoicesCreated');
                 return formatInvoiceCreationResult(offlineInvoiceId, payload, true, safeOptions);
             }
 
@@ -576,13 +580,7 @@ export const invoiceService = {
                 syncState: 'synced'
             });
             console.info('[PRICING] invoice generated with preserved price metadata');
-            if (safeOptions.deferNonCriticalWork === true) {
-                gamificationService.awardAction('invoicesCreated').catch(function(error) {
-                    console.warn('Invoice gamification update was deferred.', error);
-                });
-            } else {
-                await gamificationService.awardAction('invoicesCreated');
-            }
+            queueWorkflowEffect('reward', invoiceId, 'invoicesCreated');
             return formatInvoiceCreationResult(invoiceId, createdInvoice, true, safeOptions);
         } catch (error) {
             console.error("Error creating invoice:", error);
@@ -903,7 +901,7 @@ export const invoiceService = {
                         return service.updateInvoice(id, patch, 'markInvoicePrinted', safeContext.invoice || null);
                     },
                     awardPrintedInvoice: function() {
-                        return gamificationService.awardAction('invoicesPrinted');
+                        return queueWorkflowEffect('reward', invoiceId, 'invoicesPrinted');
                     }
                 }
             }

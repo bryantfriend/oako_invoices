@@ -1,3 +1,4 @@
+import normalizeInvoiceWorkflowPayloadModule from './Workflow/normalizeInvoiceWorkflowPayload.js';
 // ICF/Stages/Normalizers/normalizers.js
 
 import passNormalizationModule from "./Core/passNormalization.js";
@@ -32,6 +33,7 @@ import normalizeSaveDailyOrderPayloadModule from "./Orders/normalizeSaveDailyOrd
 import normalizeConfirmProductMatchModule from "./Products/normalizeConfirmProductMatch.js";
 
 var normalizers = {
+  normalizeInvoiceWorkflowPayload: normalizeInvoiceWorkflowPayloadModule.normalizeInvoiceWorkflowPayload,
   normalizeConfirmProductMatch: normalizeConfirmProductMatchModule.normalizeConfirmProductMatch,
   passNormalization: passNormalizationModule.passNormalization,
   passNormalize: passNormalizeModule.passNormalize,

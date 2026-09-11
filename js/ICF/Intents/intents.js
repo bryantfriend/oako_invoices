@@ -1,3 +1,6 @@
+import RunWorkflowEffectModule from './RunWorkflowEffectIntent.js';
+import PrepareInvoiceBatchModule from './PrepareInvoiceBatchIntent.js';
+import SaveAndPrepareInvoiceModule from './SaveAndPrepareInvoiceIntent.js';
 // ICF/Intents/intents.js
 
 import intentRegistry from "../engine/intentRegistry.js";
@@ -29,6 +32,9 @@ import preparePrintableInvoiceIntentModule from "./PreparePrintableInvoiceIntent
  */
 function registerProjectIntents() {
   return intentRegistry.registerIntents({
+    RunWorkflowEffectIntent: RunWorkflowEffectModule.createRunWorkflowEffectIntent,
+    PrepareInvoiceBatchIntent: PrepareInvoiceBatchModule.createPrepareInvoiceBatchIntent,
+    SaveAndPrepareInvoiceIntent: SaveAndPrepareInvoiceModule.createSaveAndPrepareInvoiceIntent,
     ArchiveInvoiceIntent: archiveInvoiceIntentModule.createArchiveInvoiceIntent,
     GenerateInvoiceApprovalLinkIntent:
       generateInvoiceApprovalLinkIntentModule.createGenerateInvoiceApprovalLinkIntent,

@@ -574,6 +574,18 @@ service cloud.firestore {
     }
 
     // ===============================
+    // Exactly-once staff workflow rewards. Additive; existing profiles stay compatible.
+    match /workflow_rewards/{rewardId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['actorId', 'action', 'entityId', 'createdAt'])
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.action in ['ordersCreated', 'invoicesCreated', 'invoicesPrinted']
+        && request.resource.data.entityId is string
+        && request.resource.data.createdAt is timestamp;
+      allow update, delete: if false;
+    }
+
     // STORE MEDIA LIBRARY
     // ===============================
     match /store_media/{mediaId} {

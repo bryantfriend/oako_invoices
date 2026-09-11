@@ -1,3 +1,4 @@
+import validateInvoiceWorkflowPayloadModule from './Workflow/validateInvoiceWorkflowPayload.js';
 // ICF/Stages/Validators/validators.js
 
 import passValidationModule from "./Core/passValidation.js";
@@ -41,6 +42,7 @@ import validateSaveDailyOrderPayloadModule from "./Orders/validateSaveDailyOrder
 import validateConfirmProductMatchModule from "./Products/validateConfirmProductMatch.js";
 
 var validators = {
+  validateInvoiceWorkflowPayload: validateInvoiceWorkflowPayloadModule.validateInvoiceWorkflowPayload,
   validateConfirmProductMatch: validateConfirmProductMatchModule.validateConfirmProductMatch,
   passValidation: passValidationModule.passValidation,
   passValidate: passValidateModule.passValidate,

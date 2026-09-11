@@ -17,6 +17,7 @@ async function processMarkInvoicePrinted(intent) {
     isPrinted: true,
     printedAt: printedAt
   };
+  if (!context.order.isPrinted) orderPatch.workflowPrintRewardEligible = true;
   var orderStatus = String(context.order.status || "").toLowerCase();
   var invoiceStatus = getCanonicalInvoiceStatus(context.invoice.status);
 
@@ -31,7 +32,7 @@ async function processMarkInvoicePrinted(intent) {
   await printApi.updateOrder(intent.payload.orderId, orderPatch);
   await printApi.updateInvoice(intent.payload.invoiceId, invoicePatch);
 
-  if (!context.order.isPrinted && typeof printApi.awardPrintedInvoice === "function") {
+  if ((!context.order.isPrinted || context.order.workflowPrintRewardEligible) && typeof printApi.awardPrintedInvoice === "function") {
     try {
       await printApi.awardPrintedInvoice();
     } catch (error) {

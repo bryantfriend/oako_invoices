@@ -1,3 +1,5 @@
+import { renderDailyInvoiceBatch } from './views/dailyInvoiceBatchView.js';
+import { initializeWorkflowEffects } from './services/workflowEffectsService.js';
 import { authService } from "./core/authService.js";
 import { router } from "./router.js";
 import { ROUTES } from "./core/constants.js";
@@ -59,6 +61,7 @@ async function initApp() {
         // Initialize Auth
         await authService.init();
         offlineStatusService.init();
+        initializeWorkflowEffects();
 
         if (offlinePersistenceState.warning) {
             notificationService.info(offlinePersistenceState.warning);
@@ -82,6 +85,7 @@ async function initApp() {
         router.addRoute(ROUTES.DASHBOARD, renderDashboard);
         router.addRoute(ROUTES.CREATE_ORDER, renderCreateOrder);
         router.addRoute(ROUTES.DAILY_ORDERS, renderDailyOrders);
+        router.addRoute(ROUTES.DAILY_INVOICES, renderDailyInvoiceBatch);
         router.addRoute(ROUTES.ORDER_DETAIL, renderOrderDetail);
         router.addRoute(ROUTES.INVOICES, renderInvoices);
         router.addRoute(ROUTES.INVOICE_DETAIL, renderInvoiceDetail);

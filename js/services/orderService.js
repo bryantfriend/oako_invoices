@@ -1,3 +1,4 @@
+import { queueWorkflowEffect } from './workflowEffectsService.js';
 import { auth, db } from "../core/firebase.js";
 import {
     collection,
@@ -313,11 +314,14 @@ export const orderService = {
         }
     },
 
-    async createOrder(orderData, userId) {
+    async createOrder(orderData, userId, options) {
         try {
             const now = new Date();
             const isOffline = !offlineStatusService.isOnline();
-            const offlineOrderId = isOffline ? await deviceIdService.createOfflineEntityId('KORG') : '';
+            var requestId = options && options.requestId ? String(options.requestId) : '';
+            if (requestId && !/^[a-zA-Z0-9_-]{8,200}$/.test(requestId)) throw new Error('Invalid save reference.');
+            var stableId = requestId ? 'desk-' + requestId : '';
+            const offlineOrderId = stableId || (isOffline ? await deviceIdService.createOfflineEntityId('KORG') : '');
             const payload = {
                 ...orderData,
                 id: offlineOrderId,
@@ -338,10 +342,18 @@ export const orderService = {
                 syncError: null,
                 syncState: isOffline ? 'offline_created' : 'synced',
                 offlineCreated: isOffline,
-                invoiceGenerated: false
+                invoiceGenerated: false,
+                workflowRequestId: requestId
             };
 
             if (isOffline) {
+                if (stableId) {
+                    var localExisting = await getLocalOrderSnapshot(stableId);
+                    if (localExisting) {
+                        if (localExisting.workflowRequestId !== requestId || localExisting.createdBy !== userId) throw new Error('This save reference belongs to an existing order.');
+                        return options && options.returnRecord ? Object.assign({}, localExisting, { id: stableId, workflowReused: true }) : stableId;
+                    }
+                }
                 await offlineQueueService.enqueue('createOrder', 'order', offlineOrderId, {
                     order: payload,
                     localOrderSnapshot: payload,
@@ -349,12 +361,22 @@ export const orderService = {
                 }, {
                     storeId: payload.storeId || payload.companyId || 'KORG'
                 });
-                return offlineOrderId;
+                return options && options.returnRecord ? Object.assign({}, payload, { id: offlineOrderId }) : offlineOrderId;
             }
 
             delete payload.id;
-            const docRef = await addDoc(collection(db, COLLECTION), payload);
-            const createdOrder = await this.getOrderById(docRef.id).catch(() => ({ id: docRef.id, ...orderData, ...payload, createdAt: new Date(), updatedAt: new Date() }));
+            var docRef = stableId ? doc(db, COLLECTION, stableId) : doc(collection(db, COLLECTION));
+            queueWorkflowEffect('sheets', docRef.id);
+            const createdOrder = await runTransaction(db, async function(transaction) {
+                var snapshot = await transaction.get(docRef);
+                if (snapshot.exists()) {
+                    var existing = snapshot.data();
+                    if (!requestId || existing.workflowRequestId !== requestId || existing.createdBy !== userId) throw new Error('This save reference belongs to an existing order. Refresh Orders before creating another.');
+                    return Object.assign({ id: docRef.id }, existing, { workflowReused: true });
+                }
+                transaction.set(docRef, payload);
+                return Object.assign({}, payload, { id: docRef.id, createdAt: new Date(), updatedAt: new Date() });
+            });
             await dataIntegrityService.recordAuditLogSafely({
                 type: 'ORDER_CREATED',
                 entityType: 'order',
@@ -366,8 +388,8 @@ export const orderService = {
             }, {
                 source: 'ui'
             });
-            await googleSheetsService.syncOrderLifecycle(createdOrder);
-            return docRef.id;
+            // Sheets is retried independently of the successful order save.
+            return options && options.returnRecord ? createdOrder : docRef.id;
         } catch (error) {
             console.error("Error creating order:", error);
             throw error;
@@ -380,8 +402,11 @@ export const orderService = {
             const previousOrder = await this.getOrderById(id).catch(function() {
                 return null;
             });
+            var updateTimestamp = new Date().toISOString();
+            queueWorkflowEffect('sheets', id, '', updateTimestamp);
             await updateDoc(docRef, {
                 ...updates,
+                localUpdatedAt: updateTimestamp,
                 updatedAt: serverTimestamp()
             });
             const updatedOrder = await this.getOrderById(id).catch(() => ({ id, ...updates, updatedAt: new Date() }));
@@ -417,7 +442,7 @@ export const orderService = {
                     source: 'ui'
                 });
             }
-            await googleSheetsService.syncOrderLifecycle(updatedOrder);
+            // The queued Sheets job reads the latest committed order.
             return true;
         } catch (error) {
             console.error("Error updating order:", error);

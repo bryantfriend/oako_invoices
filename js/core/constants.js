@@ -15,6 +15,7 @@ export const ROUTES = {
     LOGIN: '/login',
     CREATE_ORDER: '/orders/create',
     DAILY_ORDERS: '/daily-orders',
+    DAILY_INVOICES: '/daily-invoices',
     ORDER_DETAIL: '/orders/:id',
     INVOICES: '/invoices',
     INVOICE_DETAIL: '/invoices/:id',

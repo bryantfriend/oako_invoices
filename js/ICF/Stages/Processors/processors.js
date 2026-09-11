@@ -1,3 +1,6 @@
+import processRunWorkflowEffectModule from './Workflow/processRunWorkflowEffect.js';
+import processPrepareInvoiceBatchModule from './Workflow/processPrepareInvoiceBatch.js';
+import processSaveAndPrepareInvoiceModule from './Workflow/processSaveAndPrepareInvoice.js';
 // ICF/Stages/Processors/processors.js
 
 import doNothingModule from "./Core/doNothing.js";
@@ -33,6 +36,9 @@ import processSaveDailyOrderModule from "./Orders/processSaveDailyOrder.js";
 import processConfirmProductMatchModule from "./Products/processConfirmProductMatch.js";
 
 var processors = {
+  processRunWorkflowEffect: processRunWorkflowEffectModule.processRunWorkflowEffect,
+  processPrepareInvoiceBatch: processPrepareInvoiceBatchModule.processPrepareInvoiceBatch,
+  processSaveAndPrepareInvoice: processSaveAndPrepareInvoiceModule.processSaveAndPrepareInvoice,
   processConfirmProductMatch: processConfirmProductMatchModule.processConfirmProductMatch,
   doNothing: doNothingModule.doNothing,
   passProcess: passProcessModule.passProcess,

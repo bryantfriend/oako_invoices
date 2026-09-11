@@ -50,6 +50,7 @@ export class Sidebar {
                 ${this.createNavItem(t('sidebar_orders'), ROUTES.DASHBOARD, 'orders', 'orders')}
                 ${this.createNavItem(t('dash_new_order'), ROUTES.CREATE_ORDER, 'plus')}
                 ${this.createNavItem('Daily Orders', ROUTES.DAILY_ORDERS, 'daily', 'dailyOrders')}
+                ${this.createNavItem('Daily Invoice Batch', ROUTES.DAILY_INVOICES, 'invoices')}
                 ${this.createNavItem(t('sidebar_invoices'), ROUTES.INVOICES, 'invoices', 'invoices')}
                 ${this.createNavItem('Collections', ROUTES.COLLECTIONS, 'collections')}
                 ${this.createNavItem('Production Plan', ROUTES.PRODUCTION_PLANNER, 'production')}

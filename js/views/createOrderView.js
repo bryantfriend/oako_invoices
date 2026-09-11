@@ -1,3 +1,5 @@
+import { attachCreateOrderWorkflow } from '../components/createOrderWorkflow.js';
+import { getLocalDateKey } from '../services/operationsPlanningService.js';
 import { layoutView } from "./layoutView.js";
 import { createOrderController } from "../controllers/createOrderController.js";
 import { productService } from "../services/productService.js";
@@ -213,7 +215,7 @@ async function loadCreateOrderDependenciesOnce() {
 }
 function renderCreateOrderLoadingShell() {
     return [
-        '<div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">',
+        '<div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: minmax(0, 1fr); max-width: 1150px; gap: var(--space-6); align-items: start;">',
         '  <div class="dashboard-card" style="padding: var(--space-6);">',
         '    <h2 style="margin: 0 0 8px; color: var(--color-gray-900);">Create New Order</h2>',
         '    <p style="margin: 0; color: var(--color-gray-600);">Loading products, customers, and pricing settings...</p>',
@@ -300,23 +302,23 @@ export const renderCreateOrder = async (params, routeContext) => {
         window.setTimeout(refreshProductCatalog, 0);
     }
 
-    const customerDatalist = customers.map(c => `<option value="${c.companyName || c.name}">`).join('');
+    const customerDatalist = customers.map(function(customer) { return `<option value="${escapeHtml(customer.companyName || customer.name)}">`; }).join('');
 
     container.innerHTML = `
-        <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-6); align-items: start;">
+        <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: minmax(0, 1fr); max-width: 1150px; gap: var(--space-6); align-items: start;">
             <form id="create-order-form">
                 ${dependencyWarnings.length ? '<div class="dashboard-alert-strip" style="margin-bottom: var(--space-4);">Limited connection: ' + escapeHtml(dependencyWarnings.join(', ')) + ' did not finish loading. You can still create an order with available data.</div>' : ''}
                 ${createCard({
         title: 'Customer Information',
         content: `
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+                        <div class="grid-cols-mobile-1" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
                             <div class="input-group">
                                 <label for="customerName">Customer / Company</label>
                                 <div style="display: flex; gap: var(--space-2);">
                                     <div style="position: relative; flex: 1;">
                                         <span style="position: absolute; left: 10px; top: 10px;">🏢</span>
                                         <input type="text" id="customerName" name="customerName"
-                                            required placeholder="Enter or select company..."
+                                            required list="workflow-customers" placeholder="Enter or select company..."
                                             style="padding-left: 36px; width: 100%;" autocomplete="off" value="${escapeHtml(repeatOrderDraft?.customerName || '')}">
                                     </div>
                                     <button type="button" id="select-customer-btn" class="btn btn-secondary" title="Select from List" style="padding: 0 12px; font-size: 14px;">
@@ -339,7 +341,7 @@ export const renderCreateOrder = async (params, routeContext) => {
                             <label for="notes">Notes</label>
                             <textarea id="notes" name="notes" rows="2" placeholder="Special instructions...">${escapeHtml(repeatOrderDraft?.notes || '')}</textarea>
                         </div>
-                        <div id="smart-basket-panel" class="smart-basket-panel"></div>
+                        <datalist id="workflow-customers">${customerDatalist}</datalist><div id="smart-basket-panel" class="smart-basket-panel"></div>
                         <div id="customer-price-history-panel" class="smart-basket-panel"></div>
                     `
     })}
@@ -373,10 +375,8 @@ export const renderCreateOrder = async (params, routeContext) => {
                     `
     })}
 
-                <div style="display: flex; justify-content: flex-end; gap: var(--space-4); margin-top: var(--space-6);">
-                    <button type="button" class="btn btn-secondary" onclick="window.history.back()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Order</button>
-                </div>
+                <div class="workflow-suggestions"><button type="button" id="workflow-refresh-suggestions" class="btn btn-ghost btn-sm">Suggest quantities from returns</button><div id="workflow-suggestions"></div></div>
+                <div id="workflow-editor-actions" class="workflow-editor-actions"></div>
             </form>
         </div>
     `;
@@ -396,9 +396,9 @@ export const renderCreateOrder = async (params, routeContext) => {
         }
 
         list.innerHTML = selectedItems.map((item, index) => `
-            <div class="animate-fade-in" style="
+            <div class="animate-fade-in create-order-item-row" style="
                 display: grid;
-                grid-template-columns: 80px 2fr 90px 110px 140px auto;
+                grid-template-columns: 60px minmax(120px,2fr) 80px 90px 100px auto auto;
                 gap: var(--space-4);
                 align-items: center;
                 padding: var(--space-3);
@@ -415,7 +415,7 @@ export const renderCreateOrder = async (params, routeContext) => {
                 </div>
 
                 <div>
-                    <input type="number" class="input qty-input" data-index="${index}" value="${item.quantity}" min="1" style="width: 100%; text-align: center;">
+                    <input type="number" required aria-label="Quantity for ${escapeHtml(item.name)}" class="input qty-input" data-index="${index}" value="${item.quantity}" min="1" style="width: 100%; text-align: center;">
                 </div>
 
                 <div style="text-align: right;">
@@ -423,7 +423,7 @@ export const renderCreateOrder = async (params, routeContext) => {
                     <small style="color: var(--color-gray-500);">${item.priceMode === ORDER_PRICE_MODES.OVERRIDE ? 'Custom' : (item.priceMode === ORDER_PRICE_MODES.BUSINESS ? 'Business' : 'Retail')}</small>
                 </div>
 
-                <div style="text-align: right; font-weight: 600;">
+                <div class="order-line-subtotal" style="text-align: right; font-weight: 600;">
                     ${formatCurrency(item.lineSubtotal || ((item.unitPrice || item.price || 0) * item.quantity))}
                 </div>
 
@@ -440,12 +440,13 @@ export const renderCreateOrder = async (params, routeContext) => {
 
         // Attach listeners
         list.querySelectorAll('.qty-input').forEach(input => {
-            input.addEventListener('change', (e) => {
+            input.addEventListener('input', (e) => {
                 const idx = parseInt(e.target.dataset.index);
                 selectedItems[idx].quantity = parseInt(e.target.value, 10) || 1;
                 selectedItems[idx] = normalizeOrderItemPricing(selectedItems[idx]);
                 console.info('[PRICING] totals recalculated');
-                renderItems();
+                updateTotal();
+                list.querySelectorAll('.order-line-subtotal')[idx].textContent = formatCurrency(selectedItems[idx].lineSubtotal);
             });
         });
 
@@ -483,6 +484,7 @@ export const renderCreateOrder = async (params, routeContext) => {
 
     const updateTotal = () => {
         const totals = calculateOrderTotals(selectedItems);
+        document.getElementById('create-order-form').dispatchEvent(new Event('workflow-items-changed'));
         const el = document.getElementById('total-preview');
         if (el) {
             el.textContent = formatCurrency(totals.totalAmount);
@@ -1090,8 +1092,9 @@ export const renderCreateOrder = async (params, routeContext) => {
         // Set default date to Tomorrow
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const tomorrowStr = getLocalDateKey(tomorrow);
         document.getElementById('orderDate').value = tomorrowStr;
+        initializeWorkflow();
     }, 0);
 
     updatePriceModeButtons();
@@ -1287,22 +1290,32 @@ export const renderCreateOrder = async (params, routeContext) => {
     });
 
 
-    // Form Submit
-    document.getElementById('create-order-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        if (selectedItems.length === 0) {
-            notificationService.error(t('err_add_product'));
-            return;
-        }
-
-        const formData = {
-            customerName: document.getElementById('customerName').value,
-            orderDate: document.getElementById('orderDate').value,
-            notes: document.getElementById('notes').value,
-            items: selectedItems,
-            selectedPriceMode: selectedPriceMode
-        };
-        createOrderController.handleCreateOrder(formData);
-    });
+    function initializeWorkflow() {
+        attachCreateOrderWorkflow({
+            form: document.getElementById('create-order-form'), settings: invoiceSettings,
+            hasRepeatDraft: !!repeatOrderDraft,
+            getDraft: function() { return {
+                customerName: document.getElementById('customerName').value,
+                orderDate: document.getElementById('orderDate').value,
+                notes: document.getElementById('notes').value,
+                items: selectedItems, selectedPriceMode: selectedPriceMode
+            }; },
+            restore: function(draft) {
+                document.getElementById('customerName').value = draft.customerName || '';
+                document.getElementById('orderDate').value = draft.orderDate;
+                document.getElementById('notes').value = draft.notes || '';
+                selectedPriceMode = draft.selectedPriceMode || selectedPriceMode;
+                selectedItems = (draft.items || []).map(normalizeOrderItemPricing);
+                renderItems(); updatePriceModeButtons();
+            },
+            setItems: function(items) { selectedItems = items.map(normalizeOrderItemPricing); renderItems(); },
+            reset: function() {
+                document.getElementById('customerName').value = '';
+                document.getElementById('notes').value = '';
+                selectedItems = []; renderItems();
+                document.getElementById('smart-basket-panel').innerHTML = '';
+                document.getElementById('customer-price-history-panel').innerHTML = '';
+            }
+        });
+    }
 };

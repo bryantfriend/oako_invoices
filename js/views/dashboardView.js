@@ -1,3 +1,4 @@
+import { mountInvoiceProductivityPanel } from '../components/invoiceProductivityPanel.js';
 import { dashboardController } from "../controllers/dashboardController.js";
 import { inventoryController } from "../controllers/inventoryController.js";
 import { getLocalDateKey } from "../core/dailyOrders.js";
@@ -652,7 +653,7 @@ export const renderDashboard = async (params, routeContext) => {
         console.info('[ANALYTICS] orders used: ' + analyticsOrders.length);
 
         container.innerHTML = `
-            <div class="dashboard-v2 animate-fade-in">
+            <div class="dashboard-v2 animate-fade-in"><div id="invoice-productivity-panel"></div>
                 <div class="dashboard-toolbar">
                     <div class="dashboard-title-block">
                         <span class="dashboard-eyebrow">Kyrgyz Organics</span>
@@ -805,7 +806,7 @@ export const renderDashboard = async (params, routeContext) => {
                 <strong id="bulk-invoice-selected-label">0 invoices selected</strong>
                 <div class="bulk-invoice-action-buttons">
                     <button id="clear-invoice-selection" class="btn btn-secondary btn-sm" type="button">Clear selection</button>
-                    <button id="quick-print-full" class="btn btn-primary btn-sm" type="button" disabled>Quick Print — Full</button>
+                    <button id="prepare-selected-invoices" class="btn btn-secondary btn-sm" type="button">Prepare selected invoices</button><button id="quick-print-full" class="btn btn-primary btn-sm" type="button" disabled>Quick Print — Full</button>
                     <button id="quick-print-two-up" class="btn btn-secondary btn-sm" type="button" disabled>Quick Print — 2-Up Portrait</button>
                 </div>
             </div>
@@ -813,6 +814,7 @@ export const renderDashboard = async (params, routeContext) => {
 
         initCharts(stats.charts, productChart);
         attachFinancialIntelligencePanel();
+        mountInvoiceProductivityPanel(container.querySelector('#invoice-productivity-panel'), allOrders);
         attachListeners();
         applyFilters();
         mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute);
@@ -1626,6 +1628,8 @@ export const renderDashboard = async (params, routeContext) => {
         const actionLabel = document.getElementById('bulk-invoice-selected-label');
         const fullButton = document.getElementById('quick-print-full');
         const twoUpButton = document.getElementById('quick-print-two-up');
+        var prepareButton = document.getElementById('prepare-selected-invoices');
+        if (prepareButton) prepareButton.disabled = !count || bulkPrintActive || bulkArchiveActive;
 
         if (countEl) {
             countEl.style.display = count > 0 ? 'inline-flex' : 'none';
@@ -1780,6 +1784,22 @@ export const renderDashboard = async (params, routeContext) => {
                 refreshTable();
             });
         }
+        var prepareSelectedButton = document.getElementById('prepare-selected-invoices');
+        if (prepareSelectedButton) prepareSelectedButton.onclick = async function() {
+            if (bulkPrintActive || bulkArchiveActive) return;
+            bulkPrintActive = true; updateBulkArchiveControls();
+            try {
+                var module = await import('../services/invoiceWorkflowService.js');
+                var rows = getOrderedSelectedOrderIds(false).map(function(id) {
+                    var order = allOrders.find(function(record) { return record.id === id; });
+                    return order && !isArchivedRecord(order) ? { existingOrderId: id, customerName: order.customerName, selected: true } : null;
+                }).filter(Boolean);
+                var result = await module.prepareDailyInvoiceBatch(rows, function() {});
+                notificationService.info(result.completed.length + ' invoices ready; ' + result.failed.length + ' need attention.');
+                await refreshPrintableInvoiceMap();
+            } catch (error) { notificationService.error(error.message); }
+            finally { bulkPrintActive = false; updateBulkArchiveControls(); }
+        };
         const quickPrintFullButton = document.getElementById('quick-print-full');
         if (quickPrintFullButton) {
             quickPrintFullButton.addEventListener('click', function() {

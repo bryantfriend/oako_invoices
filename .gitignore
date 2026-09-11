@@ -1,3 +1,18 @@
 node_modules/
 .workbox/
 ko-server.*.txt
+
+# Local verification artifacts
+.playwright-cli/
+output/playwright/
+output/*-test-results.txt
+output/*-build-results.txt
+output/*-check-results.txt
+
+# Firebase deployment/emulator diagnostics and local rollback snapshots
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+storage-debug.log*
+ui-debug.log*
+output/firebase-deployment/

@@ -75,6 +75,7 @@ export const googleSheetsService = {
     },
 
     async postPayload(payload) {
+        var timeoutId;
         try {
             const settings = await settingsService.getInvoiceSettings();
             if (!settings.syncEnabled) {
@@ -91,7 +92,10 @@ export const googleSheetsService = {
                 return { skipped: true, payload };
             }
 
+            var controller = new AbortController();
+            timeoutId = setTimeout(function() { controller.abort(); }, 20000);
             const response = await fetch(webhookUrl, {
+                signal: controller.signal,
                 method: 'POST',
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -108,6 +112,8 @@ export const googleSheetsService = {
         } catch (error) {
             console.warn('Google Sheets sync failed without blocking invoice completion.', error);
             return { success: false, error };
+        } finally {
+            clearTimeout(timeoutId);
         }
     },
 

@@ -1,3 +1,4 @@
+import { workflowLocalStore } from '../services/workflowLocalStore.js';
 import { invoiceService } from "../services/invoiceService.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
@@ -191,6 +192,7 @@ export const invoiceController = {
         try {
             await invoiceService.saveInvoiceItems(invoiceId, items);
             await sessionDataStore.invalidateInvoicesCache('save-invoice-items');
+            workflowLocalStore.event('correction');
             notificationService.success('Invoice items updated.');
             return true;
         } catch (error) {

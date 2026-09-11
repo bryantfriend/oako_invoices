@@ -1,50 +1,62 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // ===============================
-    // PRODUCT IMAGES (PUBLIC READ)
-    // ===============================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isImageUnder5MB() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function isPdfUnder5MB() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf');
+    }
+
     match /products/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow write: if isSignedIn() && isImageUnder5MB();
     }
 
-    // ===============================
-    // BANNER IMAGES (PUBLIC READ)
-    // ===============================
     match /banners/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow write: if isSignedIn() && isImageUnder5MB();
     }
 
-    // ===============================
-    // BRAND ASSETS / LOGOS (PUBLIC READ)
-    // ===============================
+    match /campaigns/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn() && isImageUnder5MB();
+    }
+
     match /brand/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+      allow write: if isSignedIn() && isImageUnder5MB();
     }
 
-    // ===============================
-    // INVOICES / DOCUMENTS (PRIVATE)
-    // ===============================
+    match /hamster-spin-images/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn() && isImageUnder5MB();
+    }
+
+    match /stores/{companyId}/branding/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn() && isImageUnder5MB();
+    }
+
+    match /stores/{companyId}/media/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && isImageUnder5MB();
+    }
+
     match /invoices/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('application/pdf');
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isPdfUnder5MB();
     }
 
-    // ===============================
-    // DEFAULT DENY
-    // ===============================
     match /{allPaths=**} {
       allow read, write: if false;
     }

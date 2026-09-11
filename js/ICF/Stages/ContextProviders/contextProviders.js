@@ -1,3 +1,4 @@
+import addInvoiceWorkflowContextModule from './Workflow/addInvoiceWorkflowContext.js';
 // ICF/Stages/ContextProviders/contextProviders.js
 
 import passContextModule from "./Core/passContext.js";
@@ -30,6 +31,7 @@ import addPreparePrintableInvoiceContextModule from "./Invoices/addPreparePrinta
 import addConfirmProductMatchContextModule from "./Products/addConfirmProductMatchContext.js";
 
 var contextProviders = {
+  addInvoiceWorkflowContext: addInvoiceWorkflowContextModule.addInvoiceWorkflowContext,
   addConfirmProductMatchContext: addConfirmProductMatchContextModule.addConfirmProductMatchContext,
   passContext: passContextModule.passContext,
   passAddContext: passAddContextModule.passAddContext,

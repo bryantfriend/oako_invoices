@@ -304,6 +304,10 @@ async function writeOrderCreate(queueItem) {
     const serverSnap = await getDoc(orderRef);
     const localVersion = getLocalOrderSnapshot(queueItem);
 
+    if (serverSnap.exists() && localVersion.workflowRequestId && serverSnap.data().workflowRequestId === localVersion.workflowRequestId && serverSnap.data().createdBy === localVersion.createdBy) {
+        // A previous attempt committed before the acknowledgement was lost.
+        return;
+    }
     if (serverSnap.exists() && queueItem.payload && queueItem.payload.forceOverwrite !== true) {
         await conflictService.saveConflict(queueItem, serverSnap.data(), localVersion);
         throw new Error('sync_conflict');
