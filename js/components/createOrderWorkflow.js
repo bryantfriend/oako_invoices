@@ -8,20 +8,18 @@ import { notificationService } from '../core/notificationService.js';
 export function attachCreateOrderWorkflow(options) {
     var form = options.form;
     var preferences = workflowLocalStore.preference();
-    var saved = workflowLocalStore.read('draft', 'editor', null);
-    var requestId = saved ? saved.requestId : createWorkflowId();
-    var orderId = saved ? saved.orderId : '';
+    var saved = readPreviousDraft();
+    var requestId = createWorkflowId();
+    var orderId = '';
+    var started = false;
     var busy = false;
     var resetting = false;
     var recoveryMessage = '';
-    var timer = createEntryTimer(saved ? saved.entryMs : 0);
+    var timer = createEntryTimer();
     var historyRequest = 0;
     var suggestionRows = [];
-    if (saved && !options.hasRepeatDraft) options.restore(saved);
-    if (options.hasRepeatDraft) {
-        requestId = createWorkflowId();
-        orderId = '';
-    }
+    // New Order always opens a fresh editor. Recovery and Repeat Order are
+    // explicit choices; visiting this route must never silently select an invoice.
 
     var actions = form.querySelector('#workflow-editor-actions');
     actions.innerHTML =
@@ -33,8 +31,76 @@ export function attachCreateOrderWorkflow(options) {
     var layout = actions.querySelector('#workflow-layout');
     var status = actions.querySelector('#workflow-draft-status');
     layout.value = preferences.layout || 'full';
-    status.textContent =
-        saved && !options.hasRepeatDraft ? 'Recovered your unfinished order.' : 'Draft recovery is on.';
+    status.textContent = 'Ready for a new order. Draft recovery is on.';
+    var resumePanel = form.querySelector('#workflow-resume');
+    resumePanel.innerHTML = '<div class="workflow-action-row"><span id="workflow-resume-description"></span>' +
+        '<button type="button" class="btn btn-secondary btn-sm" id="workflow-resume-button">Resume previous draft</button></div>';
+    updateResumePanel();
+
+    function hasEntries(value) {
+        return !!(value && (String(value.customerName || '').trim() || String(value.notes || '').trim() ||
+            (Array.isArray(value.items) && value.items.length)));
+    }
+    function readPreviousDraft() {
+        var current = workflowLocalStore.read('draft', 'editor', null);
+        if (hasEntries(current)) return current;
+        var previous = workflowLocalStore.read('draft', 'previous-editor', null);
+        return hasEntries(previous) ? previous : null;
+    }
+    function updateResumePanel() {
+        resumePanel.hidden = !saved || options.hasRepeatDraft === true;
+        resumePanel.style.display = resumePanel.hidden ? 'none' : '';
+        form.querySelector('#workflow-resume-description').textContent = saved
+            ? 'Previous draft available: ' + (saved.customerName || 'Unnamed customer') + '. Resume it only to continue that order.'
+            : '';
+    }
+    function saveLocalDraft(current) {
+        // Preserve the previous recovery copy before the first edit of a fresh
+        // order. Merely opening the blank editor must not overwrite either copy.
+        if (!started && saved && saved.requestId !== current.requestId) {
+            workflowLocalStore.write('draft', 'previous-editor', saved);
+        }
+        workflowLocalStore.write('draft', 'editor', current);
+        started = true;
+    }
+    function entrySignature(value) {
+        return JSON.stringify({
+            customerName: String(value.customerName || '').trim(), orderDate: value.orderDate,
+            notes: value.notes || '', selectedPriceMode: value.selectedPriceMode || 'retail', items: value.items || [],
+        });
+    }
+    function removeMatchingDrafts(id, signature) {
+        ['editor', 'previous-editor'].forEach(function removeMatchingCopy(key) {
+            var value = workflowLocalStore.read('draft', key, null);
+            if (value && value.requestId === id && (!signature || entrySignature(value) === signature)) {
+                workflowLocalStore.remove('draft', key);
+            }
+        });
+    }
+    form.querySelector('#workflow-resume-button').addEventListener('click', function resumePreviousDraft() {
+        if (busy || !saved) return;
+        var previous = saved;
+        var current = draft();
+        if (hasEntries(current) && !window.confirm('Resume the previous draft? These current entries will be kept as the previous draft.')) return;
+        try {
+            if (hasEntries(current)) workflowLocalStore.write('draft', 'previous-editor', current);
+            workflowLocalStore.write('draft', 'editor', previous);
+            requestId = previous.requestId || createWorkflowId();
+            orderId = previous.orderId || '';
+            timer = createEntryTimer(previous.entryMs);
+            started = true;
+            setRecovery('');
+            resetting = true;
+            try { options.restore(previous); } finally { resetting = false; }
+            saved = hasEntries(current) ? current : null;
+            updateResumePanel();
+            status.textContent = 'Previous draft resumed. Your saved order will be reused when you retry.';
+            form.querySelector('#customerName').focus();
+        } catch (error) {
+            status.textContent = 'Could not resume the draft: ' + error.message;
+            notificationService.error(status.textContent);
+        }
+    });
 
     function draft() {
         return Object.assign({}, options.getDraft(), {
@@ -45,8 +111,10 @@ export function attachCreateOrderWorkflow(options) {
     }
     function persist() {
         if (resetting) return;
+        var current = draft();
+        if (!started && !hasEntries(current)) return;
         try {
-            workflowLocalStore.write('draft', 'editor', draft());
+            saveLocalDraft(current);
             status.textContent = recoveryMessage || (orderId
                 ? 'Order saved. You can retry printing without creating another.'
                 : 'Draft saved on this device.');
@@ -67,11 +135,11 @@ export function attachCreateOrderWorkflow(options) {
             ? 'Save as new order & print'
             : 'Save & print invoice';
     }
-    function reset() {
-        var latest = workflowLocalStore.read('draft', 'editor', null);
-        if (!latest || latest.requestId === requestId) workflowLocalStore.remove('draft', 'editor');
+    function reset(preserveStoredDrafts) {
+        if (!preserveStoredDrafts) removeMatchingDrafts(requestId);
         requestId = createWorkflowId();
         orderId = '';
+        started = false;
         setRecovery('');
         timer = createEntryTimer();
         // Clearing the old form must not overwrite another tab's newer saved draft.
@@ -82,6 +150,8 @@ export function attachCreateOrderWorkflow(options) {
             resetting = false;
         }
         form.querySelector('#workflow-suggestions').replaceChildren();
+        saved = readPreviousDraft();
+        updateResumePanel();
         status.textContent = 'Ready for the next customer.';
         form.querySelector('#customerName').focus();
     }
@@ -102,6 +172,17 @@ export function attachCreateOrderWorkflow(options) {
     form.addEventListener('input', touch);
     form.addEventListener('change', touch);
     form.addEventListener('workflow-items-changed', persist);
+    form.addEventListener('workflow-start-new', function startNewOrder() {
+        if (busy) return;
+        try {
+            var current = draft();
+            if (hasEntries(current)) saveLocalDraft(current);
+            reset(true);
+        } catch (error) {
+            status.textContent = 'Could not keep this draft: ' + error.message + '. Keep this page open.';
+            notificationService.error(status.textContent);
+        }
+    });
     form.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && event.target.matches('.qty-input')) {
             event.preventDefault();
@@ -133,6 +214,7 @@ export function attachCreateOrderWorkflow(options) {
         if (busy || !form.reportValidity()) return;
         var saveOnly = event.submitter && event.submitter.dataset.mode === 'save';
         var current = draft();
+        var printedEntries = entrySignature(current);
         if (!current.items.length) {
             notificationService.error('Add at least one product.');
             return;
@@ -148,7 +230,7 @@ export function attachCreateOrderWorkflow(options) {
                 current.requestId = createWorkflowId();
                 current.orderId = '';
             }
-            workflowLocalStore.write('draft', 'editor', current);
+            saveLocalDraft(current);
             requestId = current.requestId;
             orderId = current.orderId;
             setRecovery('');
@@ -174,11 +256,13 @@ export function attachCreateOrderWorkflow(options) {
             await showNativeInvoicePrint(popup, [result.invoice], options.settings, {
                 layout: layout.value,
                 onConfirmed: function () {
-                    // Do not clear a new customer's draft if another tab has already started one.
-                    var latest = workflowLocalStore.read('draft', 'editor', null);
-                    if (latest && latest.requestId === current.requestId)
-                        workflowLocalStore.remove('draft', 'editor');
-                    if (form.isConnected && requestId === current.requestId) reset();
+                    // A late print confirmation must not clear newer edits or
+                    // another tab's recovery copy, even if they share an order ID.
+                    removeMatchingDrafts(current.requestId, printedEntries);
+                    if (form.isConnected && requestId === current.requestId) {
+                        if (entrySignature(draft()) === printedEntries) reset(true);
+                        else status.textContent = 'Printing recorded. Your newer entries are still here.';
+                    }
                 },
             });
             status.textContent =
@@ -262,5 +346,5 @@ export function attachCreateOrderWorkflow(options) {
     form.querySelector('#workflow-refresh-suggestions').addEventListener('click', refreshSuggestions);
     form.querySelector('#customerName').addEventListener('change', refreshSuggestions);
     form.querySelector('#customerName').focus();
-    persist();
+    if (options.hasRepeatDraft) persist();
 }

@@ -307,6 +307,7 @@ export const renderCreateOrder = async (params, routeContext) => {
     container.innerHTML = `
         <div class="animate-fade-in grid-cols-mobile-1" style="display: grid; grid-template-columns: minmax(0, 1fr); max-width: 1150px; gap: var(--space-6); align-items: start;">
             <form id="create-order-form">
+                <div id="workflow-resume" class="card" style="padding: 16px; margin-bottom: var(--space-4);" hidden></div>
                 ${dependencyWarnings.length ? '<div class="dashboard-alert-strip" style="margin-bottom: var(--space-4);">Limited connection: ' + escapeHtml(dependencyWarnings.join(', ')) + ' did not finish loading. You can still create an order with available data.</div>' : ''}
                 ${createCard({
         title: 'Customer Information',

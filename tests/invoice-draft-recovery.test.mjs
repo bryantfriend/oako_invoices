@@ -5,6 +5,7 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import * as productivity from '../js/core/invoiceProductivity.js';
 import * as operations from '../js/services/operationsPlanningService.js';
+import * as constants from '../js/core/constants.js';
 
 const bundles = new Map();
 async function load(file, modules, globals = {}, keepIcf = false) {
@@ -185,24 +186,25 @@ function element() {
         focus() {}, replaceChildren() {}, append(child) { this.children.push(child); }, style: {},
     };
 }
-async function editor(q, storage) {
+async function editor(q, storage, options = {}) {
     const ids = {};
-    for (const id of ['workflow-editor-actions', 'workflow-layout', 'workflow-draft-status', 'workflow-save', 'workflow-print', 'workflow-new', 'workflow-suggestions', 'workflow-refresh-suggestions', 'customerName']) ids['#' + id] = element();
+    for (const id of ['workflow-editor-actions', 'workflow-layout', 'workflow-draft-status', 'workflow-save', 'workflow-print', 'workflow-new', 'workflow-suggestions', 'workflow-refresh-suggestions', 'customerName', 'workflow-resume', 'workflow-resume-description', 'workflow-resume-button']) ids['#' + id] = element();
     ids['#workflow-save'].dataset = { mode: 'save' }; ids['#workflow-print'].dataset = { mode: 'print' };
     ids['#workflow-editor-actions'].querySelector = function query(selector) { return ids[selector]; };
     const form = Object.assign(element(), {
         isConnected: true, elements: Object.values(ids),
         querySelector(selector) { return ids[selector]; }, reportValidity() { return true; },
     });
-    const state = { entries: draft(), ids, form, popup: null, prints: [], errors: [] };
+    const blank = { customerName: '', orderDate: '2026-09-12', notes: '', selectedPriceMode: 'business', items: [] };
+    const state = { entries: options.repeat ? draft() : copy(blank), ids, form, popup: null, prints: [], errors: [] };
     const ui = await load('js/components/createOrderWorkflow.js', {
         invoiceProductivity: productivity, invoiceWorkflowService: q.service,
         orderService: { orderService: { async getOrdersByCustomerName() { return []; } } },
         notificationService: { notificationService: { error(message) { state.errors.push(message); } } },
         workflowLocalStore: { workflowLocalStore: {
-            preference() { return { layout: 'full' }; }, read() { return copy(storage.value); },
-            write(kind, id, value) { if (storage.fail) throw new Error('Storage full'); storage.value = copy(value); },
-            remove() { storage.value = null; },
+            preference() { return { layout: 'full' }; }, read(kind, id) { return copy((id === 'previous-editor' ? storage.previous : storage.value) || null); },
+            write(kind, id, value) { if (storage.fail) throw new Error('Storage full'); if (id === 'previous-editor') storage.previous = copy(value); else storage.value = copy(value); },
+            remove(kind, id) { if (id === 'previous-editor') storage.previous = null; else storage.value = null; },
         } },
         nativeInvoicePrintService: {
             reserveInvoicePrintWindow() {
@@ -213,20 +215,22 @@ async function editor(q, storage) {
             },
             async showNativeInvoicePrint(popup, invoices, settings, options) { state.prints.push({ invoices, options }); },
         },
-    }, { window: { focus() {}, confirm() { return true; } } });
-    ui.attachCreateOrderWorkflow({ form, settings: {},
+    }, { window: { focus() {}, confirm() { return options.confirm !== false; } } });
+    ui.attachCreateOrderWorkflow({ form, settings: {}, hasRepeatDraft: !!options.repeat,
         getDraft() { return copy(state.entries); }, restore(value) { state.entries = copy(value); },
-        reset() { state.entries.items = []; },
+        reset() { state.entries = copy(blank); form.listeners['workflow-items-changed'](); },
     });
     state.submit = async function submit(mode = 'print') {
         await form.listeners.submit({ preventDefault() {}, submitter: ids[mode === 'save' ? '#workflow-save' : '#workflow-print'] });
     };
+    state.resume = function resume() { ids['#workflow-resume-button'].listeners.click(); };
     return state;
 }
 
 test('editor recovery keeps all entries, survives interrupted preparation and reloads without duplicates', async function () {
     const q = await fixture(); const original = copy(q.orders[0]); const storage = { value: draft() };
     let ui = await editor(q, storage);
+    ui.resume();
     await ui.submit();
     assert.equal(ui.ids['#workflow-print'].textContent, 'Save as new order & print');
     assert.match(ui.popup.document.body.textContent, /was archived/);
@@ -240,7 +244,7 @@ test('editor recovery keeps all entries, survives interrupted preparation and re
     const replacementId = storage.value.orderId;
     assert.equal(replacementId, 'desk-' + storage.value.requestId);
     assert.deepEqual(storage.value.items, draft().items); assert.deepEqual(q.orders[0], original);
-    ui = await editor(q, storage); await ui.submit();
+    ui = await editor(q, storage); ui.resume(); await ui.submit();
     assert.equal(q.orders.length, 2); assert.equal(q.invoices.length, 1);
     assert.equal(ui.prints[0].invoices[0].orderId, replacementId);
     assert.equal(ui.prints[0].invoices[0].totalAmount, 1104);
@@ -249,19 +253,19 @@ test('editor recovery keeps all entries, survives interrupted preparation and re
 
 test('a lost replacement save response retains its new request across reload and retries just once', async function () {
     const q = await fixture(); const storage = { value: draft() };
-    let ui = await editor(q, storage); await ui.submit();
+    let ui = await editor(q, storage); ui.resume(); await ui.submit();
     q.failCreate = true; await ui.submit();
     const requestId = storage.value.requestId;
     assert.notEqual(requestId, draft().requestId); assert.equal(storage.value.orderId, '');
     assert.equal(q.orders.length, 2); assert.equal(q.invoices.length, 0);
-    ui = await editor(q, storage); await ui.submit(); await ui.submit();
+    ui = await editor(q, storage); ui.resume(); await ui.submit(); await ui.submit();
     assert.equal(storage.value.requestId, requestId);
     assert.equal(q.orders.length, 2); assert.equal(q.invoices.length, 1);
 });
 
 test('storage failure aborts recovery before creating anything; Save as new order also supports save-only', async function () {
     const q = await fixture(); const storage = { value: draft() };
-    const ui = await editor(q, storage); await ui.submit('save');
+    const ui = await editor(q, storage); ui.resume(); await ui.submit('save');
     storage.fail = true; await ui.submit('save');
     assert.equal(q.writes, 0); assert.equal(storage.value.requestId, draft().requestId);
     assert.equal(ui.ids['#workflow-save'].textContent, 'Save as new order');
@@ -269,4 +273,93 @@ test('storage failure aborts recovery before creating anything; Save as new orde
     assert.equal(q.orders.length, 2); assert.equal(q.invoices.length, 0); assert.equal(ui.prints.length, 0);
     assert.deepEqual(storage.value.items, draft().items);
     assert.equal(ui.ids['#workflow-save'].textContent, 'Save order');
+});
+
+test('New Order and reload stay blank while keeping the old draft available only through Resume', async function () {
+    const q = await fixture(); const storage = { value: draft() }; const saved = copy(storage.value);
+    for (let visit = 0; visit < 3; visit += 1) {
+        const ui = await editor(q, storage);
+        assert.equal(ui.entries.customerName, ''); assert.deepEqual(ui.entries.items, []);
+        assert.equal(ui.ids['#workflow-resume'].hidden, false);
+        assert.deepEqual(storage.value, saved, 'Opening a blank editor must not replace the saved draft');
+        ui.form.listeners.change(); assert.deepEqual(storage.value, saved);
+    }
+    const ui = await editor(q, storage); ui.resume();
+    assert.deepEqual(ui.entries.items, saved.items); assert.equal(ui.entries.customerName, saved.customerName);
+    assert.equal(ui.ids['#workflow-resume'].hidden, true); assert.equal(q.writes, 0);
+});
+
+test('typing a new order preserves the previous draft and creates a fresh identity without touching its order', async function () {
+    const q = await fixture(); const original = copy(q.orders[0]); const storage = { value: draft() };
+    const ui = await editor(q, storage);
+    ui.entries.customerName = 'Next customer'; ui.entries.items = copy(draft().items);
+    ui.form.listeners.input();
+    assert.equal(storage.previous.requestId, draft().requestId);
+    assert.notEqual(storage.value.requestId, draft().requestId); assert.equal(storage.value.orderId, '');
+    await ui.submit('save');
+    assert.equal(q.orders.length, 2); assert.equal(q.orders[1].customerName, 'Next customer');
+    assert.deepEqual(q.orders[0], original);
+    const nextVisit = await editor(q, storage);
+    assert.equal(nextVisit.entries.customerName, ''); assert.deepEqual(nextVisit.entries.items, []);
+});
+
+test('resuming another draft preserves current typed work and cancellation changes nothing', async function () {
+    const q = await fixture(); const storage = { value: draft() };
+    const ui = await editor(q, storage); ui.entries.customerName = 'New work'; ui.form.listeners.input();
+    const newWork = copy(storage.value); ui.resume();
+    assert.equal(ui.entries.customerName, draft().customerName);
+    assert.deepEqual(storage.previous, newWork);
+    ui.resume(); assert.equal(ui.entries.customerName, 'New work');
+    const cancelled = await editor(q, storage, { confirm: false });
+    cancelled.entries.customerName = 'Keep this'; cancelled.form.listeners.input();
+    const before = copy(storage); cancelled.resume();
+    assert.equal(cancelled.entries.customerName, 'Keep this'); assert.deepEqual(storage, before);
+});
+
+test('Repeat Order remains explicit and uses a fresh identity without loading the stored order', async function () {
+    const q = await fixture(); const storage = { value: draft() };
+    const ui = await editor(q, storage, { repeat: true });
+    assert.equal(ui.entries.customerName, draft().customerName); assert.equal(ui.ids['#workflow-resume'].hidden, true);
+    assert.equal(storage.value.orderId, ''); assert.notEqual(storage.value.requestId, draft().requestId);
+    assert.equal(storage.previous.requestId, draft().requestId);
+    await ui.submit('save'); assert.equal(q.orders.length, 2);
+});
+
+test('late print confirmation preserves newer edits and another tabs draft, but clears unchanged finished copies', async function () {
+    const q = await fixture(); q.orders[0].archived = false;
+    const storage = { value: draft() }; const ui = await editor(q, storage); ui.resume(); await ui.submit();
+    ui.entries.items[0].quantity = 8; ui.form.listeners.input();
+    ui.prints[0].options.onConfirmed();
+    assert.equal(storage.value.items[0].quantity, 8); assert.equal(ui.entries.items[0].quantity, 8);
+    assert.match(ui.ids['#workflow-draft-status'].textContent, /newer entries/);
+    const other = Object.assign(draft(), { requestId: 'another-tab', customerName: 'Another customer' });
+    storage.value = copy(other); ui.prints[0].options.onConfirmed(); assert.deepEqual(storage.value, other);
+    const finished = await editor(q, { value: draft(), previous: draft() }); finished.resume(); await finished.submit();
+    finished.prints[0].options.onConfirmed();
+    assert.equal(finished.ids['#workflow-resume'].hidden, true); assert.deepEqual(finished.entries.items, []);
+});
+
+test('storage failures while starting or resuming preserve saved recovery data and prevent cloud creation', async function () {
+    const q = await fixture(); const storage = { value: draft(), fail: true }; const ui = await editor(q, storage);
+    ui.resume(); assert.equal(ui.entries.customerName, ''); assert.equal(storage.value.requestId, draft().requestId);
+    ui.entries = copy(draft()); await ui.submit('save');
+    assert.equal(q.writes, 0); assert.equal(storage.value.requestId, draft().requestId);
+});
+
+test('clicking the active New Order navigation opens a blank editor and preserves its current draft', async function () {
+    const q = await fixture(); const storage = { value: draft() }; const ui = await editor(q, storage);
+    ui.resume();
+    const events = [];
+    const { router } = await load('js/router.js', { constants }, {
+        window: { location: { hash: '#/orders/create' }, addEventListener() {} },
+        document: { addEventListener() {}, getElementById() { return { dispatchEvent(event) { events.push(event.type); ui.form.listeners[event.type](); } }; } },
+        Event: class Event { constructor(type) { this.type = type; } },
+    });
+    await router.navigate('/orders/create');
+    assert.deepEqual(events, ['workflow-start-new']);
+    assert.equal(ui.entries.customerName, ''); assert.deepEqual(ui.entries.items, []);
+    assert.equal(storage.value.requestId, draft().requestId); assert.equal(ui.ids['#workflow-resume'].hidden, false);
+    ui.entries.customerName = 'Unsaved work'; storage.fail = true;
+    await router.navigate('/orders/create');
+    assert.equal(ui.entries.customerName, 'Unsaved work'); assert.match(ui.ids['#workflow-draft-status'].textContent, /Could not keep this draft/);
 });

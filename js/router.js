@@ -103,6 +103,11 @@ class Router {
         var now = Date.now();
 
         if (currentPath === normalizedPath && safeOptions.force !== true) {
+            if (normalizedPath === ROUTES.CREATE_ORDER) {
+                var editor = document.getElementById('create-order-form');
+                if (editor) editor.dispatchEvent(new Event('workflow-start-new'));
+                return;
+            }
             console.info('[NAV_CLICK] route=' + routeName + ' ignored reason=already-active');
             return;
         }
