@@ -8,6 +8,7 @@ import * as firestore from 'firebase/firestore';
 import { ref, uploadBytes, getBytes } from 'firebase/storage';
 import * as invoiceNumbers from '../js/services/invoiceNumberService.js';
 import * as constants from '../js/core/constants.js';
+import * as archiveRecordHelpers from '../js/core/archiveRecordHelpers.js';
 import printProcessor from '../js/ICF/Stages/Processors/Invoices/processMarkInvoicePrinted.js';
 
 // Never allow this suite to reach a production Firebase project.
@@ -44,9 +45,13 @@ async function loadService(file, db, uid, extra = {}) {
         'firebase-firestore': firestore,
         invoiceNumberService: invoiceNumbers,
         constants,
+        archiveRecordHelpers,
+        sessionDataStore: { getOrdersSnapshot() { return null; } },
+        offlineQueueService: { offlineQueueService: { async getLocalEntitySnapshots() { return {}; } } },
+        googleSheetsService: { googleSheetsService: { async syncOrderLifecycle() { return { success: true }; } } },
         workflowLocalStore: { workflowLocalStore: { preference() { return { fun: false }; } } },
         workflowEffectsService: { queueWorkflowEffect() {} },
-        offlineStatusService: { offlineStatusService: { isOnline() { return true; } } },
+        offlineStatusService: { offlineStatusService: { isOnline() { return true; }, canAttemptCloudRead() { return true; } } },
         store: { store: { getState() { return { isAdmin: true, adminProfile: { role: 'admin' } }; } } }
     }, extra);
     const result = { exports: {} };
@@ -139,6 +144,12 @@ for (const role of roles) {
         const inventory = (await getDoc(doc(db, 'inventory', '2026-09-11_' + role))).data();
         assert.equal(inventory.invoiceQuantity, 3);
         assert.equal((await getDoc(doc(db, 'processed_invoice_intents', invoiceOptions.intentId))).exists(), true);
+        // Exercise the service lookup/archival path used by the dashboard, not just raw writes.
+        assert.equal((await orderService.getOrderById(order.id)).id, order.id);
+        assert.equal((await orderService.archiveOrder(order.id)).archived, true);
+        assert.equal((await orderService.archiveOrder(order.id)).alreadyArchived, true);
+        assert.equal((await orderService.unarchiveOrder(order.id)).unarchived, true);
+        assert.equal((await getDoc(doc(db, 'orders', order.id))).data().archived, false);
     });
 }
 

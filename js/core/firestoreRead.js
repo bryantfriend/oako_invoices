@@ -289,10 +289,10 @@ async function withTimeout(promise, collectionName, timeoutMs) {
 }
 
 function mapSnapshotRows(snapshot) {
-    return snapshot.docs.map(documentSnapshot => ({
-        id: documentSnapshot.id,
-        ...documentSnapshot.data()
-    }));
+    return snapshot.docs.map(function(documentSnapshot) {
+        // Firestore's document path is authoritative, even for legacy records with an id field.
+        return Object.assign({}, documentSnapshot.data(), { id: documentSnapshot.id });
+    });
 }
 
 function getConnectionSnapshot() {

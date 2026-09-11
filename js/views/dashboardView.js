@@ -1,4 +1,5 @@
 import { mountInvoiceProductivityPanel } from '../components/invoiceProductivityPanel.js';
+import { createOrderArchiveAction } from '../components/orderArchiveAction.js';
 import { dashboardController } from "../controllers/dashboardController.js";
 import { inventoryController } from "../controllers/inventoryController.js";
 import { getLocalDateKey } from "../core/dailyOrders.js";
@@ -477,8 +478,8 @@ export const renderDashboard = async (params, routeContext) => {
             archivedAt: new Date(),
             updatedAt: new Date()
         };
-        if (result.queued) {
-            patch.syncState = 'pending_sync';
+        if (result.queued || result.local) {
+            patch.syncState = result.local ? 'offline_created' : 'pending_sync';
             patch.syncStatus = 'pending';
         }
         updateLocalOrder(orderId, patch);
@@ -2191,21 +2192,21 @@ export const renderDashboard = async (params, routeContext) => {
             }
         };
 
-        window.togglePrinted = async (id, isPrintedState) => {
-            const { orderService } = await import("../services/orderService.js");
-            await orderService.updateOrder(id, { isPrinted: isPrintedState });
-            dashboardController.updateCachedOrder(id, { isPrinted: isPrintedState, updatedAt: new Date() }, 'toggle-printed');
-            renderDashboard();
+        window.togglePrinted = async function(id, isPrintedState) {
+            try {
+                const { orderService } = await import("../services/orderService.js");
+                await orderService.updateOrder(id, { isPrinted: isPrintedState });
+                dashboardController.updateCachedOrder(id, { isPrinted: isPrintedState, updatedAt: new Date() }, 'toggle-printed');
+                await renderDashboard();
+            } catch (error) {
+                notificationService.error(error.message || 'Could not update print status. Please try again.');
+            }
         };
 
     window.unarchiveOrder = async (id) => {
             try {
                 const { orderService } = await import("../services/orderService.js");
                 const result = await orderService.unarchiveOrder(id);
-                if (result && result.transitioned === false) {
-                    notificationService.info('Order is already active.');
-                    return;
-                }
                 animateOrderRows([id], 'archive-row-restore-out');
                 await waitForArchiveAnimation();
                 updateLocalOrder(id, {
@@ -2226,28 +2227,28 @@ export const renderDashboard = async (params, routeContext) => {
             }
         };
 
-        window.deleteOrder = async (id) => {
-            if (confirm('Archive this draft order? It will be hidden from the active Orders list, but the record will be kept.')) {
+        window.deleteOrder = createOrderArchiveAction({
+            confirm: function() {
+                return confirm('Archive this draft order? It will be hidden from the active Orders list, but the record will be kept.');
+            },
+            archiveOrders: async function(ids, options) {
                 const { orderService } = await import("../services/orderService.js");
-                const result = await orderService.deleteOrder(id);
-                if (result && result.localRemoved) {
-                    dashboardController.removeCachedOrder(id, 'remove-local-pending-order');
-                    allOrders = allOrders.filter(function(order) {
-                        return order && order.id !== id;
-                    });
-                    notificationService.success('Local pending order removed.');
-                } else {
-                    animateOrderRows([id], 'archive-row-exit');
-                    await waitForArchiveAnimation();
-                    markOrderArchivedLocally(id, result);
-                    notificationService.success('Order archived.');
-                }
+                return orderService.archiveOrders(ids, options);
+            },
+            applyArchive: async function(id, result) {
+                animateOrderRows([id], 'archive-row-exit');
+                await waitForArchiveAnimation();
+                markOrderArchivedLocally(id, result);
+                notificationService.success(result && (result.queued || result.local) ? 'Order archive saved locally. It will sync when online.' : 'Order archived.');
                 selectedOrderIds.delete(id);
                 activeOrders = getActiveOrders(allOrders);
                 archivedFilter = 'active';
                 renderUI();
+            },
+            showError: function(message) {
+                notificationService.error(message);
             }
-        };
+        });
     };
 
     stopLoadingQuoteRotation('orders');

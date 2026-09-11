@@ -4,6 +4,7 @@ import {
     collection,
     addDoc,
     getDoc,
+    getDocFromServer,
     getDocFromCache,
     doc,
     updateDoc,
@@ -28,6 +29,7 @@ import updateOrderStatusIntentModule from "../ICF/Intents/UpdateOrderStatusInten
 import archiveSelectedOrdersIntentModule from "../ICF/Intents/ArchiveSelectedOrdersIntent.js";
 import { normalizeArchivedRecord } from "../core/archiveRecordHelpers.js";
 import { classifySyncError } from "./syncRetryPolicy.js";
+import sessionDataStore from './sessionDataStore.js';
 
 const COLLECTION = 'orders';
 const LEGACY_ARCHIVE_COLLECTION = 'orders_archive';
@@ -73,8 +75,25 @@ function getPipelineErrorMessage(result) {
 
 function isPendingLocalCreate(order) {
     return !!(order
-        && (order.syncAction === 'create' || order.syncState === 'offline_created' || order.syncStatus === 'pending')
+        && (order.syncAction === 'create' || (order.syncState === 'offline_created' && order.offlineCreated === true))
         && !order.serverId);
+}
+
+function orderReadError(code, message) {
+    var error = new Error(message);
+    error.code = code;
+    return error;
+}
+
+function normalizeOrderSnapshot(id, record, pendingOrder) {
+    return normalizeArchivedRecord(Object.assign({}, record || {}, pendingOrder || {}, { id: id }), ORDER_STATUS.DRAFT);
+}
+
+function getSessionOrder(id) {
+    // This snapshot is owned by the signed-in account; do not fall back to another account's cache.
+    var snapshot = sessionDataStore.getOrdersSnapshot();
+    var records = snapshot ? snapshot.records : [];
+    return records.find(function(record) { return record.id === id; }) || null;
 }
 
 function mergeLocalOrders(serverOrders, localOrdersById) {
@@ -214,49 +233,45 @@ export const orderService = {
         }
     },
 
-    async getOrderById(id) {
-        let timeoutId;
-        try {
-            const docRef = doc(db, COLLECTION, id);
-            const localOrder = await getLocalOrderSnapshot(id);
-            if (!offlineStatusService.canAttemptCloudRead() && localOrder) {
-                return normalizeArchivedRecord(localOrder, ORDER_STATUS.DRAFT);
-            }
-
-            if (offlineStatusService.canAttemptCloudRead()) {
-                try {
-                    const timeoutPromise = new Promise(function(resolve, reject) {
-                        timeoutId = setTimeout(function() {
-                            reject(createCollectionTimeoutError(COLLECTION, 30000));
-                        }, 30000);
-                    });
-                    const serverSnapshot = await Promise.race([getDoc(docRef), timeoutPromise]);
-                    if (serverSnapshot.exists()) {
-                        return normalizeArchivedRecord(Object.assign({ id: serverSnapshot.id }, serverSnapshot.data(), localOrder || {}), ORDER_STATUS.DRAFT);
-                    }
-                    return normalizeArchivedRecord(localOrder, ORDER_STATUS.DRAFT);
-                } catch (serverError) {
-                    console.warn("Could not load server order; checking offline document cache.", serverError);
-                }
-            }
-
-            try {
-                const cachedSnapshot = await getDocFromCache(docRef);
-                if (cachedSnapshot.exists()) {
-                    return normalizeArchivedRecord(Object.assign({ id: cachedSnapshot.id }, cachedSnapshot.data(), localOrder || {}), ORDER_STATUS.DRAFT);
-                }
-            } catch (cacheError) {
-                if (!localOrder) {
-                    console.warn("Order was not available in the offline document cache.", cacheError);
-                }
-            }
-            return normalizeArchivedRecord(localOrder, ORDER_STATUS.DRAFT);
-        } catch (error) {
-            console.error("Error fetching order:", error);
-            throw error;
-        } finally {
-            clearTimeout(timeoutId);
+    async getOrderById(id, options) {
+        if (typeof id !== 'string' || !id.trim() || id.indexOf('/') !== -1) {
+            throw orderReadError('invalid-argument', 'This order has an invalid reference. Refresh Orders and try again.');
         }
+        var committedOnly = options && options.committedOnly === true;
+        var orderRef = doc(db, COLLECTION, id);
+        var localOrder = committedOnly ? null : await getLocalOrderSnapshot(id);
+        var readError = null;
+        var timeoutId;
+        if (offlineStatusService.canAttemptCloudRead()) {
+            try {
+                var timeout = new Promise(function(resolve, reject) {
+                    timeoutId = setTimeout(function() {
+                        reject(createCollectionTimeoutError(COLLECTION, 30000));
+                    }, 30000);
+                });
+                var snapshot = await Promise.race([getDocFromServer(orderRef), timeout]);
+                if (snapshot.exists()) return normalizeOrderSnapshot(snapshot.id, snapshot.data(), localOrder);
+                // Only a successful server read can establish that a record is missing.
+                // A queued create can legitimately exist before its first cloud commit.
+                return isPendingLocalCreate(localOrder) ? normalizeOrderSnapshot(id, localOrder) : null;
+            } catch (error) {
+                if (committedOnly || error.code === 'permission-denied' || error.code === 'unauthenticated') throw error;
+                readError = error;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+        if (committedOnly) throw orderReadError('unavailable', 'Waiting for a connection to the saved order.');
+        try {
+            var cached = await getDocFromCache(orderRef);
+            if (cached.exists()) return normalizeOrderSnapshot(cached.id, cached.data(), localOrder);
+        } catch (cacheError) {
+            // Firestore uses a memory cache; the Orders screen also has an account-scoped cache.
+        }
+        var sessionOrder = getSessionOrder(id);
+        if (sessionOrder || localOrder) return normalizeOrderSnapshot(id, sessionOrder, localOrder);
+        if (readError) throw readError;
+        throw orderReadError('unavailable', 'This order is not available offline. Reconnect and try again.');
     },
 
     async getLastOrderByCustomer(customerName) {
@@ -372,7 +387,7 @@ export const orderService = {
                 if (snapshot.exists()) {
                     var existing = snapshot.data();
                     if (!requestId || existing.workflowRequestId !== requestId || existing.createdBy !== userId) throw new Error('This save reference belongs to an existing order. Refresh Orders before creating another.');
-                    return Object.assign({ id: docRef.id }, existing, { workflowReused: true });
+                    return Object.assign({}, existing, { id: docRef.id, workflowReused: true });
                 }
                 transaction.set(docRef, payload);
                 return Object.assign({}, payload, { id: docRef.id, createdAt: new Date(), updatedAt: new Date() });
@@ -595,11 +610,9 @@ export const orderService = {
 
     async archiveOrder(id) {
         try {
-            const existingOrder = await this.getOrderById(id).catch(function() {
-                return null;
-            });
+            const existingOrder = await this.getOrderById(id);
             if (!existingOrder) {
-                throw new Error('Order not found.');
+                throw orderReadError('order-not-found', 'This order is no longer available. Refresh Orders and try again.');
             }
             if (existingOrder.archived === true) {
                 return { archived: true, alreadyArchived: true, transitioned: false, order: existingOrder };
@@ -617,7 +630,7 @@ export const orderService = {
                     syncAction: 'create',
                     syncState: 'offline_created'
                 });
-                return { local: true, archived: true, transitioned: true, order: compactedOrder || Object.assign({}, existingOrder || {}, { archived: true }) };
+                if (compactedOrder) return { local: true, archived: true, transitioned: true, order: compactedOrder };
             }
 
             if (!offlineStatusService.isOnline()) {
@@ -654,7 +667,7 @@ export const orderService = {
             const transitionResult = await runTransaction(db, async function(transaction) {
                 const snapshot = await transaction.get(orderRef);
                 if (!snapshot.exists()) throw new Error('Order not found.');
-                const current = normalizeArchivedRecord(Object.assign({ id: snapshot.id }, snapshot.data()), ORDER_STATUS.DRAFT);
+                const current = normalizeOrderSnapshot(snapshot.id, snapshot.data());
                 if (current.archived === true) return { transitioned: false, order: current };
                 transaction.update(orderRef, {
                     archived: true,
@@ -690,11 +703,9 @@ export const orderService = {
 
     async unarchiveOrder(id) {
         try {
-            const existingOrder = await this.getOrderById(id).catch(function() {
-                return null;
-            });
+            const existingOrder = await this.getOrderById(id);
             if (!existingOrder) {
-                throw new Error('Order not found.');
+                throw orderReadError('order-not-found', 'This order is no longer available. Refresh Orders and try again.');
             }
             if (existingOrder.archived !== true) {
                 return { unarchived: true, alreadyActive: true, transitioned: false, order: existingOrder };
@@ -718,7 +729,7 @@ export const orderService = {
                     syncAction: 'create',
                     syncState: 'offline_created'
                 }));
-                return { local: true, unarchived: true, transitioned: true, order: compactedOrder || Object.assign({}, existingOrder || {}, legacyCleanup, { archived: false }) };
+                if (compactedOrder) return { local: true, unarchived: true, transitioned: true, order: compactedOrder };
             }
 
             if (!offlineStatusService.isOnline()) {
@@ -760,7 +771,7 @@ export const orderService = {
             const transitionResult = await runTransaction(db, async function(transaction) {
                 const snapshot = await transaction.get(orderRef);
                 if (!snapshot.exists()) throw new Error('Order not found.');
-                const stored = Object.assign({ id: snapshot.id }, snapshot.data());
+                const stored = Object.assign({}, snapshot.data(), { id: snapshot.id });
                 const current = normalizeArchivedRecord(stored, ORDER_STATUS.DRAFT);
                 if (current.archived !== true) return { transitioned: false, order: current };
                 const transitionPatch = Object.assign({}, stored.previousStatus ? {
@@ -801,13 +812,8 @@ export const orderService = {
         }
     },
     async deleteOrder(id) {
-        const existingOrder = await this.getOrderById(id).catch(function() {
-            return null;
-        });
-        if (isPendingLocalCreate(existingOrder)) {
-            await offlineQueueService.removePendingOrderCreate(id);
-            return { localRemoved: true };
-        }
+        // Compatibility alias: Archive Draft promises to retain the record, including
+        // queued creates that may already have an invoice or background work attached.
         return this.archiveOrder(id);
     }
 };

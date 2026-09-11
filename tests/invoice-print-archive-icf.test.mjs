@@ -100,5 +100,5 @@ test('single document reads can attempt the cloud during degraded connectivity',
     assert.ok(invoiceService.includes('offlineStatusService.canAttemptCloudRead()'));
     assert.ok(orderService.includes('offlineStatusService.canAttemptCloudRead()'));
     assert.ok(invoiceService.includes('getDocFromCache(docRef)'));
-    assert.ok(orderService.includes('getDocFromCache(docRef)'));
+    assert.ok(orderService.includes('getDocFromCache(orderRef)'));
 });

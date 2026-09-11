@@ -208,7 +208,7 @@ test('Offline invoice print dependencies use cached/local data before network re
     assert.notEqual(productSource.indexOf("await readCachedRowsAsync('categories:all')"), -1);
     assert.notEqual(invoiceSource.indexOf('offlineQueueService.getLocalInvoiceSnapshot(id)'), -1);
     assert.notEqual(invoiceSource.indexOf('getDocFromCache(docRef)'), -1);
-    assert.notEqual(orderSource.indexOf('getDocFromCache(docRef)'), -1);
+    assert.notEqual(orderSource.indexOf('getDocFromCache(orderRef)'), -1);
 });
 test('Route render errors stay on the current route instead of redirecting to Orders', function() {
     var routerSource = fs.readFileSync('js/router.js', 'utf8');
@@ -233,7 +233,7 @@ test('Offline order creation is queued, merged into reads, and replayed by sync'
     assert.notEqual(syncSource.indexOf('writeOrderCreate(queueItem)'), -1);
 });
 
-test('Pending offline orders can be archived or removed without duplicate syncs', function() {
+test('Pending offline orders are archived without deleting queued work or duplicating creates', function() {
     var orderSource = fs.readFileSync('js/services/orderService.js', 'utf8');
     var queueSource = fs.readFileSync('js/services/offlineQueueService.js', 'utf8');
     var syncSource = fs.readFileSync('js/services/syncService.js', 'utf8');
@@ -241,13 +241,13 @@ test('Pending offline orders can be archived or removed without duplicate syncs'
 
     assert.notEqual(orderSource.indexOf('isPendingLocalCreate'), -1);
     assert.notEqual(orderSource.indexOf('offlineQueueService.compactPendingOrderCreate'), -1);
-    assert.notEqual(orderSource.indexOf('offlineQueueService.removePendingOrderCreate'), -1);
+    assert.equal(orderSource.indexOf('offlineQueueService.removePendingOrderCreate'), -1);
     assert.notEqual(orderSource.indexOf("enqueue('archiveOrder', 'order'"), -1);
     assert.notEqual(queueSource.indexOf('compactPendingOrderCreate'), -1);
     assert.notEqual(queueSource.indexOf('removePendingOrderCreate'), -1);
     assert.notEqual(syncSource.indexOf("queueItem.actionType === 'archiveOrder'"), -1);
     assert.notEqual(syncSource.indexOf('writeOrderArchive(queueItem)'), -1);
-    assert.notEqual(dashboardSource.indexOf('removeCachedOrder'), -1);
+    assert.notEqual(dashboardSource.indexOf('createOrderArchiveAction'), -1);
 });
 
 test('Manual Sync Now reports diagnostics and bypasses retry wait', function() {

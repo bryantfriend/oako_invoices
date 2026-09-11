@@ -22,7 +22,7 @@ async function performEffect(effect) {
     if (effect.kind === 'sheets') {
         var orderModule = await import('./orderService.js');
         var sheetsModule = await import('./googleSheetsService.js');
-        var order = await orderModule.orderService.getOrderById(effect.entityId);
+        var order = await orderModule.orderService.getOrderById(effect.entityId, { committedOnly: true });
         if (!order || (order.createdOffline && order.syncStatus === 'pending'))
             throw new Error('Waiting for the order to synchronize.');
         if (
