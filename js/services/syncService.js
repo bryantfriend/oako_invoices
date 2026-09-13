@@ -2,6 +2,7 @@ import { auth, db } from "../core/firebase.js";
 import {
     doc,
     getDoc,
+    getDocFromServer,
     setDoc,
     serverTimestamp,
     updateDoc
@@ -342,8 +343,11 @@ async function writeOrderArchive(queueItem) {
     const orderRef = doc(db, 'orders', queueItem.entityId);
     const localVersion = getLocalOrderSnapshot(queueItem);
     if (queueItem.actionType === 'archiveOrder' || queueItem.actionType === 'unarchiveOrder' || queueItem.actionType === 'updateOrder') {
-        const serverSnapshot = await getDoc(orderRef);
+        const serverSnapshot = await getDocFromServer(orderRef);
         if (!serverSnapshot.exists()) {
+            // Replaying an archive after another user removed the order is complete.
+            // Updates/restores still fail rather than silently losing user changes.
+            if (queueItem.actionType === 'archiveOrder') return;
             throw new Error('Order not found during synchronization.');
         }
         const serverVersion = serverSnapshot.data();

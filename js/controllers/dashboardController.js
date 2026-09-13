@@ -5,19 +5,33 @@ import { t } from "../core/i18n.js";
 import { getAnalyticsStatus } from "../core/orderRecordHelpers.js";
 import { productReconciliationService } from "../services/productReconciliationService.js";
 
-function buildDashboardResult(loadResult) {
+function buildDashboardResult(loadResult, reconciliationError) {
     var result = loadResult || {};
     var extras = result.extras || {};
-    var orders = productReconciliationService.projectRecords(result.records || [], 'orders');
+    // Match availability must not suppress order history or monetary statistics.
+    var orders = reconciliationError ? result.records || [] : productReconciliationService.projectRecords(result.records || [], 'orders');
 
     return {
         orders: orders,
         returnOrders: orders,
-        returnInvoices: productReconciliationService.projectRecords(extras.returnInvoices || [], 'order-returns'),
+        returnInvoices: reconciliationError ? extras.returnInvoices || [] : productReconciliationService.projectRecords(extras.returnInvoices || [], 'order-returns'),
         intelligenceSettings: extras.intelligenceSettings || {},
         metrics: dashboardController.calculateMetrics(orders),
-        meta: result.meta || {}
+        meta: Object.assign({}, result.meta || {}, { reconciliationUnavailable: Boolean(reconciliationError) })
     };
+}
+
+async function loadDashboardReconciliation(forceRefresh) {
+    try {
+        var context = await productReconciliationService.loadContext(null, null, forceRefresh);
+        if (!context.products.length) {
+            throw new Error('Product catalog is unavailable.');
+        }
+        return null;
+    } catch (error) {
+        console.warn('Historical product matches are unavailable; preserving Orders statistics.', error);
+        return error;
+    }
 }
 
 export const dashboardController = {
@@ -53,9 +67,9 @@ export const dashboardController = {
 
     async loadDashboard(options) {
         try {
-            await productReconciliationService.loadContext();
+            var reconciliationError = await loadDashboardReconciliation(false);
             var result = await sessionDataStore.loadOrders(options || {});
-            return buildDashboardResult(result);
+            return buildDashboardResult(result, reconciliationError);
         } catch (error) {
             console.error("Dashboard Load Error:", error);
             notificationService.error(t('msg_load_fail'));
@@ -65,9 +79,9 @@ export const dashboardController = {
 
     async refreshDashboard(options) {
         try {
-            await productReconciliationService.loadContext(null, null, true);
+            var reconciliationError = await loadDashboardReconciliation(true);
             var result = await sessionDataStore.refreshOrders(options || {});
-            return buildDashboardResult(result);
+            return buildDashboardResult(result, reconciliationError);
         } catch (error) {
             console.error("Dashboard Refresh Error:", error);
             return { orders: [], returnOrders: [], returnInvoices: [], metrics: {}, meta: { error: true } };
@@ -105,6 +119,10 @@ export const dashboardController = {
 
     getPredictiveSignals(orders) {
         return statsService.getPredictiveSignals(orders);
+    },
+
+    getDailySales: function(orders) {
+        return statsService.getDailySales(orders);
     },
 
     calculateMetrics(orders) {

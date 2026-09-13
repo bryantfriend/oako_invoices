@@ -19,7 +19,7 @@ import { ORDER_STATUS } from "../core/constants.js";
 import { googleSheetsService } from "./googleSheetsService.js";
 import { dataIntegrityService } from "./dataIntegrityService.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getDocsWithCache } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 import { deviceIdService } from "./deviceIdService.js";
@@ -203,21 +203,44 @@ function buildOrderAuditDetails(order) {
     };
 }
 
+async function clearMissingOrder(id) {
+    // Called only after a successful server read confirms absence. Never hide a
+    // permission/network failure or discard an unsynced create as a missing order.
+    var legacy = await getDocFromServer(doc(db, LEGACY_ARCHIVE_COLLECTION, id));
+    if (legacy.exists()) {
+        var archivedOrder = normalizeOrderSnapshot(id, Object.assign({}, legacy.data(), { archived: true }));
+        return { archived: true, alreadyArchived: true, transitioned: false, order: archivedOrder };
+    }
+    sessionDataStore.removeOrderRecord(id, 'server-confirmed-missing');
+    var rows = await readCachedRowsAsync('orders:all:createdAt_desc');
+    writeCachedRows('orders:all:createdAt_desc', rows.filter(function(order) { return order.id !== id; }));
+    return { alreadyMissing: true, removed: true, transitioned: false };
+}
+
 export const orderService = {
-    async getAllOrders() {
+    async getAllOrders(options) {
         try {
-            const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'));
+            var safeOptions = options || {};
+            var currentSource = 'cache';
+            var archiveSource = 'cache';
+            // Read the complete collection: orderBy(createdAt) omits legacy rows
+            // without that field and cannot establish an authoritative absence.
+            const q = query(collection(db, COLLECTION));
             const legacyArchiveQuery = query(collection(db, LEGACY_ARCHIVE_COLLECTION));
             const groups = await Promise.all([
                 getDocsWithCache(q, {
                     collectionName: COLLECTION,
                     cacheKey: 'orders:all:createdAt_desc',
+                    preferServer: safeOptions.forceRefresh === true,
+                    onReadSource: function(source) { currentSource = source; },
                     timeoutMs: 45000,
                     attempts: 2
                 }),
                 getDocsWithCache(legacyArchiveQuery, {
                     collectionName: LEGACY_ARCHIVE_COLLECTION,
                     cacheKey: 'orders_archive:all',
+                    preferServer: safeOptions.forceRefresh === true,
+                    onReadSource: function(source) { archiveSource = source; },
                     timeoutMs: 45000,
                     attempts: 2
                 }).catch(function(error) {
@@ -225,7 +248,13 @@ export const orderService = {
                     return [];
                 })
             ]);
-            const rows = mergeLegacyArchivedOrders(groups[0] || [], groups[1] || []);
+            var currentRows = (groups[0] || []).slice().sort(function(first, second) {
+                return getMillis(second.createdAt) - getMillis(first.createdAt);
+            });
+            const rows = mergeLegacyArchivedOrders(currentRows, groups[1] || []);
+            if (typeof safeOptions.onReadSource === 'function') {
+                safeOptions.onReadSource(currentSource === 'server' && archiveSource === 'server' ? 'server' : 'cache');
+            }
             return mergeLocalOrders(rows, await offlineQueueService.getLocalEntitySnapshots('order'));
         } catch (error) {
             logCollectionError(COLLECTION, error);
@@ -612,7 +641,7 @@ export const orderService = {
         try {
             const existingOrder = await this.getOrderById(id);
             if (!existingOrder) {
-                throw orderReadError('order-not-found', 'This order is no longer available. Refresh Orders and try again.');
+                return await clearMissingOrder(id);
             }
             if (existingOrder.archived === true) {
                 return { archived: true, alreadyArchived: true, transitioned: false, order: existingOrder };
@@ -666,7 +695,7 @@ export const orderService = {
             const orderRef = doc(db, COLLECTION, id);
             const transitionResult = await runTransaction(db, async function(transaction) {
                 const snapshot = await transaction.get(orderRef);
-                if (!snapshot.exists()) throw new Error('Order not found.');
+                if (!snapshot.exists()) return { transitioned: false, missing: true };
                 const current = normalizeOrderSnapshot(snapshot.id, snapshot.data());
                 if (current.archived === true) return { transitioned: false, order: current };
                 transaction.update(orderRef, {
@@ -677,6 +706,7 @@ export const orderService = {
                 });
                 return { transitioned: true, order: Object.assign({}, current, { archived: true, archivedAt: now, archivedBy: userId, updatedAt: now }) };
             });
+            if (transitionResult.missing) return await clearMissingOrder(id);
             if (!transitionResult.transitioned) {
                 return { archived: true, alreadyArchived: true, transitioned: false, order: transitionResult.order };
             }

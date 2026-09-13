@@ -131,12 +131,12 @@ test('bulk archive UI tracks confirmed completion and keeps failed selections re
     });
 });
 
-test('Bulk PDF service uses one PDF, sequential rendering, and odd 2-up blank half handling', () => {
+test('Bulk PDF service uses one PDF and duplicates every invoice page into two halves', () => {
     const source = read('js/services/bulkInvoicePrintService.js');
     assert.match(source, /var pdf = createPdf/);
     assert.match(source, /while \(invoiceIndex < invoices\.length\)/);
-    assert.match(source, /if \(layout === 'two-up-portrait' && pendingHalf\)/);
-    assert.match(source, /addTwoUpSheet\(pdf, pendingHalf, null, hasPdfPage\)/);
+    assert.match(source, /addTwoUpSheet\(pdf, canvas, canvas, hasPdfPage\)/);
+    assert.doesNotMatch(source, /pendingHalf/);
     assert.match(source, /previewWindow\.location\.replace\(blobUrl\)/);
     assert.doesNotMatch(source, /router\.navigate|window\.print\(/);
     assert.doesNotMatch(source, /indexedDB|openOfflineDexieDatabase|localStorage/);

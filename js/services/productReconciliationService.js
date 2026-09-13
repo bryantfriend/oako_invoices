@@ -1,7 +1,7 @@
 import { db, auth } from "../core/firebase.js";
 import { store } from "../core/store.js";
 import { collection, query, where, documentId, doc, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getDocsWithCache, writeCachedRows } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 import { productService } from "./productService.js";
 import { reconcileProductRecords, getCategoryProducts } from "../core/productReconciliation.js";
@@ -14,6 +14,33 @@ var catalog = { products: [], categories: [], mappings: {} };
 var loadedAt = 0;
 var loading = null;
 var issueGroups = {};
+var committedMappings = {};
+
+function mergeMappings(existing, incoming) {
+    var result = Object.assign({}, existing);
+    Object.keys(incoming).forEach(function(key) {
+        var previous = result[key];
+        var next = incoming[key];
+        // A later staff confirmation supersedes an older cached confirmation.
+        if (!previous || !previous.confirmedAt || !next.confirmedAt || next.confirmedAt >= previous.confirmedAt) {
+            result[key] = next;
+        }
+    });
+    return result;
+}
+
+async function loadMappings(forceRefresh) {
+    // Read our durable fallback before a Firestore cache miss can overwrite it.
+    var cached = await readCachedRowsAsync(CACHE_KEY);
+    var rows = await getDocsWithCache(query(collection(db, 'settings'), where(documentId(), '==', SETTINGS_ID)), {
+        collectionName: 'settings', cacheKey: CACHE_KEY, timeoutMs: 15000, attempts: 1,
+        preferServer: forceRefresh === true
+    });
+    var mappings = mergeMappings(cached[0] ? cached[0].mappings || {} : {}, rows[0] ? rows[0].mappings || {} : {});
+    mappings = mergeMappings(mappings, committedMappings);
+    writeCachedRows(CACHE_KEY, [{ id: SETTINGS_ID, mappings: mappings }]);
+    return mappings;
+}
 
 async function loadContext(products, categories, forceRefresh) {
     if (!forceRefresh && loadedAt && Date.now() - loadedAt < 20000) {
@@ -25,11 +52,9 @@ async function loadContext(products, categories, forceRefresh) {
     loading = Promise.all([
         products ? Promise.resolve(products) : productService.getAllProducts(),
         categories ? Promise.resolve(categories) : productService.getAllCategories(),
-        getDocsWithCache(query(collection(db, 'settings'), where(documentId(), '==', SETTINGS_ID)), {
-            collectionName: 'settings', cacheKey: CACHE_KEY, timeoutMs: 15000, attempts: 1
-        })
+        loadMappings(forceRefresh)
     ]).then(function(groups) {
-        catalog = { products: groups[0], categories: groups[1], mappings: groups[2][0] ? groups[2][0].mappings || {} : {} };
+        catalog = { products: groups[0], categories: groups[1], mappings: mergeMappings(groups[2], committedMappings) };
         loadedAt = Date.now();
         return catalog;
     }).finally(function() { loading = null; });
@@ -58,7 +83,7 @@ async function writeConfirmedMatch(entry) {
         throw new Error('Connect and sign in to save a product match. You can try again later.');
     }
     var reference = doc(db, 'settings', SETTINGS_ID);
-    await runTransaction(db, async function saveProductMapping(transaction) {
+    var savedMappings = await runTransaction(db, async function saveProductMapping(transaction) {
         var snapshot = await transaction.get(reference);
         var existing = snapshot.exists() ? snapshot.data().mappings || {} : {};
         var previous = existing[entry.key];
@@ -69,8 +94,10 @@ async function writeConfirmedMatch(entry) {
         var patch = {};
         patch[entry.key] = entry;
         transaction.set(reference, { mappings: patch }, { merge: true });
+        return Object.assign({}, existing, patch);
     });
-    catalog.mappings[entry.key] = entry;
+    committedMappings[entry.key] = entry;
+    catalog.mappings = Object.assign({}, catalog.mappings, savedMappings);
     writeCachedRows(CACHE_KEY, [{ id: SETTINGS_ID, mappings: catalog.mappings }]);
     return entry;
 }

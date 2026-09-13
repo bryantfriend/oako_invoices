@@ -367,6 +367,9 @@ export async function getDocsWithCache(queryRef, options = {}) {
             const snapshot = await withTimeout(enqueueFirestoreRead(function() { return getDocs(queryRef); }, options), collectionName, timeoutMs);
             const rows = mapSnapshotRows(snapshot);
             writeCachedRows(cacheKey, rows);
+            if (typeof options.onReadSource === 'function') {
+                options.onReadSource(snapshot.metadata && snapshot.metadata.fromCache === false ? 'server' : 'cache');
+            }
             return rows;
         } catch (error) {
             lastError = error;

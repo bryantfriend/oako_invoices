@@ -925,6 +925,7 @@ export const renderInvoiceDetail = async ({ id }) => {
     let currentPage = 1;
     let invoiceScale = 1.0;
     let is2UpMode = false;
+    var printInProgress = false;
 
     const DEFAULT_ITEMS_PER_PAGE = 7;
     const getEditableItems = () => invoiceController
@@ -1751,7 +1752,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             language: lang,
             currentPage: currentPage,
             scale: invoiceScale,
-            showAllPages: false,
+            showAllPages: is2UpMode,
             isCopy: isCopy
         });
     };
@@ -1849,16 +1850,19 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                     /* Small screen preview adjustment */
                     #invoice-doc-container.printing-2up-portrait .invoice-page {
+                        font-size: 14px !important;
                         display: block !important;
-                        position: static !important;
+                        position: absolute !important;
+                        top: 0 !important;
+                        left: 0 !important;
                         box-sizing: border-box !important;
                         width: 210mm !important;
                         height: 297mm !important;
                         min-height: 297mm !important;
                         max-height: 297mm !important;
-                        margin: -74.25mm 0 0 0 !important;
-                        transform-origin: center center !important;
-                        transform: rotate(-90deg) scale(0.68) !important;
+                        margin: 0 !important;
+                        transform-origin: 0 0 !important;
+                        transform: translateX(205mm) rotate(90deg) scale(0.68) !important;
                         opacity: 1;
                         padding: 15mm 20mm !important;
                         overflow: hidden !important;
@@ -1999,17 +2003,20 @@ export const renderInvoiceDetail = async ({ id }) => {
                         border-bottom: 1px dashed #f0f0f0 !important;
                     }
 
-                    body.printing-2up-portrait .invoice-page {
+                    .print-sheet .sheet-half .invoice-page {
+                        font-size: 14px !important;
                         display: block !important;
-                        position: static !important;
+                        position: absolute !important;
+                        top: 0 !important;
+                        left: 0 !important;
                         box-sizing: border-box !important;
                         width: 210mm !important;
                         height: 297mm !important;
                         min-height: 297mm !important;
                         max-height: 297mm !important;
-                        margin: -74.25mm 0 0 0 !important;
-                        transform-origin: center center !important;
-                        transform: rotate(-90deg) scale(0.68) !important;
+                        margin: 0 !important;
+                        transform-origin: 0 0 !important;
+                        transform: translateX(205mm) rotate(90deg) scale(0.68) !important;
                         padding: 15mm 20mm !important;
                         page-break-after: auto !important;
                         background: white !important;
@@ -2291,14 +2298,13 @@ export const renderInvoiceDetail = async ({ id }) => {
             };
 
             const printWithAfterprint = async (afterPrint) => {
+                if (printInProgress) return;
+                printInProgress = true;
                 let handled = false;
-                let fallbackTimer = null;
                 const finish = () => {
                     if (handled) return;
                     handled = true;
-                    if (fallbackTimer) {
-                        clearTimeout(fallbackTimer);
-                    }
+                    printInProgress = false;
                     window.removeEventListener('afterprint', finish);
                     afterPrint();
                 };
@@ -2329,25 +2335,37 @@ export const renderInvoiceDetail = async ({ id }) => {
                     if (document.fonts && document.fonts.ready) {
                         await document.fonts.ready;
                     }
+                    await new Promise(function(resolve) {
+                        requestAnimationFrame(function() { requestAnimationFrame(resolve); });
+                    });
                     const invoiceQr = document.querySelector('#invoice-doc-container .invoice-qr-image');
                     if (!invoiceQr || !invoiceQr.complete || invoiceQr.naturalWidth < 40) {
                         throw new Error('The invoice QR code is missing or blank.');
                     }
                     window.print();
-                    fallbackTimer = setTimeout(finish, 1500);
+                    // Keep both copies mounted until the browser actually finishes
+                    // printing. Some browsers return while their preview is still open.
                 } catch (error) {
+                    printInProgress = false;
+                    is2UpMode = false;
+                    document.body.classList.remove('printing-2up-portrait');
                     window.removeEventListener('afterprint', finish);
+                    refreshBody();
                     console.error('Could not open print dialog.', error);
                     notificationService.error('Could not open the print dialog. Try allowing pop-ups/printing for this site.');
                 }
             };
 
             document.getElementById('btn-print-portrait')?.addEventListener('click', () => {
+                if (printInProgress) return;
+                is2UpMode = false;
+                refreshBody();
                 document.body.classList.remove('printing-2up-portrait');
                 printWithAfterprint(handlePrintSuccess);
             });
 
             document.getElementById('btn-print-landscape')?.addEventListener('click', () => {
+                if (printInProgress) return;
                 is2UpMode = true;
                 refreshBody(); // Render duplicate pages in DOM
 

@@ -78,6 +78,7 @@ function createHarness() {
     var initialDate = source.match(/const today = [^;]+;/);
     vm.runInContext(`
         var navigationId = 1, expectedRoute = 'orders';
+        var reconciliationUnavailable = false;
         var allOrders = [], activeOrders = [], returnOrders = [], returnInvoices = [];
         var intelligenceSettings = {}, inventoryCategories = [], inventoryDate = '';
         var pendingCheckmarkUpdates = new Set(), updatedCheckmarkUpdates = new Set();

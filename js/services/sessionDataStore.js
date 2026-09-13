@@ -37,6 +37,7 @@ function createCollectionState(name) {
         extras: {},
         lastError: null,
         lastMutationAt: 0,
+        recordMutations: {},
         lastReadCount: 0,
         lastInvalidationReason: ''
     };
@@ -94,6 +95,7 @@ function resetCollectionState(state, reason) {
     state.revision = state.revision + 1;
     state.extras = {};
     state.lastError = null;
+    state.recordMutations = {};
     state.lastReadCount = 0;
     state.lastInvalidationReason = reason || '';
 }
@@ -187,14 +189,20 @@ function getRecordFreshness(record) {
     );
 }
 
-function mergeRecordsByFreshness(existingRecords, incomingRecords) {
+function mergeRecordsByFreshness(existingRecords, incomingRecords, authoritative, mutations, startRevision) {
+    var changes = mutations || {};
     var byId = {};
     var index = 0;
 
     while (index < existingRecords.length) {
         var existing = existingRecords[index];
         if (existing && existing.id) {
-            byId[existing.id] = existing;
+            var mutation = changes[existing.id];
+            // getAllOrders already merges queued local orders into incoming data.
+            // Preserve additional edits/creates made while that request was running.
+            if (!authoritative || (mutation && mutation.revision > startRevision)) {
+                byId[existing.id] = existing;
+            }
         }
         index = index + 1;
     }
@@ -203,7 +211,16 @@ function mergeRecordsByFreshness(existingRecords, incomingRecords) {
     while (index < incomingRecords.length) {
         var incoming = incomingRecords[index];
         if (incoming && incoming.id) {
+            var change = changes[incoming.id];
             var current = byId[incoming.id];
+            if (change && change.removed) {
+                index = index + 1;
+                continue;
+            }
+            if (current && change && change.revision > startRevision) {
+                index = index + 1;
+                continue;
+            }
             if (!current || getRecordFreshness(incoming) >= getRecordFreshness(current)) {
                 byId[incoming.id] = incoming;
             }
@@ -341,7 +358,8 @@ function assignCollectionData(state, records, extras, readCount, reason) {
     };
 }
 
-async function fetchOrdersData() {
+async function fetchOrdersData(options) {
+    var authoritative = false;
     var startedAt = getPerformanceNow();
     var queryCount = 5;
     var referenceGroupsPromise = Promise.all([
@@ -354,7 +372,10 @@ async function fetchOrdersData() {
         })
     ]);
     var groups = await Promise.all([
-        orderService.getAllOrders(),
+        orderService.getAllOrders({
+            forceRefresh: options && options.forceRefresh === true,
+            onReadSource: function(source) { authoritative = source === 'server'; }
+        }),
         customerService.getAllCustomers(),
         invoiceService.getReturnedInvoicesForAnalytics(),
         referenceGroupsPromise
@@ -381,6 +402,7 @@ async function fetchOrdersData() {
 
     return {
         records: enrichedOrders,
+        authoritative: authoritative,
         extras: {
             returnOrders: enrichedOrders,
             returnInvoices: returnInvoices,
@@ -798,12 +820,13 @@ async function fetchAndAssignCollection(collectionName, options) {
     var state = sessionDataStore[collectionName];
     var label = collectionName === 'orders' ? 'Orders' : 'Invoices';
     var reconciliationStartedAt = 0;
+    var startRevision = state.revision;
 
     try {
-        var loaded = collectionName === 'orders' ? await fetchOrdersData() : await fetchInvoicesData();
+        var loaded = collectionName === 'orders' ? await fetchOrdersData(options) : await fetchInvoicesData();
         reconciliationStartedAt = getPerformanceNow();
         var mutationBoundary = state.lastMutationAt || 0;
-        var incomingRecords = mergeRecordsByFreshness(state.records, loaded.records || []);
+        var incomingRecords = mergeRecordsByFreshness(state.records, loaded.records || [], loaded.authoritative === true, state.recordMutations, startRevision);
         var assignment = assignCollectionData(state, incomingRecords, loaded.extras || {}, loaded.readCount, 'firestore-refresh');
 
         if (mutationBoundary && state.loadedAt && state.loadedAt < mutationBoundary) {
@@ -893,6 +916,7 @@ function updateRecord(collectionName, id, patch, reason) {
     state.loadedAt = state.loadedAt || Date.now();
     state.revision = state.revision + 1;
     state.lastMutationAt = Date.now();
+    state.recordMutations[id] = { revision: state.revision, removed: false };
     state.lastInvalidationReason = reason || 'mutation-update';
     writeDexieCache(collectionName, state.records, state.extras);
     logCache(collectionName === 'orders' ? 'Orders' : 'Invoices', 'cache updated after mutation', {
@@ -919,6 +943,7 @@ function removeRecord(collectionName, id, reason) {
     state.records = nextRecords;
     state.revision = state.revision + 1;
     state.lastMutationAt = Date.now();
+    state.recordMutations[id] = { revision: state.revision, removed: true };
     state.lastInvalidationReason = reason || 'mutation-remove';
     writeDexieCache(collectionName, state.records, state.extras);
     logCache(collectionName === 'orders' ? 'Orders' : 'Invoices', 'cache removed record after mutation', {

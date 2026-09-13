@@ -602,7 +602,7 @@ test('background Sheets effect waits for its queued order revision to commit', a
     assert.equal(finished, 1);
 });
 
-test('native print document keeps odd two-up sheets and text pages without rasterization', async function () {
+test('native print document puts two copies of every page on its own sheet without rasterization', async function () {
     var service = await loadModule('js/services/nativeInvoicePrintService.js', {});
     var document = service.buildNativePrintDocument(
         [
@@ -614,8 +614,9 @@ test('native print document keeps odd two-up sheets and text pages without raste
         'http://localhost/',
         'a4',
     );
-    assert.equal((document.match(/class="print-sheet"/g) || []).length, 2);
-    assert.equal((document.match(/class="print-slot"/g) || []).length, 4);
+    assert.equal((document.match(/class="print-sheet"/g) || []).length, 3);
+    assert.equal((document.match(/class="print-slot"/g) || []).length, 6);
+    assert.equal((document.match(/Кыргызча А/g) || []).length, 2);
     assert.match(document, /Кыргызча А/);
     assert.match(document, /rotate\(90deg\)/);
     assert.doesNotMatch(document, /canvas|data:image/);

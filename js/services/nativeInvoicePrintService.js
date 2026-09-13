@@ -37,12 +37,12 @@ export function buildNativePrintDocument(pages, layout, baseUrl, paperSize) {
     var twoUp = layout === 'two-up-portrait';
     var scale = twoUp ? Math.min(size[0] / 296, size[1] / 2 / 210) : Math.min(size[0] / 210, size[1] / 296);
     var sheets = [];
-    for (var index = 0; index < pages.length; index += twoUp ? 2 : 1) {
+    for (var index = 0; index < pages.length; index += 1) {
         sheets.push(
             '<section class="print-sheet"><div class="print-slot">' +
                 pages[index] +
                 '</div>' +
-                (twoUp ? '<div class="print-slot">' + (pages[index + 1] || '') + '</div>' : '') +
+                (twoUp ? '<div class="print-slot">' + pages[index] + '</div>' : '') +
                 '</section>',
         );
     }
@@ -102,6 +102,9 @@ async function waitForPrintAssets(popup) {
         }),
     );
     if (popup.document.fonts) await popup.document.fonts.ready;
+    await new Promise(function(resolve) {
+        popup.requestAnimationFrame(function() { popup.requestAnimationFrame(resolve); });
+    });
 }
 
 export async function showNativeInvoicePrint(popup, invoices, settings, options) {

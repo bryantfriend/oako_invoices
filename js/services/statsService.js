@@ -2,6 +2,7 @@ import { getReturnState } from "../core/returnStatus.js";
 import { getAnalyticsStatus, getMillis, isArchivedRecord } from "../core/orderRecordHelpers.js";
 import { buildOrderAnalyticsProjections } from "../core/orderAnalyticsProjection.js";
 import { buildFinancialIntelligence } from "./financialIntelligenceService.js";
+import { getLocalDateKey } from "../core/dailyOrders.js";
 
 function safeNumber(value, fallback = 0) {
     const number = Number(value);
@@ -355,6 +356,22 @@ function buildSalesAnalytics(records = []) {
 }
 
 export const statsService = {
+    getDailySales(orders, now) {
+        var today = getLocalDateKey(now || new Date());
+        var summary = { date: today, amount: 0, count: 0 };
+        buildOrderAnalyticsProjections(orders).forEach(function(projection) {
+            var sourceDate = projection.source.orderDate;
+            // Date-only order dates are business dates, not UTC timestamps.
+            var dateKey = typeof sourceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sourceDate)
+                ? sourceDate : (projection.analyticsDate ? getLocalDateKey(projection.analyticsDate) : '');
+            if (dateKey === today && projection.revenueEligible) {
+                summary.amount += projection.netAmount;
+                summary.count += 1;
+            }
+        });
+        return summary;
+    },
+
     /**
      * Calculates stats for a given period and compares with the previous period
      * @param {Array} orders - All orders

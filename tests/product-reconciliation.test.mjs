@@ -138,7 +138,7 @@ var bundle = await build({
 });
 
 function serviceHarness(server) {
-    var state = { role: 'admin', online: true, reject: false, writes: 0, cached: [] };
+    var state = { role: 'admin', online: true, reject: false, writes: 0, cached: [], staleMappings: null };
     var module = { exports: {} };
     var dependencies = {
         firebase: { db: {}, auth: { currentUser: { uid: 'staff' } } },
@@ -146,7 +146,8 @@ function serviceHarness(server) {
         offlineStatusService: { offlineStatusService: { canAttemptCloudRead: function() { return state.online; } } },
         productService: { productService: { getAllProducts: async function() { return products; }, getAllCategories: async function() { return categories; } } },
         firestoreRead: {
-            getDocsWithCache: async function() { return [{ mappings: structuredClone(server.mappings) }]; },
+            readCachedRowsAsync: async function() { return structuredClone(state.cached); },
+            getDocsWithCache: async function() { return [{ mappings: structuredClone(state.staleMappings || server.mappings) }]; },
             writeCachedRows: function(key, rows) { state.cached = rows; }
         }
     };
@@ -158,7 +159,7 @@ function serviceHarness(server) {
                 collection: function() {}, query: function() {}, where: function() {}, documentId: function() {}, doc: function() {},
                 runTransaction: async function(db, callback) {
                     if (state.reject) throw new Error('permission-denied');
-                    await callback({ get: async function() { return { exists: function() { return true; }, data: function() { return server; } }; },
+                    return await callback({ get: async function() { return { exists: function() { return true; }, data: function() { return server; } }; },
                         set: function(reference, patch) { Object.assign(server.mappings, patch.mappings); state.writes += 1; }
                     });
                 }
@@ -210,7 +211,7 @@ test('failed and conflicting writes leave the previous match intact', async func
     harness.state.reject = true;
     await assert.rejects(harness.api.confirmMatch(issue, 'new-bread', 'bread'));
     assert.equal(harness.api.getPendingMatches().length, 1);
-    assert.equal(harness.state.cached.length, 0);
+    assert.equal(Object.keys(harness.state.cached[0].mappings).length, 0);
     harness.state.reject = false;
     await harness.api.confirmMatch(issue, 'new-bread', 'bread');
     await assert.rejects(harness.api.confirmMatch(issue, 'other-bread', 'bread'));
@@ -226,4 +227,53 @@ test('an item with no historical category can be matched after choosing a curren
     assert.equal(issue.source.categoryId, '');
     await harness.api.confirmMatch(issue, 'cookie', 'cookies');
     assert.equal(harness.api.projectRecords(records)[0].items[0].name, 'Current cookie');
+});
+
+test('stale refreshes between confirmations do not bring back saved matches', async function() {
+    var harness = serviceHarness({ mappings: {} });
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    await harness.api.confirmMatch(issue, 'new-bread', 'bread');
+    harness.state.staleMappings = {};
+    await harness.api.loadContext(null, null, true);
+    assert.equal(harness.api.projectRecords(historical)[0].items[0].productId, 'new-bread');
+    assert.equal(harness.api.getPendingMatches().length, 0);
+});
+
+test('a fresh session preserves durable confirmations when Firestore returns an empty cached mapping', async function() {
+    var server = { mappings: {} };
+    var first = serviceHarness(server);
+    await first.api.loadContext();
+    first.api.projectRecords(historical);
+    await first.api.confirmMatch(first.api.getPendingMatches()[0], 'new-bread', 'bread');
+    var next = serviceHarness(server);
+    next.state.cached = structuredClone(first.state.cached);
+    next.state.staleMappings = {};
+    await next.api.loadContext();
+    assert.equal(next.api.projectRecords(historical)[0].items[0].productId, 'new-bread');
+    assert.equal(next.api.getPendingMatches().length, 0);
+});
+
+test('a confirmation retains other staff matches read by its transaction', async function() {
+    var server = { mappings: {} };
+    var harness = serviceHarness(server);
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    server.mappings.other = { productId: 'cookie', categoryId: 'cookies' };
+    harness.state.staleMappings = {};
+    await harness.api.confirmMatch(harness.api.getPendingMatches()[0], 'new-bread', 'bread');
+    assert.equal(harness.state.cached[0].mappings.other.productId, 'cookie');
+});
+
+test('a newer staff confirmation supersedes an older local confirmation', async function() {
+    var server = { mappings: {} };
+    var harness = serviceHarness(server);
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    await harness.api.confirmMatch(issue, 'new-bread', 'bread');
+    server.mappings[issue.key] = { productId: 'other-bread', categoryId: 'bread', confirmedAt: '2099-01-01T00:00:00.000Z' };
+    await harness.api.loadContext(null, null, true);
+    assert.equal(harness.api.projectRecords(historical)[0].items[0].productId, 'other-bread');
 });

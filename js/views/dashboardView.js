@@ -334,6 +334,7 @@ export const renderDashboard = async (params, routeContext) => {
     const loadedReturnOrders = initialDashboardResult && initialDashboardResult.returnOrders ? initialDashboardResult.returnOrders : [];
     const loadedReturnInvoices = initialDashboardResult && initialDashboardResult.returnInvoices ? initialDashboardResult.returnInvoices : [];
     intelligenceSettings = initialDashboardResult && initialDashboardResult.intelligenceSettings ? initialDashboardResult.intelligenceSettings : {};
+    var reconciliationUnavailable = Boolean(initialDashboardResult && initialDashboardResult.meta && initialDashboardResult.meta.reconciliationUnavailable);
     allOrders = orders;
     activeOrders = getActiveOrders(allOrders);
     returnOrders = loadedReturnOrders;
@@ -362,7 +363,7 @@ export const renderDashboard = async (params, routeContext) => {
     const refreshDashboardDataPreservingState = async function refreshDashboardDataPreservingState() {
         const scrollTop = getScrollPosition();
         console.info('[DASHBOARD_REFRESH] started navigationId=' + navigationId);
-        const { orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [], intelligenceSettings: refreshedIntelligenceSettings = {} } = await dashboardController.refreshDashboard({ source: 'orders-background-refresh' });
+        const { orders: refreshedOrders, returnOrders: refreshedReturnOrders = [], returnInvoices: refreshedReturnInvoices = [], intelligenceSettings: refreshedIntelligenceSettings = {}, meta: refreshedMeta = {} } = await dashboardController.refreshDashboard({ source: 'orders-background-refresh' });
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             ignoreStaleRouteResult('dashboard-background-refresh', expectedRoute, navigationId);
             return;
@@ -378,6 +379,7 @@ export const renderDashboard = async (params, routeContext) => {
         }
 
         allOrders = refreshedOrders;
+        reconciliationUnavailable = refreshedMeta.reconciliationUnavailable === true;
         activeOrders = getActiveOrders(allOrders);
         returnOrders = refreshedReturnOrders;
         returnInvoices = refreshedReturnInvoices;
@@ -408,7 +410,7 @@ export const renderDashboard = async (params, routeContext) => {
         if (inventoryMount) {
             inventoryMount.innerHTML = renderInventoryStrip(inventoryCategories);
             attachInventoryStripListeners();
-            mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute);
+            if (!reconciliationUnavailable) { mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute); }
         } else {
             renderUI();
         }
@@ -473,11 +475,18 @@ export const renderDashboard = async (params, routeContext) => {
 
     function markOrderArchivedLocally(orderId, archiveResult) {
         var result = archiveResult || {};
+        if (result.removed) {
+            allOrders = allOrders.filter(function(order) { return order.id !== orderId; });
+            returnOrders = returnOrders.filter(function(order) { return order.id !== orderId; });
+            dashboardController.removeCachedOrder(orderId, 'server-confirmed-missing');
+            return;
+        }
         var patch = {
             archived: true,
-            archivedAt: new Date(),
-            updatedAt: new Date()
+            archivedAt: result.order && result.order.archivedAt ? result.order.archivedAt : new Date(),
+            updatedAt: result.order && result.order.updatedAt ? result.order.updatedAt : new Date()
         };
+        if (result.order && result.order.status) { patch.status = result.order.status; }
         if (result.queued || result.local) {
             patch.syncState = result.local ? 'offline_created' : 'pending_sync';
             patch.syncStatus = 'pending';
@@ -643,6 +652,7 @@ export const renderDashboard = async (params, routeContext) => {
         const analyticsReturnOrders = getAnalyticsReturnOrders();
         const analyticsReturnInvoices = getAnalyticsReturnInvoices();
         const stats = dashboardController.loadStats(analyticsOrders, currentPeriod, revenueGranularity, analyticsReturnInvoices, analyticsReturnOrders, intelligenceSettings);
+        var dailySales = dashboardController.getDailySales(allOrders);
         const alerts = dashboardController.getRiskAlerts(analyticsOrders);
         const productChart = getProductChartData(stats.charts);
         const workQueueLanes = getWorkQueueLanes();
@@ -699,6 +709,13 @@ export const renderDashboard = async (params, routeContext) => {
                         ${icon('alert', 'button-icon')} ${escapeHtml(alerts.label)}
                     </button>
                 ` : ''}
+
+                <section class="dashboard-card" aria-label="Today's sales" style="padding:16px;margin-bottom:16px">
+                    <h2 style="margin:0 0 8px">Today's Sales</h2>
+                    <strong style="font-size:28px">${formatCurrency(dailySales.amount)}</strong>
+                    <p>${escapeHtml(dailySales.date)} · ${dailySales.count} confirmed orders · Net of returns, including archived sales.</p>
+                </section>
+                ${reconciliationUnavailable ? '<p role="status">Historical product matches are unavailable. Sales totals remain available; product totals may use historical names. Refresh to retry.</p>' : ''}
 
                 <div class="dashboard-kpi-grid grid-cols-mobile-2">
                     ${renderKPICard("Orders", stats.metrics.orders, false, false, 'orders')}
@@ -818,7 +835,7 @@ export const renderDashboard = async (params, routeContext) => {
         mountInvoiceProductivityPanel(container.querySelector('#invoice-productivity-panel'), allOrders);
         attachListeners();
         applyFilters();
-        mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute);
+        if (!reconciliationUnavailable) { mountProductReconciliation(container, refreshDashboardDataPreservingState, expectedRoute); }
     };
 
     const getProductChartData = (charts) => {
@@ -2239,7 +2256,7 @@ export const renderDashboard = async (params, routeContext) => {
                 animateOrderRows([id], 'archive-row-exit');
                 await waitForArchiveAnimation();
                 markOrderArchivedLocally(id, result);
-                notificationService.success(result && (result.queued || result.local) ? 'Order archive saved locally. It will sync when online.' : 'Order archived.');
+                notificationService.success(result && result.removed ? 'Order was already removed. The cached row has been cleared.' : (result && (result.queued || result.local) ? 'Order archive saved locally. It will sync when online.' : 'Order archived.'));
                 selectedOrderIds.delete(id);
                 activeOrders = getActiveOrders(allOrders);
                 archivedFilter = 'active';

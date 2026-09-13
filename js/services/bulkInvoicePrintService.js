@@ -133,7 +133,7 @@ async function capturePage(pageHtml) {
         if (!qrImage || !qrImage.complete || qrImage.naturalWidth < 40) {
             throw new Error('The invoice QR image is missing or blank.');
         }
-        return await window.html2canvas(mounted.page, {
+        var canvas = await window.html2canvas(mounted.page, {
             backgroundColor: '#ffffff',
             scale: 2,
             useCORS: true,
@@ -145,9 +145,26 @@ async function capturePage(pageHtml) {
             windowWidth: mounted.page.scrollWidth,
             windowHeight: mounted.page.scrollHeight
         });
+        drawInvoiceQrOnCapture(canvas, mounted.page, qrImage);
+        return canvas;
     } finally {
         mounted.host.remove();
     }
+}
+
+function drawInvoiceQrOnCapture(canvas, page, qrImage) {
+    // html2canvas can omit a decoded QR inside the offscreen header. Draw the
+    // prepared invoice QR directly at its measured position in the captured page.
+    var pageBounds = page.getBoundingClientRect();
+    var qrBounds = qrImage.getBoundingClientRect();
+    var scaleX = canvas.width / page.scrollWidth;
+    var scaleY = canvas.height / page.scrollHeight;
+    var context = canvas.getContext('2d');
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.imageSmoothingEnabled = false;
+    context.drawImage(qrImage, (qrBounds.left - pageBounds.left) * scaleX, (qrBounds.top - pageBounds.top) * scaleY, qrBounds.width * scaleX, qrBounds.height * scaleY);
+    context.restore();
 }
 
 function addFullPage(pdf, canvas, hasPage) {
@@ -310,7 +327,6 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
         var filename = buildFilename(invoices.length, layout);
         var pdf = createPdf(settings, filename);
         var hasPdfPage = false;
-        var pendingHalf = null;
         var completedInvoices = 0;
         var invoiceIndex = 0;
 
@@ -334,13 +350,9 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 while (pageIndex < pages.length) {
                     var canvas = await capturePage(pages[pageIndex]);
                     if (layout === 'two-up-portrait') {
-                        if (!pendingHalf) {
-                            pendingHalf = canvas;
-                        } else {
-                            addTwoUpSheet(pdf, pendingHalf, canvas, hasPdfPage);
-                            hasPdfPage = true;
-                            pendingHalf = null;
-                        }
+                        // Each invoice page needs an office and customer copy on the same sheet.
+                        addTwoUpSheet(pdf, canvas, canvas, hasPdfPage);
+                        hasPdfPage = true;
                     } else {
                         addFullPage(pdf, canvas, hasPdfPage);
                         hasPdfPage = true;
@@ -357,10 +369,6 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
             invoiceIndex = invoiceIndex + 1;
         }
 
-        if (layout === 'two-up-portrait' && pendingHalf) {
-            addTwoUpSheet(pdf, pendingHalf, null, hasPdfPage);
-            hasPdfPage = true;
-        }
         if (!hasPdfPage) {
             throw new Error('No printable invoice pages were generated.');
         }

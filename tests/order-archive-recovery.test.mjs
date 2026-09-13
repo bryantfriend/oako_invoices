@@ -15,13 +15,15 @@ async function fixture(options = {}) {
         });
         serviceSource = result.outputFiles[0].text;
     }
-    const state = Object.assign({ server: {}, cache: {}, pending: {}, session: [], online: true, canRead: true, queued: [], creates: new Set(), transactions: 0 }, options);
+    const state = Object.assign({ server: {}, legacy: {}, cache: {}, pending: {}, session: [], readCache: [], online: true, canRead: true, queued: [], creates: new Set(), transactions: 0 }, options);
     function snapshot(id, data) { return { id, exists() { return Boolean(data); }, data() { return structuredClone(data); } }; }
     const sdk = {
+        collection(db, name) { return { collection: name }; },
+        query(reference) { return reference; },
         doc(db, collection, id) { return { id, collection }; },
         async getDocFromServer(ref) {
             if (state.error) throw state.error;
-            return snapshot(ref.id, state.server[ref.id]);
+            return snapshot(ref.id, (ref.collection === 'orders_archive' ? state.legacy : state.server)[ref.id]);
         },
         async getDocFromCache(ref) {
             if (!state.cache[ref.id]) throw new Error('No document in Firestore memory cache');
@@ -30,6 +32,7 @@ async function fixture(options = {}) {
         serverTimestamp() { return new Date(); },
         async runTransaction(db, callback) {
             state.transactions += 1;
+            if (state.disappearDuringTransaction) state.server = {};
             return callback({
                 async get(ref) { return snapshot(ref.id, state.server[ref.id]); },
                 update(ref, patch) { Object.assign(state.server[ref.id], patch); }
@@ -41,7 +44,21 @@ async function fixture(options = {}) {
         'firebase-firestore': sdk,
         archiveRecordHelpers: archiveHelpers,
         constants: { ORDER_STATUS: { DRAFT: 'draft' } },
-        sessionDataStore: { getOrdersSnapshot() { return { records: state.session }; } },
+        sessionDataStore: {
+            getOrdersSnapshot() { return { records: state.session }; },
+            removeOrderRecord(id) { state.session = state.session.filter(function(order) { return order.id !== id; }); }
+        },
+        firestoreRead: {
+            async getDocsWithCache(reference, options) {
+                const legacy = reference.collection === 'orders_archive';
+                if (legacy && state.legacyReadError) throw state.legacyReadError;
+                options.onReadSource(legacy ? state.archiveSource || 'server' : state.currentSource || 'server');
+                const rows = legacy ? state.legacy : state.server;
+                return Object.keys(rows).map(function(id) { return Object.assign({}, rows[id], { id }); });
+            },
+            async readCachedRowsAsync() { return state.readCache; },
+            writeCachedRows(key, rows) { state.readCache = rows; }
+        },
         offlineStatusService: { offlineStatusService: { isOnline() { return state.online; }, canAttemptCloudRead() { return state.canRead; } } },
         offlineQueueService: { offlineQueueService: {
             async getLocalEntitySnapshots() { return state.pending; },
@@ -112,10 +129,46 @@ test('read failures remain distinct from a server-confirmed missing order', asyn
     const failed = await fixture({ error: unavailable });
     await assert.rejects(failed.service.archiveOrder('o1'), function(error) { return error === unavailable; });
     const missing = await fixture({ session: [saved()] });
-    await assert.rejects(missing.service.archiveOrder('o1'), { code: 'order-not-found' });
+    assert.equal((await missing.service.archiveOrder('o1')).alreadyMissing, true);
+    assert.equal(missing.state.session.length, 0);
     assert.equal(missing.state.transactions, 0);
     const offline = await fixture({ online: false, canRead: false });
     await assert.rejects(offline.service.getOrderById('o1'), { code: 'unavailable' });
+});
+
+test('server-confirmed missing orders clear both visible and durable cached rows', async function() {
+    const { service, state } = await fixture({ session: [saved()], readCache: [saved(), saved({ id: 'keep' })] });
+    assert.equal((await service.archiveOrder('o1')).removed, true);
+    assert.equal(state.session.length, 0);
+    assert.deepEqual(state.readCache.map(function(order) { return order.id; }), ['keep']);
+});
+
+test('refresh treats results as authoritative only when both current and legacy reads reach the server', async function() {
+    const { service, state } = await fixture({ server: { undated: saved({ createdAt: undefined }), dated: saved({ createdAt: '2026-09-13' }) } });
+    let source;
+    const options = { forceRefresh: true, onReadSource(value) { source = value; } };
+    assert.equal((await service.getAllOrders(options)).length, 2, 'Legacy records without createdAt are included');
+    assert.equal(source, 'server');
+    state.archiveSource = 'cache';
+    await service.getAllOrders(options);
+    assert.equal(source, 'cache');
+    state.legacyReadError = new Error('offline');
+    await service.getAllOrders(options);
+    assert.equal(source, 'cache');
+});
+
+test('an order removed by another user between lookup and transaction completes cleanup', async function() {
+    const { service, state } = await fixture({ server: { o1: saved() }, session: [saved()], disappearDuringTransaction: true });
+    assert.equal((await service.archiveOrder('o1')).removed, true);
+    assert.equal(state.session.length, 0);
+});
+
+test('an order already moved to the legacy archive stays available as archived history', async function() {
+    const { service, state } = await fixture({ legacy: { o1: saved() }, session: [saved()] });
+    const result = await service.archiveOrder('o1');
+    assert.equal(result.alreadyArchived, true);
+    assert.equal(result.order.archived, true);
+    assert.equal(state.session.length, 1);
 });
 
 test('document IDs override embedded legacy IDs and pending snapshot IDs', async function() {

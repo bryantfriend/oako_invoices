@@ -462,26 +462,37 @@ function attachEditorItemEvents(root, state, draft, editorState) {
 function renderPrintSlip(order, settings) {
     var items = Array.isArray(order.items) ? order.items : [];
     var rows = items.map(function(item, index) {
-        return '<tr><td>' + (index + 1) + '</td><td>' + escapeHtml(getProductName(item)) + '</td><td>' + escapeHtml(formatQuantity(item.quantity)) + '</td></tr>';
+        return '<tr><td>' + ((order.printItemOffset || 0) + index + 1) + '</td><td>' + escapeHtml(getProductName(item)) + '</td><td>' + escapeHtml(formatQuantity(item.quantity)) + '</td></tr>';
     }).join('');
     return '<section class="order-slip"><header><div><span>KYRGYZ ORGANICS</span><h1>Daily order</h1></div><div class="date-box"><small>ORDER DATE</small><strong>' + escapeHtml(formatDateLabel(order.orderDate)) + '</strong></div></header>'
-        + '<div class="customer"><small>CUSTOMER / COMPANY</small><strong>' + escapeHtml(order.customerName) + '</strong></div>'
+        + '<div class="customer"><small>CUSTOMER / COMPANY' + (order.printPageCount > 1 ? ' · Page ' + order.printPage + ' / ' + order.printPageCount : '') + '</small><strong>' + escapeHtml(order.customerName) + '</strong></div>'
         + '<table><thead><tr><th>#</th><th>Product</th><th>Qty</th></tr></thead><tbody>' + rows + '</tbody></table>'
         + (order.notes ? '<div class="notes"><small>NOTES</small><p>' + escapeHtml(order.notes) + '</p></div>' : '')
         + '<footer><span>' + escapeHtml(settings.companyName || 'Kyrgyz Organics') + '</span><span>Prepared: ' + escapeHtml(new Date().toLocaleString()) + '</span></footer></section>';
 }
 
 function getPrintDocument(order, settings, mode) {
-    var slip = renderPrintSlip(order, settings);
     var twoUp = mode === 'two-up';
+    var items = Array.isArray(order.items) ? order.items : [];
+    var pageSize = twoUp ? 12 : 24;
+    var pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+    var sheets = [];
+    for (var pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+        var slip = renderPrintSlip(Object.assign({}, order, {
+            items: items.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize),
+            notes: pageIndex === pageCount - 1 ? order.notes : '',
+            printPage: pageIndex + 1, printPageCount: pageCount, printItemOffset: pageIndex * pageSize
+        }), settings);
+        sheets.push('<main class="sheet"><div class="slip-slot">' + slip + '</div>' + (twoUp ? '<div class="slip-slot">' + slip + '</div>' : '') + '</main>');
+    }
     return '<!doctype html><html><head><meta charset="utf-8"><title>Daily Order - ' + escapeHtml(order.customerName) + '</title><style>'
         + '@page{size:A4 portrait;margin:9mm}*{box-sizing:border-box}body{margin:0;color:#1f2a22;font-family:Arial,sans-serif;background:#fff}'
-        + '.sheet{display:' + (twoUp ? 'grid' : 'block') + ';grid-template-rows:' + (twoUp ? '1fr 1fr' : '1fr') + ';height:279mm;gap:' + (twoUp ? '7mm' : '0') + '}'
+        + '.sheet{display:grid;grid-template-rows:' + (twoUp ? 'minmax(0,1fr) minmax(0,1fr)' : 'minmax(0,1fr)') + ';height:279mm;gap:' + (twoUp ? '7mm' : '0') + ';break-after:page}.sheet:last-child{break-after:auto}.slip-slot{position:relative;min-height:0;overflow:hidden;break-inside:avoid}.order-slip{width:100%;transform-origin:top left}'
         + '.order-slip{border:1.5px solid #1f7a3d;border-radius:10px;padding:' + (twoUp ? '8mm' : '13mm') + ';overflow:hidden;position:relative}'
         + 'header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1f7a3d;padding-bottom:12px;margin-bottom:14px}header span,small{font-size:9px;letter-spacing:.12em;font-weight:800;color:#667267}h1{font-size:' + (twoUp ? '22px' : '30px') + ';margin:4px 0 0}.date-box{text-align:right;max-width:55%}.date-box strong{display:block;margin-top:5px;font-size:' + (twoUp ? '12px' : '15px') + '}.customer{display:grid;gap:4px;margin-bottom:12px}.customer strong{font-size:' + (twoUp ? '15px' : '19px') + '}'
         + 'table{width:100%;border-collapse:collapse;font-size:' + (twoUp ? '11px' : '14px') + '}th{background:#eef8ef;text-align:left;color:#195f33}th,td{padding:' + (twoUp ? '5px 7px' : '8px 10px') + ';border-bottom:1px solid #d8e3d8}th:first-child,td:first-child{width:9%}th:last-child,td:last-child{width:16%;text-align:center;font-weight:800}.notes{margin-top:12px;background:#fffaf0;border-radius:6px;padding:8px}.notes p{font-size:11px;margin:4px 0 0}footer{position:absolute;left:' + (twoUp ? '8mm' : '13mm') + ';right:' + (twoUp ? '8mm' : '13mm') + ';bottom:' + (twoUp ? '6mm' : '9mm') + ';display:flex;justify-content:space-between;border-top:1px solid #d8e3d8;padding-top:6px;font-size:8px;color:#667267}'
-        + '@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><main class="sheet">' + slip + (twoUp ? slip : '') + '</main>'
-        + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},250);});<\/script></body></html>';
+        + 'footer{position:static;margin-top:14px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>' + sheets.join('')
+        + '<script>window.addEventListener("load",async function(){if(document.fonts)await document.fonts.ready;requestAnimationFrame(function(){document.querySelectorAll(".slip-slot").forEach(function(slot){var slip=slot.querySelector(".order-slip");var scale=Math.min(1,slot.clientHeight/Math.max(slip.scrollHeight,slip.getBoundingClientRect().height),slot.clientWidth/slip.scrollWidth);slip.style.transform="scale("+scale+")";});requestAnimationFrame(function(){window.print();});});});<\/script></body></html>';
 }
 
 function openPrintWindow() {
