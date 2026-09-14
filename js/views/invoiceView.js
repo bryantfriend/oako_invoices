@@ -1864,7 +1864,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         transform-origin: 0 0 !important;
                         transform: translateX(205mm) rotate(90deg) scale(0.68) !important;
                         opacity: 1;
-                        padding: 15mm 20mm !important;
+                        padding: 30px 40px !important;
                         overflow: hidden !important;
                     }
                     
@@ -1955,7 +1955,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         top: 0 !important;
                         left: 0 !important;
                         margin: 0 auto !important;
-                        padding: 10mm 15mm !important; 
+                        padding: 30px 40px !important;
                         width: 210mm !important;
                         height: 296mm !important; 
                         min-height: 296mm !important;
@@ -2017,7 +2017,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         margin: 0 !important;
                         transform-origin: 0 0 !important;
                         transform: translateX(205mm) rotate(90deg) scale(0.68) !important;
-                        padding: 15mm 20mm !important;
+                        padding: 30px 40px !important;
                         page-break-after: auto !important;
                         background: white !important;
                         visibility: visible !important;

@@ -54,12 +54,33 @@ function getSettings(invoice, settings) {
     return Object.assign({}, invoice && invoice.settings ? invoice.settings : {}, settings || {});
 }
 
-function paginateItems(items, itemsPerPage) {
+function paginateItems(items, itemsPerPage, language) {
     var pages = [];
     var index = 0;
+    var page = [];
+    var usedLines = 0;
     while (index < items.length) {
-        pages.push(items.slice(index, index + itemsPerPage));
-        index = index + itemsPerPage;
+        var item = items[index];
+        // Reserve space for repeated customer, totals, payment and signatures.
+        // Wrapped descriptions consume extra row space in the fixed A4 template.
+        var lines = Math.max(1, Math.ceil(getItemName(item, language).length / 38));
+        if (item.weight) {
+            lines = lines + 1;
+        }
+        if (Number(item.returnedQuantity || item.returnQuantity || 0) > 0) {
+            lines = lines + 1;
+        }
+        if (page.length > 0 && (page.length >= itemsPerPage || usedLines + lines > 14)) {
+            pages.push(page);
+            page = [];
+            usedLines = 0;
+        }
+        page.push(item);
+        usedLines = usedLines + lines;
+        index = index + 1;
+    }
+    if (page.length > 0) {
+        pages.push(page);
     }
     if (pages.length === 0) {
         pages.push([]);
@@ -88,8 +109,6 @@ function getNotes(settings, language) {
 }
 
 function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, totalPages, options) {
-    var isFirst = pageNumber === 1;
-    var isLast = pageNumber === totalPages;
     var invoiceNumber = escapeHtml(invoice.invoiceNumber || '');
     var invoiceQr = safeImageUrl(invoice.invoiceQrDataUrl || '');
     var logoUrl = safeImageUrl(settings.logoUrl);
@@ -112,7 +131,7 @@ function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, t
     var positionStyle = options.showAllPages || pageNumber === options.currentPage ? '' : 'position:absolute;top:-10000px;';
 
     return `
-        <div class="invoice-page${activeClass}" data-page="${pageNumber}" data-invoice-number="${invoiceNumber}" style="background:#fff;padding:30px 40px;height:296mm;width:210mm;margin:0 auto;color:#1e3318;font-family:'Inter',Arial,sans-serif;position:relative;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;display:${displayStyle};transform:scale(${options.scale});transform-origin:top center;${positionStyle}">
+        <div class="invoice-page${activeClass}" data-page="${pageNumber}" data-invoice-number="${invoiceNumber}" style="background:#fff;padding:30px 40px;height:296mm;width:210mm;margin:0 auto;color:#1e3318;font-family:'Inter',Arial,sans-serif;font-size:14px;line-height:1.3;position:relative;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;display:${displayStyle};transform:scale(${options.scale});transform-origin:top center;${positionStyle}">
             <div style="display:grid;grid-template-columns:1fr 170px 1fr;align-items:start;gap:20px;margin-bottom:14px;min-height:166px;">
                 <div>
                     <div style="width:180px;min-height:42px;">${logoUrl ? `<img src="${logoUrl}" alt="Company logo" style="max-width:100%;max-height:90px;display:block;object-fit:contain;">` : '<div style="background:#ebf0e9;border-radius:6px;padding:12px;color:#5a7052;font-weight:800;">Kyrgyz Organics</div>'}</div>
@@ -125,14 +144,13 @@ function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, t
                     <div style="font-size:9px;font-weight:900;color:#2e4a23;margin-top:5px;">INVOICE ${invoiceNumber}</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-size:15px;font-weight:800;">${t('print_invoice', language)} #${invoiceNumber}${options.isCopy ? ' (Copy)' : ''}</div>
+                    <div style="font-size:15px;font-weight:800;">${t('print_invoice', language)} #${invoiceNumber}</div>
                     <div style="font-size:11px;color:#5a7052;margin-top:5px;">${t('print_date', language)}: ${formatDate(invoice.createdAt)}</div>
                     <div style="font-size:11px;color:#5a7052;">Status: ${escapeHtml(invoice.status || 'pending')}</div>
-                    ${totalPages > 1 ? `<div style="font-size:11px;color:#5a7052;">Page ${pageNumber} / ${totalPages}</div>` : ''}
+                    ${totalPages > 1 ? `<div style="font-size:11px;color:#5a7052;">Page ${pageNumber} of ${totalPages}</div>` : ''}
                 </div>
             </div>
 
-            ${isFirst ? `
                 <h2 style="font-size:20px;font-weight:600;margin:0 0 10px;border-bottom:2px solid #ebf0e9;padding-bottom:5px;">${t('print_invoice', language)}</h2>
                 <div style="display:flex;justify-content:space-between;gap:20px;margin-bottom:15px;">
                     <div style="flex:1;">
@@ -145,7 +163,6 @@ function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, t
                         <div style="font-size:22px;font-weight:900;margin-top:4px;">${formatCurrency(grandTotal)}</div>
                     </div>
                 </div>
-            ` : ''}
 
             <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
                 <thead><tr style="background:#f8faf6;color:#5a7052;font-size:9px;text-transform:uppercase;">
@@ -161,7 +178,6 @@ function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, t
                 }).join('')}</tbody>
             </table>
 
-            ${isLast ? `
                 <div style="display:flex;justify-content:flex-end;margin:14px 0 20px;page-break-inside:avoid;">
                     <div style="width:290px;">
                         <div style="display:flex;justify-content:space-between;padding:6px 12px;border-bottom:1px solid #e2e8e0;"><span>${t('print_subtotal', language)}</span><strong>${formatCurrency(subtotal)}</strong></div>
@@ -179,7 +195,6 @@ function renderInvoicePage(invoice, settings, language, pageItems, pageNumber, t
                     </div>
                     ${paymentQr && settings.showQrCode !== false ? `<div style="text-align:center;"><img src="${paymentQr}" alt="Payment QR" style="width:100px;height:100px;object-fit:contain;display:block;"><div style="font-size:8px;font-weight:800;margin-top:3px;">${t('print_scan_pay', language)}</div></div>` : ''}
                 </div>
-            ` : ''}
             ${settings.showFooter !== false ? `<div style="position:absolute;bottom:18px;left:30px;right:30px;text-align:center;color:#5a7052;font-size:10px;">&mdash; ${escapeHtml(settings.footerText || t('print_thanks', language))} &mdash;</div>` : ''}
         </div>
     `;
@@ -190,8 +205,8 @@ function buildInvoicePrintPages(options) {
     var settings = getSettings(invoice, options ? options.settings : {});
     var language = options && options.language ? options.language : 'en';
     var items = Array.isArray(invoice.items) ? invoice.items : [];
-    var itemsPerPage = Math.min(30, Math.max(1, parseInt(settings.invoiceItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE));
-    var itemPages = paginateItems(items, itemsPerPage);
+    var itemsPerPage = Math.min(DEFAULT_ITEMS_PER_PAGE, Math.max(1, parseInt(settings.invoiceItemsPerPage, 10) || DEFAULT_ITEMS_PER_PAGE));
+    var itemPages = paginateItems(items, itemsPerPage, language);
     var subtotal = calculateSubtotal(items);
     var renderOptions = {
         currentPage: options && options.currentPage ? options.currentPage : 1,

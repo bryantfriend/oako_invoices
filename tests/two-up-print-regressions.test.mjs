@@ -6,6 +6,45 @@ import vm from 'node:vm';
 var bulkSource = fs.readFileSync(new URL('../js/services/bulkInvoicePrintService.js', import.meta.url), 'utf8');
 function section(source, start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 
+test('invoice pages repeat complete details and identical copies with bounded item pagination', async function() {
+    globalThis.localStorage = { getItem: function() { return 'en'; } };
+    var template = await import('../js/services/invoicePrintTemplate.js');
+    for (var count of [0, 7, 8, 15, 41]) {
+        var invoice = {
+            invoiceNumber: 'INV-2026-000697', customerName: 'Repeated customer',
+            customerAddress: 'Repeated address', notes: 'Repeated invoice note',
+            invoiceQrDataUrl: 'data:image/png;base64,test', totalAmount: 1437,
+            items: Array.from({ length: count }, function(value, index) {
+                return { name: 'Product-' + index + '-end', quantity: 2, price: 92, weight: '300g' };
+            })
+        };
+        var options = { invoice: invoice, settings: { invoiceItemsPerPage: 30, bankInfo: 'Repeated bank', footerText: 'Repeated footer' }, showAllPages: true };
+        var pages = template.buildInvoicePrintPages(options);
+        assert.equal(pages.length, Math.max(1, Math.ceil(count / 7)));
+        assert.deepEqual(template.buildInvoicePrintPages(Object.assign({}, options, { isCopy: true })), pages);
+        pages.forEach(function(page, index) {
+            for (var label of ['Repeated customer', 'Repeated address', 'Repeated invoice note', 'Repeated bank', 'Repeated footer', 'Payment QR', 'Customer signature:', 'TOTAL DUE']) {
+                assert.ok(page.includes(label), label + ' must appear on every page');
+            }
+            if (pages.length > 1) assert.ok(page.includes('Page ' + (index + 1) + ' of ' + pages.length));
+            var expected = invoice.items.slice(index * 7, (index + 1) * 7);
+            assert.equal((page.match(/Product-\d+-end/g) || []).length, expected.length);
+            expected.forEach(function(item) { assert.ok(page.includes(item.name)); });
+        });
+    }
+});
+
+test('wrapped descriptions reduce items per page without losing any items', async function() {
+    globalThis.localStorage = { getItem: function() { return 'en'; } };
+    var template = await import('../js/services/invoicePrintTemplate.js');
+    var items = Array.from({ length: 7 }, function(value, index) {
+        return { name: 'Long-' + index + ' ' + 'Whole grain bread '.repeat(8), quantity: 2, price: 92, weight: '300g', returnedQuantity: 1 };
+    });
+    var pages = template.buildInvoicePrintPages({ invoice: { items: items, invoiceQrDataUrl: 'data:image/png;base64,test' }, showAllPages: true });
+    assert.ok(pages.length > 1);
+    items.forEach(function(item) { assert.equal(pages.join('').split(item.name).length - 1, 1); });
+});
+
 test('Quick Print paints the prepared QR into the raster at its measured offscreen position', function() {
     var draw;
     var canvas = { width: 1600, height: 2240, getContext: function() { return { save: function() {}, setTransform: function() { assert.deepEqual(Array.from(arguments), [1, 0, 0, 1, 0, 0]); }, restore: function() {}, drawImage: function() { draw = Array.from(arguments); } }; } };
