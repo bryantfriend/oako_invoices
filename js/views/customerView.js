@@ -8,14 +8,21 @@ import { Modal } from "../components/modal.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { t } from "../core/i18n.js";
 
-export const renderCustomers = async () => {
+let displayedCustomers = [];
+
+function escapeCustomerValue(value) {
+    return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+export const renderCustomers = async function renderCustomers(cachedCustomers) {
     layoutView.render();
     layoutView.updateTitle(t("customer_title"));
     const container = document.getElementById('page-container');
     container.innerHTML = LoadingSkeleton();
 
     // Fetch Data
-    const customers = await customerController.loadAllCustomers();
+    const customers = Array.isArray(cachedCustomers) ? cachedCustomers : await customerController.loadAllCustomers();
+    displayedCustomers = customers;
 
     let isEditingLocked = true;
     let categoryFilter = 'all';
@@ -205,7 +212,7 @@ export const renderCustomers = async () => {
     refreshTable();
 
     // Event Delegation for Header
-    container.addEventListener('click', async (e) => {
+    container.querySelector('#header-wrapper').addEventListener('click', async (e) => {
         if (e.target.id === 'toggle-lock-btn' || e.target.closest('#toggle-lock-btn')) {
             isEditingLocked = !isEditingLocked;
             const headerWrapper = container.querySelector('#header-wrapper');
@@ -219,7 +226,7 @@ export const renderCustomers = async () => {
         }
     });
 
-    container.addEventListener('change', (e) => {
+    container.querySelector('#header-wrapper').addEventListener('change', (e) => {
         if (e.target.id === 'category-filter') {
             categoryFilter = e.target.value;
             refreshTable();
@@ -286,13 +293,16 @@ window.showAddCustomerModal = () => {
     modal.open();
 };
 
-window.editCustomer = async (id) => {
-    const customer = await customerController.getCustomerById(id);
+window.editCustomer = async function editCustomer(id) {
+    // The visible row is enough to open the editor; saving still requires cloud authorization.
+    const customer = displayedCustomers.find(function(row) { return row.id === id; }) || await customerController.getCustomerById(id);
     if (!customer) return;
     const pinCode = customer.pinCode || customerController.generateCustomerPin();
 
     const modal = new Modal({
         title: 'Edit Customer',
+        lockWhileSubmitting: true,
+        busyText: 'Saving…',
         content: `
             <form id="edit-customer-form">
                 <div class="input-group">
@@ -308,7 +318,7 @@ window.editCustomer = async (id) => {
                     <input
                         type="text"
                         name="companyName"
-                        value="${customer.companyName || ''}"
+                        value="${escapeCustomerValue(customer.companyName)}"
                         placeholder="Company Name"
                     >
                 </div>
@@ -318,7 +328,7 @@ window.editCustomer = async (id) => {
                     <input
                         type="text"
                         name="name"
-                        value="${customer.name || ''}"
+                        value="${escapeCustomerValue(customer.name)}"
                     >
                 </div>
 
@@ -327,7 +337,7 @@ window.editCustomer = async (id) => {
                     <input
                         type="tel"
                         name="phone"
-                        value="${customer.phone || ''}"
+                        value="${escapeCustomerValue(customer.phone)}"
                     >
                 </div>
 
@@ -336,7 +346,7 @@ window.editCustomer = async (id) => {
                     <input
                         type="text"
                         name="pinCode"
-                        value="${pinCode}"
+                        value="${escapeCustomerValue(pinCode)}"
                         minlength="6"
                         maxlength="6"
                         pattern="1\\d{5}"
@@ -350,18 +360,18 @@ window.editCustomer = async (id) => {
                     <input
                         type="email"
                         name="email"
-                        value="${customer.email || ''}"
+                        value="${escapeCustomerValue(customer.email)}"
                     >
                 </div>
 
                 <div class="input-group">
                     <label>Address</label>
-                    <textarea name="address">${customer.address || ''}</textarea>
+                    <textarea name="address">${escapeCustomerValue(customer.address)}</textarea>
                 </div>
             </form>
         `,
         confirmText: 'Save Changes',
-        onConfirm: async () => {
+        onConfirm: async function saveCustomer() {
             const form = document.getElementById('edit-customer-form');
             if (!form.reportValidity()) return false;
 
@@ -371,10 +381,16 @@ window.editCustomer = async (id) => {
             if (!data.name && data.companyName) data.name = data.companyName;
             if (!data.companyName && data.name) data.companyName = data.name;
 
-            const success = await customerController.handleUpdateCustomer(id, data);
+            const changes = {};
+            Object.keys(data).forEach(function(field) {
+                if (String(customer[field] || '') !== data[field]) changes[field] = data[field];
+            });
+            if (!Object.keys(changes).length) return true;
+            const success = await customerController.handleUpdateCustomer(id, changes);
             if (!success) return false;
 
-            renderCustomers();
+            Object.assign(customer, changes);
+            renderCustomers(displayedCustomers);
             return true;
         }
     });
@@ -382,25 +398,24 @@ window.editCustomer = async (id) => {
     modal.open();
 };
 
-window.archiveCustomer = (id) => {
-    Modal.confirm(
-        t('modal_archive_cust_title'),
-        t('modal_archive_cust_msg'),
-        async () => {
-            await customerController.archiveCustomer(id);
-            renderCustomers();
+window.archiveCustomer = function archiveCustomer(id) {
+    const customer = displayedCustomers.find(function(row) { return row.id === id; });
+    const name = customer ? escapeCustomerValue(customer.companyName || customer.name) : 'this customer';
+    const modal = new Modal({
+        title: 'Archive Customer?',
+        lockWhileSubmitting: true,
+        busyText: 'Archiving…',
+        content: '<p>Archive <strong>' + name + '</strong>?</p><p>The customer will leave the active list. Their record and invoice history will be kept.</p>',
+        confirmText: 'Archive Customer',
+        onConfirm: async function confirmArchiveCustomer() {
+            const success = await customerController.archiveCustomer(id);
+            if (!success) return false;
+            displayedCustomers = displayedCustomers.filter(function(row) { return row.id !== id; });
+            renderCustomers(displayedCustomers);
+            return true;
         }
-    );
+    });
+    modal.open();
 };
 
-window.deleteCustomer = (id) => {
-    Modal.confirm(
-        'Archive Customer?',
-        'This will hide the customer from the active list. The customer record will be kept for history.',
-        async () => {
-            const success = await customerController.handleDeleteCustomer(id);
-            if (success) renderCustomers();
-        }
-    );
-};
-
+window.deleteCustomer = window.archiveCustomer;

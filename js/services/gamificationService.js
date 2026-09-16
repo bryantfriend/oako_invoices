@@ -11,6 +11,9 @@ import {
 const COLLECTION = 'users';
 
 export const BADGES = [
+    { id: 'customer_editor', icon: '✨', name: 'Fresh Details', description: 'Save your first customer edit.', condition: function(p) { return (p.actions.customersEdited || 0) >= 1; } },
+    { id: 'customer_caretaker', icon: '🪴', name: 'Customer Caretaker', description: 'Save 25 customer edits.', condition: function(p) { return (p.actions.customersEdited || 0) >= 25; } },
+    { id: 'customer_archivist', icon: '🗂️', name: 'Customer Archivist', description: 'Archive your first customer while keeping their history.', condition: function(p) { return (p.actions.customersArchived || 0) >= 1; } },
     { id: 'first_order', icon: '🧾', name: 'First Order', description: 'Create your first order.', condition: p => (p.actions.ordersCreated || 0) >= 1 },
     { id: 'order_sprinter', icon: '🏃', name: 'Order Sprinter', description: 'Create 10 orders.', condition: p => (p.actions.ordersCreated || 0) >= 10 },
     { id: 'order_captain', icon: '🧭', name: 'Order Captain', description: 'Create 50 orders.', condition: p => (p.actions.ordersCreated || 0) >= 50 },
@@ -40,6 +43,8 @@ const XP_BY_ACTION = {
     ordersFulfilled: 12,
     ordersPaid: 15,
     customersCreated: 10,
+    customersEdited: 5,
+    customersArchived: 4,
     ordersArchived: 4,
     profileUpdated: 5
 };

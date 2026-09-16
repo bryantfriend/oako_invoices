@@ -1,3 +1,4 @@
+import authorizeCustomerMutationModule from "./Customers/authorizeCustomerMutation.js";
 import authorizeInvoiceWorkflowModule from './Workflow/authorizeInvoiceWorkflow.js';
 // ICF/Stages/Authorizers/authorizers.js
 
@@ -67,5 +68,7 @@ var authorizers = {
   createRequireContextValueAuthorizer:
     requireContextValueModule.createRequireContextValueAuthorizer
 };
+
+authorizers.authorizeCustomerMutation = authorizeCustomerMutationModule.authorizeCustomerMutation;
 
 export default authorizers;

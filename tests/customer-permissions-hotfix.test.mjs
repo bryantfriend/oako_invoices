@@ -32,5 +32,5 @@ test('Firestore and client auth recognize every supported staff role', function(
 test('customer edit modal remains open when the update is rejected', function() {
     const customerView = read('js/views/customerView.js');
 
-    assert.match(customerView, /const success = await customerController\.handleUpdateCustomer\(id, data\);\s*if \(!success\) return false;/);
+    assert.match(customerView, /const success = await customerController\.handleUpdateCustomer\(id, changes\);\s*if \(!success\) return false;/);
 });

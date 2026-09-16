@@ -1,3 +1,5 @@
+import ArchiveCustomerIntentModule from "./ArchiveCustomerIntent.js";
+import UpdateCustomerIntentModule from "./UpdateCustomerIntent.js";
 import RunWorkflowEffectModule from './RunWorkflowEffectIntent.js';
 import PrepareInvoiceBatchModule from './PrepareInvoiceBatchIntent.js';
 import SaveAndPrepareInvoiceModule from './SaveAndPrepareInvoiceIntent.js';
@@ -62,6 +64,8 @@ function registerProjectIntents() {
     RefreshInvoicesIntent: refreshInvoicesIntentModule.createRefreshInvoicesIntent,
     InvalidateInvoicesCacheIntent:
       invalidateInvoicesCacheIntentModule.createInvalidateInvoicesCacheIntent,
+    UpdateCustomerIntent: UpdateCustomerIntentModule.createUpdateCustomerIntent,
+    ArchiveCustomerIntent: ArchiveCustomerIntentModule.createArchiveCustomerIntent,
     DemoIntent: demoIntentModule.createDemoIntent
   });
 }

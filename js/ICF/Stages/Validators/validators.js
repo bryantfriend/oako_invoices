@@ -1,3 +1,4 @@
+import validateCustomerMutationModule from "./Customers/validateCustomerMutation.js";
 import validateInvoiceWorkflowPayloadModule from './Workflow/validateInvoiceWorkflowPayload.js';
 // ICF/Stages/Validators/validators.js
 
@@ -81,5 +82,7 @@ var validators = {
 
   createRequireActorRoleValidator: requireActorRoleModule.createRequireActorRoleValidator
 };
+
+validators.validateCustomerMutation = validateCustomerMutationModule.validateCustomerMutation;
 
 export default validators;

@@ -12,8 +12,12 @@ export class Modal {
         size = 'medium',  // small | medium | large | xlarge
         footer = true,
         closeOnBackdrop = true,
+        lockWhileSubmitting = false,
+        busyText = 'Working…',
         closeOnEsc = true
     }) {
+        this.lockWhileSubmitting = lockWhileSubmitting;
+        this.busyText = busyText;
         this.title = title;
         this.content = content;
         this.onConfirm = onConfirm;
@@ -43,6 +47,7 @@ export class Modal {
     }
 
     close() {
+        if (this.isSubmitting && this.lockWhileSubmitting) return;
         if (this.modalEl) {
             this.modalEl.remove();
             this.modalEl = null;
@@ -111,19 +116,33 @@ export class Modal {
         backdrop.querySelector('.cancel-btn')
             ?.addEventListener('click', () => this.close());
 
-        backdrop.querySelector('.confirm-btn')
-            ?.addEventListener('click', async () => {
+        const confirmButton = backdrop.querySelector('.confirm-btn');
+        const modal = this;
+        if (confirmButton) {
+            confirmButton.addEventListener('click', async function confirmModal() {
+                if (modal.isSubmitting) return;
+                modal.isSubmitting = true;
+                confirmButton.disabled = true;
+                confirmButton.setAttribute('aria-busy', 'true');
+                confirmButton.textContent = modal.busyText;
                 try {
-                    if (this.onConfirm) {
-                        const result = await this.onConfirm();
-                        if (result === false) return; // keep modal open
+                    if (modal.onConfirm) {
+                        const result = await modal.onConfirm();
+                        if (result === false) return;
                     }
-                    this.close();
+                    modal.isSubmitting = false;
+                    modal.close();
                 } catch (error) {
-                    console.error("Modal confirm action failed:", error);
+                    console.error('Modal confirm action failed:', error);
                     notificationService.error(t('msg_update_fail') || 'Action failed.');
+                } finally {
+                    modal.isSubmitting = false;
+                    confirmButton.disabled = false;
+                    confirmButton.removeAttribute('aria-busy');
+                    confirmButton.textContent = modal.confirmText;
                 }
-                });
+            });
+        }
 
         if (this.closeOnBackdrop) {
             backdrop.addEventListener('click', (e) => {

@@ -1,3 +1,4 @@
+import normalizeCustomerMutationModule from "./Customers/normalizeCustomerMutation.js";
 import normalizeInvoiceWorkflowPayloadModule from './Workflow/normalizeInvoiceWorkflowPayload.js';
 // ICF/Stages/Normalizers/normalizers.js
 
@@ -76,5 +77,7 @@ var normalizers = {
   createNormalizePayloadDateFieldNormalizer:
     normalizePayloadDateFieldModule.createNormalizePayloadDateFieldNormalizer
 };
+
+normalizers.normalizeCustomerMutation = normalizeCustomerMutationModule.normalizeCustomerMutation;
 
 export default normalizers;

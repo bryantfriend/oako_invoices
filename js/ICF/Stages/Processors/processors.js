@@ -1,3 +1,4 @@
+import processCustomerMutationModule from "./Customers/processCustomerMutation.js";
 import processRunWorkflowEffectModule from './Workflow/processRunWorkflowEffect.js';
 import processPrepareInvoiceBatchModule from './Workflow/processPrepareInvoiceBatch.js';
 import processSaveAndPrepareInvoiceModule from './Workflow/processSaveAndPrepareInvoice.js';
@@ -78,5 +79,7 @@ var processors = {
   addContextToResultData:
     addContextToResultDataModule.addContextToResultData
 };
+
+processors.processCustomerMutation = processCustomerMutationModule.processCustomerMutation;
 
 export default processors;

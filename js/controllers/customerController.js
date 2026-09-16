@@ -1,3 +1,7 @@
+import pipeline from "../ICF/engine/pipeline.js";
+import updateCustomerIntent from "../ICF/Intents/UpdateCustomerIntent.js";
+import archiveCustomerIntent from "../ICF/Intents/ArchiveCustomerIntent.js";
+import { store } from "../core/store.js";
 import { customerService } from "../services/customerService.js";
 import { notificationService } from "../core/notificationService.js";
 import { t } from "../core/i18n.js";
@@ -118,14 +122,7 @@ export const customerController = {
     },
 
     async handleUpdateCustomer(id, data) {
-        try {
-            await customerService.updateCustomer(id, data);
-            notificationService.success(t('msg_update_success'));
-            return true;
-        } catch (error) {
-            notificationService.error(t('msg_update_fail'));
-            return false;
-        }
+        return runCustomerMutation(updateCustomerIntent.createUpdateCustomerIntent, id, data);
     },
 
     async getCustomerById(id) {
@@ -144,23 +141,11 @@ export const customerController = {
     },
 
     async archiveCustomer(id) {
-        try {
-            await customerService.deleteCustomer(id);
-            notificationService.success('Customer archived.');
-        } catch (error) {
-            notificationService.error('Failed to archive customer.');
-        }
+        return runCustomerMutation(archiveCustomerIntent.createArchiveCustomerIntent, id);
     },
 
     async handleDeleteCustomer(id) {
-        try {
-            await customerService.deleteCustomer(id);
-            notificationService.success('Customer archived.');
-            return true;
-        } catch (error) {
-            notificationService.error('Failed to archive customer.');
-            return false;
-        }
+        return this.archiveCustomer(id);
     },
 
     async loadCustomerDetail(id) {
@@ -252,3 +237,17 @@ export const customerController = {
     }
 
 };
+
+async function runCustomerMutation(createIntent, id, data) {
+    var intent = createIntent({ id: 'pending', role: 'pending' }, {
+        customerId: id, data: data, state: store,
+        customerApi: customerService, rewards: gamificationService
+    });
+    var result = await pipeline.run(intent);
+    if (!result.ok) {
+        notificationService.error(result.errors.join(' '));
+        return false;
+    }
+    notificationService.success(data ? 'Customer updated. Looking good!' : 'Customer archived. History safely kept.');
+    return true;
+}

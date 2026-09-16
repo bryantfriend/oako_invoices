@@ -1,3 +1,4 @@
+import addCustomerMutationContextModule from "./Customers/addCustomerMutationContext.js";
 import addInvoiceWorkflowContextModule from './Workflow/addInvoiceWorkflowContext.js';
 // ICF/Stages/ContextProviders/contextProviders.js
 
@@ -60,5 +61,7 @@ var contextProviders = {
   createAddStaticContextValueProvider:
     addStaticContextValueModule.createAddStaticContextValueProvider
 };
+
+contextProviders.addCustomerMutationContext = addCustomerMutationContextModule.addCustomerMutationContext;
 
 export default contextProviders;

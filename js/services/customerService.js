@@ -12,7 +12,7 @@ import {
     serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "../core/firestoreDiagnostics.js";
-import { getDocsWithCache, readCachedRowsAsync } from "../core/firestoreRead.js";
+import { getDocsWithCache, readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 
 const COLLECTION = 'customers';
@@ -95,7 +95,7 @@ export const customerService = {
             const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]);
             if (!docSnap.exists()) return null;
 
-            const customer = { id: docSnap.id, ...docSnap.data() };
+            const customer = { ...docSnap.data(), id: docSnap.id };
             if (!isCustomerPin(customer.pinCode)) {
                 const pinCode = normalizeCustomerPin(customer.pinCode);
                 customer.pinCode = pinCode;
@@ -161,6 +161,16 @@ export const customerService = {
                 ...(data.pinCode !== undefined ? { pinCode: normalizeCustomerPin(data.pinCode) } : {}),
                 updatedAt: serverTimestamp()
             });
+            try {
+                const rows = await readCachedRowsAsync('customers:all');
+                const updatedRows = rows.map(function(customer) {
+                    if (customer.id !== id) return customer;
+                    return Object.assign({}, customer, data, { id: id });
+                });
+                writeCachedRows('customers:all', updatedRows);
+            } catch (cacheError) {
+                console.warn('Customer saved, but local cache could not be refreshed.', cacheError);
+            }
             return true;
         } catch (error) {
             console.error("Error updating customer:", error);

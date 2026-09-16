@@ -1,3 +1,4 @@
+import emitCustomerMutationModule from "./Customers/emitCustomerMutation.js";
 import emitInvoiceWorkflowResultModule from './Workflow/emitInvoiceWorkflowResult.js';
 // ICF/Stages/Emitters/emitters.js
 
@@ -75,5 +76,7 @@ var emitters = {
   addDebugSummary:
     addDebugSummaryModule.addDebugSummary
 };
+
+emitters.emitCustomerMutation = emitCustomerMutationModule.emitCustomerMutation;
 
 export default emitters;
