@@ -58,6 +58,7 @@ import { renderOfflineCache } from "./views/offlineCacheView.js";
 import { renderMobileInvoice } from "./views/mobileInvoiceView.js";
 
 import { initializeAutomaticSync } from "./services/automaticSyncService.js";
+import { initializeSyncSupport } from './services/syncSupportCollector.js';
 
 async function initApp() {
     try {
@@ -66,6 +67,7 @@ async function initApp() {
         offlineStatusService.init();
         initializeWorkflowEffects();
         initializeAutomaticSync();
+        initializeSyncSupport();
 
         if (offlinePersistenceState.warning) {
             notificationService.info(offlinePersistenceState.warning);

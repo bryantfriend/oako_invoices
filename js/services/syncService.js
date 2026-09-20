@@ -239,22 +239,10 @@ async function writeInvoiceUpdate(queueItem) {
 }
 
 async function syncCompletedInvoiceToSheet(queueItem, canonicalResult) {
-    const localVersion = Object.assign({}, getLocalSnapshot(queueItem));
-    if (canonicalResult && canonicalResult.invoiceNumber) {
-        localVersion.invoiceNumber = canonicalResult.invoiceNumber;
-        localVersion.invoiceNumberVersion = canonicalResult.invoiceNumberVersion || 0;
-        localVersion.invoiceNumberYear = canonicalResult.invoiceNumberYear || 0;
-        localVersion.invoiceNumberSequence = canonicalResult.invoiceNumberSequence || 0;
-        localVersion.temporaryInvoiceNumber = canonicalResult.temporaryInvoiceNumber || '';
-        localVersion.previousInvoiceNumbers = canonicalResult.previousInvoiceNumbers || [];
-    }
-    localVersion.status = 'fulfilled';
-    localVersion.syncState = 'synced';
-
-    const result = await googleSheetsService.syncCompletedInvoice(localVersion);
-    if (result && result.success === false) {
-        throw new Error(result.error && result.error.message ? result.error.message : 'Google Sheets sync failed.');
-    }
+    // Track export independently after Firestore commits; delivery trouble must
+    // never replay the completed invoice mutation or its inventory effects.
+    var effects = await import('./workflowEffectsService.js');
+    effects.queueWorkflowEffect('invoice-sheets', canonicalResult && canonicalResult.invoiceId ? canonicalResult.invoiceId : queueItem.entityId, queueItem.id);
 }
 
 async function processInvoiceQueueItem(queueItem) {
@@ -396,6 +384,20 @@ async function processQueueItem(queueItem) {
 
 export const syncService = {
     async processQueue(options) {
+        // Web Locks remain held across slow requests and suspended timers. The
+        // renewable IndexedDB lease also supports browsers without Web Locks.
+        if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
+            return navigator.locks.request('ko-offline-sync', { ifAvailable: true }, async function(lock) {
+                if (!lock) {
+                    return { processed: 0, synced: 0, failed: 0, failureReason: 'sync_lease_busy', message: 'Another tab is synchronizing.' };
+                }
+                return syncService.processQueueWithLease(options);
+            });
+        }
+        return syncService.processQueueWithLease(options);
+    },
+
+    async processQueueWithLease(options) {
         const safeOptions = options || {};
         const manual = safeOptions.manual === true;
         let snapshot = offlineStatusService.getSnapshot();
@@ -461,94 +463,127 @@ export const syncService = {
             return leaseResult;
         }
 
-        await offlineQueueService.recoverStaleSyncingItems();
+        var leaseLost = false;
+        var renewalPending = false;
+        var renewalTimer = setInterval(async function renewActiveLease() {
+            if (renewalPending || leaseLost) {
+                return;
+            }
+            renewalPending = true;
+            try {
+                leaseLost = !await offlineQueueService.renewSyncLease(ownerId);
+            } catch (error) {
+                leaseLost = true;
+            } finally {
+                renewalPending = false;
+            }
+        }, 10000);
+        try {
+            await offlineQueueService.recoverStaleSyncingItems(ownerId);
 
-        const items = await offlineQueueService.listProcessableItems(currentUser.uid || '', {
-            includeRetryWait: manual
-        });
-        const result = {
-            processed: items.length,
-            synced: 0,
-            failed: 0,
-            conflicts: 0,
-            failureReason: '',
-            message: ''
-        };
+            const items = await offlineQueueService.listProcessableItems(currentUser.uid || '', {
+                includeRetryWait: manual
+            });
+            const result = {
+                processed: items.length,
+                synced: 0,
+                failed: 0,
+                conflicts: 0,
+                failureReason: '',
+                message: ''
+            };
 
-        if (manual) {
-            console.info('[SYNC_NOW] queueProcessorStarted: true', { processable: items.length });
-        }
+            if (manual) {
+                console.info('[SYNC_NOW] queueProcessorStarted: true', { processable: items.length });
+            }
 
-        if (items.length === 0) {
+            if (items.length === 0) {
+                await offlineStatusService.refresh();
+                if (manual) {
+                    console.info('[SYNC_NOW] complete', result);
+                }
+                return result;
+            }
+
+            offlineStatusService.setSyncing(true);
+
+            try {
+                for (let index = 0; index < items.length; index += 1) {
+                    const item = items[index];
+                    if (leaseLost || !auth.currentUser || auth.currentUser.uid !== currentUser.uid || !await offlineQueueService.renewSyncLease(ownerId)) {
+                        result.failureReason = 'sync_interrupted';
+                        result.message = 'Synchronization paused because the session or sync ownership changed.';
+                        break;
+                    }
+                    try {
+                        if (item.userId && item.userId !== (currentUser.uid || '')) {
+                            await offlineQueueService.markBlockedForAuthentication(item.id);
+                            result.failed += 1;
+                            result.failureReason = result.failureReason || 'authentication_required';
+                            continue;
+                        }
+
+                        await offlineQueueService.markSyncing(item.id);
+                        const serverResult = await processQueueItem(item);
+                        if (leaseLost || !auth.currentUser || auth.currentUser.uid !== currentUser.uid || !await offlineQueueService.renewSyncLease(ownerId)) {
+                            result.failureReason = 'sync_interrupted';
+                            break;
+                        }
+                        await offlineQueueService.markSynced(item.id, Object.assign({
+                            processedAt: new Date().toISOString()
+                        }, serverResult || {}));
+                        result.synced += 1;
+                    } catch (error) {
+                        if (leaseLost || !auth.currentUser || auth.currentUser.uid !== currentUser.uid) {
+                            result.failureReason = 'sync_interrupted';
+                            break;
+                        }
+                        await offlineQueueService.markFailed(item.id, error);
+                        const message = String(error && error.message ? error.message : error);
+                        if (message.indexOf('sync_conflict') !== -1) {
+                            result.conflicts += 1;
+                            result.failureReason = result.failureReason || 'sync_conflict';
+                        } else if (message.indexOf('permission') !== -1 || message.indexOf('PERMISSION_DENIED') !== -1) {
+                            result.failureReason = result.failureReason || 'security_rules_or_auth';
+                        } else if (message.indexOf('invalid') !== -1 || message.indexOf('payload') !== -1) {
+                            result.failureReason = result.failureReason || 'payload_error';
+                        } else {
+                            result.failureReason = result.failureReason || 'sync_write_failed';
+                        }
+                        result.failed += 1;
+                        if (manual) {
+                            console.warn('[SYNC_NOW] item failed', {
+                                id: item.id,
+                                actionType: item.actionType,
+                                entityType: item.entityType,
+                                entityId: item.entityId,
+                                error: message
+                            });
+                        }
+                    }
+                }
+            } finally {
+                offlineStatusService.setSyncing(false);
+            }
+
+            offlineStatusService.setSyncError(result.failed > 0);
+            if (result.failureReason === 'sync_interrupted') {
+                result.message = 'Synchronization paused. Saved changes will be checked again.';
+            } else if (result.failed === 0) {
+                offlineStatusService.setLastSuccessfulSyncAt(new Date().toISOString());
+                result.message = 'Sync complete: ' + result.synced + ' synced, 0 failed.';
+            } else {
+                result.message = 'Sync finished with ' + result.failed + ' failed item' + (result.failed === 1 ? '' : 's') + '. Pending changes were kept.';
+            }
             await offlineStatusService.refresh();
-            await offlineQueueService.releaseSyncLease(ownerId);
             if (manual) {
                 console.info('[SYNC_NOW] complete', result);
             }
             return result;
-        }
-
-        offlineStatusService.setSyncing(true);
-
-        try {
-            for (let index = 0; index < items.length; index += 1) {
-                const item = items[index];
-                try {
-                    if (item.userId && item.userId !== (currentUser.uid || '')) {
-                        await offlineQueueService.markBlockedForAuthentication(item.id);
-                        result.failed += 1;
-                        result.failureReason = result.failureReason || 'authentication_required';
-                        continue;
-                    }
-
-                    await offlineQueueService.markSyncing(item.id);
-                    const serverResult = await processQueueItem(item);
-                    await offlineQueueService.markSynced(item.id, Object.assign({
-                        processedAt: new Date().toISOString()
-                    }, serverResult || {}));
-                    result.synced += 1;
-                } catch (error) {
-                    await offlineQueueService.markFailed(item.id, error);
-                    const message = String(error && error.message ? error.message : error);
-                    if (message.indexOf('sync_conflict') !== -1) {
-                        result.conflicts += 1;
-                        result.failureReason = result.failureReason || 'sync_conflict';
-                    } else if (message.indexOf('permission') !== -1 || message.indexOf('PERMISSION_DENIED') !== -1) {
-                        result.failureReason = result.failureReason || 'security_rules_or_auth';
-                    } else if (message.indexOf('invalid') !== -1 || message.indexOf('payload') !== -1) {
-                        result.failureReason = result.failureReason || 'payload_error';
-                    } else {
-                        result.failureReason = result.failureReason || 'sync_write_failed';
-                    }
-                    result.failed += 1;
-                    if (manual) {
-                        console.warn('[SYNC_NOW] item failed', {
-                            id: item.id,
-                            actionType: item.actionType,
-                            entityType: item.entityType,
-                            entityId: item.entityId,
-                            error: message
-                        });
-                    }
-                }
-            }
         } finally {
-            offlineStatusService.setSyncing(false);
+            clearInterval(renewalTimer);
             await offlineQueueService.releaseSyncLease(ownerId);
         }
-
-        offlineStatusService.setSyncError(result.failed > 0);
-        if (result.failed === 0) {
-            offlineStatusService.setLastSuccessfulSyncAt(new Date().toISOString());
-            result.message = 'Sync complete: ' + result.synced + ' synced, 0 failed.';
-        } else {
-            result.message = 'Sync finished with ' + result.failed + ' failed item' + (result.failed === 1 ? '' : 's') + '. Pending changes were kept.';
-        }
-        await offlineStatusService.refresh();
-        if (manual) {
-            console.info('[SYNC_NOW] complete', result);
-        }
-        return result;
     },
 
     async resolveConflict(conflictId, resolution, manualVersion) {

@@ -1,3 +1,4 @@
+import authorizeRetrySyncModule from './Sync/authorizeRetrySync.js';
 import authorizeCustomerMutationModule from "./Customers/authorizeCustomerMutation.js";
 import authorizeInvoiceWorkflowModule from './Workflow/authorizeInvoiceWorkflow.js';
 // ICF/Stages/Authorizers/authorizers.js
@@ -72,5 +73,7 @@ var authorizers = {
 };
 
 authorizers.authorizeCustomerMutation = authorizeCustomerMutationModule.authorizeCustomerMutation;
+
+authorizers.authorizeRetrySync = authorizeRetrySyncModule.authorizeRetrySync;
 
 export default authorizers;

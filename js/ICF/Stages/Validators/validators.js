@@ -1,3 +1,4 @@
+import validateRetrySyncPayloadModule from './Sync/validateRetrySyncPayload.js';
 import validateCustomerMutationModule from "./Customers/validateCustomerMutation.js";
 import validateInvoiceWorkflowPayloadModule from './Workflow/validateInvoiceWorkflowPayload.js';
 // ICF/Stages/Validators/validators.js
@@ -86,5 +87,7 @@ var validators = {
 };
 
 validators.validateCustomerMutation = validateCustomerMutationModule.validateCustomerMutation;
+
+validators.validateRetrySyncPayload = validateRetrySyncPayloadModule.validateRetrySyncPayload;
 
 export default validators;

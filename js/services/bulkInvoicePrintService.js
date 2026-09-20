@@ -2,6 +2,7 @@ import sessionDataStore from "./sessionDataStore.js";
 import { invoiceService } from "./invoiceService.js";
 import { qrService } from "./qrService.js";
 import { buildInvoicePrintPages } from "./invoicePrintTemplate.js";
+import { syncSupportService } from './syncSupportService.js';
 
 var generationActive = false;
 var activeOperationId = 0;
@@ -378,6 +379,13 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 completedInvoices = completedInvoices + 1;
             } catch (invoiceError) {
                 failedInvoices.push((invoice ? getInvoiceLabel(invoice) : 'Order ' + orderIds[invoiceIndex]) + ': ' + invoiceError.message);
+                await syncSupportService.recordIssue({
+                    source: 'print', id: invoice ? invoice.id : orderIds[invoiceIndex],
+                    entityId: invoice ? invoice.id : orderIds[invoiceIndex],
+                    entityType: invoice ? 'invoice' : 'order', action: 'quick-print',
+                    status: 'needs_review', errorCode: invoiceError.code || 'print_preparation_failed',
+                    message: invoiceError.message
+                }, context && context.currentUser ? context.currentUser.uid : '');
                 // Remove every page of a failed invoice, including partially rendered ones.
                 while (pdf.getNumberOfPages() > previousPageCount) {
                     pdf.deletePage(pdf.getNumberOfPages());

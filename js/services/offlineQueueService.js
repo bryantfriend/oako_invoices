@@ -1,11 +1,13 @@
 import { auth } from "../core/firebase.js";
 import { APP_CONFIG } from "../config.js";
 import { deviceIdService } from "./deviceIdService.js";
+import { syncSupportService } from './syncSupportService.js';
 import {
     acquireSyncLease,
     getNextSequenceNumber,
     openOfflineDexieDatabase,
     releaseSyncLease,
+    renewSyncLease,
     requestPersistentStorage,
     resetStaleSyncingIntents,
     saveIntentAndProjection,
@@ -293,7 +295,6 @@ export const offlineQueueService = {
         await openOfflineDexieDatabase();
         await requestPersistentStorage();
         await migrateLegacyQueueIfNeeded();
-        await resetStaleSyncingIntents();
         await updateSyncMetadata('schema', {
             databaseName: 'kyrgyz-organics-offline-v1',
             schemaVersion: APP_CONFIG.DEXIE_SCHEMA_VERSION,
@@ -410,6 +411,11 @@ export const offlineQueueService = {
 
         var nextAttemptCount = Number(existing.attemptCount || existing.retryCount || 0) + 1;
         var classification = classifySyncError(error);
+        await syncSupportService.recordIssue(Object.assign({}, existing, {
+            source: 'queue', status: classification.status, errorCode: classification.code,
+            message: classification.message, attemptCount: nextAttemptCount,
+            needsReview: !classification.retryable
+        }), existing.userId);
         var nextAttemptAt = classification.retryable
             ? getNextRetryIsoString(nextAttemptCount)
             : existing.nextAttemptAt || getIsoNow();
@@ -604,8 +610,43 @@ export const offlineQueueService = {
         return releaseSyncLease(ownerId);
     },
 
-    async recoverStaleSyncingItems() {
-        await resetStaleSyncingIntents();
+    async requeueOwnedItems(items, actorId, mode) {
+        var database = await openOfflineDexieDatabase();
+        var count = await database.transaction('rw', database.offlineIntents, async function() {
+            var requeued = 0;
+            for (var requested of items) {
+                var item = await database.offlineIntents.get(requested.id);
+                if (!auth.currentUser || auth.currentUser.uid !== actorId) {
+                    throw new Error('The signed-in account changed.');
+                }
+                if (!item || (item.actorId || item.userId) !== actorId) {
+                    throw new Error('Saved change ownership changed.');
+                }
+                var eligible = item.status === SYNC_RETRY_STATUSES.BLOCKED_AUTHENTICATION || (mode === 'manual' && item.status === SYNC_RETRY_STATUSES.FAILED_TERMINAL);
+                if (!eligible) {
+                    continue;
+                }
+                item.status = SYNC_RETRY_STATUSES.PENDING;
+                item.nextAttemptAt = getIsoNow();
+                item.updatedAt = getIsoNow();
+                item.recoveryCount = Number(item.recoveryCount || 0) + 1;
+                await database.offlineIntents.put(item);
+                requeued += 1;
+            }
+            return requeued;
+        });
+        if (count > 0) {
+            notifySubscribers();
+        }
+        return count;
+    },
+
+    async renewSyncLease(ownerId) {
+        return renewSyncLease(ownerId);
+    },
+
+    async recoverStaleSyncingItems(ownerId) {
+        await resetStaleSyncingIntents(undefined, ownerId);
         notifySubscribers();
     },
 

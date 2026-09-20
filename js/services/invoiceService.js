@@ -3,6 +3,7 @@ import { auth, db } from "../core/firebase.js";
 import {
     collection,
     getDoc,
+    getDocFromServer,
     getDocFromCache,
     doc,
     query,
@@ -586,6 +587,11 @@ export const invoiceService = {
             console.error("Error creating invoice:", error);
             throw error;
         }
+    },
+
+    async getCommittedInvoiceSnapshot(id) {
+        var snapshot = await getDocFromServer(doc(db, COLLECTION, id));
+        return snapshot.exists() ? Object.assign({ id: snapshot.id }, snapshot.data()) : null;
     },
 
     async getInvoice(id) {

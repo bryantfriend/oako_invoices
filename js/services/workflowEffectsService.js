@@ -19,6 +19,16 @@ export function getWorkflowSession() {
 }
 
 async function performEffect(effect) {
+    if (effect.kind === 'invoice-sheets') {
+        var invoiceModule = await import('./invoiceService.js');
+        var invoiceSheetsModule = await import('./googleSheetsService.js');
+        var invoice = await invoiceModule.invoiceService.getCommittedInvoiceSnapshot(effect.entityId);
+        if (!invoice) {
+            return { success: false, needsReview: true, code: 'not-found', message: 'The invoice for this Sheets export could not be found. Review the saved record before retrying.' };
+        }
+        workflowLocalStore.markEffectSending(effect);
+        return invoiceSheetsModule.googleSheetsService.syncCompletedInvoice(invoice, { deliveryId: effect.id + ':' + effect.revision });
+    }
     if (effect.kind === 'sheets') {
         var orderModule = await import('./orderService.js');
         var sheetsModule = await import('./googleSheetsService.js');
@@ -31,8 +41,9 @@ async function performEffect(effect) {
                 new Date(order.localUpdatedAt).getTime() < new Date(effect.expectedAt).getTime())
         )
             throw new Error('Waiting for the order update to commit.');
-        var response = await sheetsModule.googleSheetsService.syncOrderLifecycle(order);
-        if (response && response.success === false)
+        workflowLocalStore.markEffectSending(effect);
+        var response = await sheetsModule.googleSheetsService.syncOrderLifecycle(order, { deliveryId: effect.id + ':' + effect.revision });
+        if (response && response.success === false && !response.needsReview)
             throw response.error || new Error('Sheets sync needs retrying.');
         return response;
     }
@@ -46,25 +57,42 @@ async function drainEffects() {
     running = true;
     try {
         var effects = workflowLocalStore.list('effects').filter(function (effect) {
-            return effect.nextAt <= Date.now();
+            return !effect.needsReview && effect.nextAt <= Date.now();
         });
         for (var index = 0; index < effects.length; index += 1) {
             var effect = effects[index];
             if (getWorkflowSession().uid !== session.uid) break;
+            var effectError = null;
             try {
                 var intent = effectIntent.createRunWorkflowEffectIntent(
                     { id: session.uid, role: session.role },
                     { effect: effect },
                     {
-                        api: { getSession: getWorkflowSession, performEffect: performEffect },
+                        api: {
+                            getSession: getWorkflowSession,
+                            performEffect: async function runEffectWithErrorDetails(nextEffect) {
+                                try {
+                                    return await performEffect(nextEffect);
+                                } catch (error) {
+                                    effectError = error;
+                                    throw error;
+                                }
+                            }
+                        },
                     },
                 );
                 var result = await pipeline.run(intent);
                 if (!result.ok)
-                    throw new Error(
+                    throw effectError || new Error(
                         (result.errors || [result.reason || 'Background work failed.']).join(' '),
                     );
-                if (getWorkflowSession().uid === session.uid) workflowLocalStore.finishEffect(effect);
+                if (getWorkflowSession().uid === session.uid) {
+                    if (result.data && result.data.needsReview) {
+                        workflowLocalStore.holdEffect(effect, result.data);
+                    } else {
+                        workflowLocalStore.finishEffect(effect);
+                    }
+                }
             } catch (error) {
                 if (getWorkflowSession().uid === session.uid) workflowLocalStore.retryEffect(effect, error);
             }

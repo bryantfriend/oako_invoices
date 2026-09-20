@@ -17,7 +17,9 @@ function harness() {
     var context = vm.createContext({
         auth: { currentUser: { uid: 'user-1' } },
         offlineStatusService: { isOnline: function() { return true; } },
+        syncRecoveryService: { recoverAuthentication: async function() {} },
         offlineQueueService: {
+            listActiveItems: async function() { return []; },
             subscribe: function(callback) { queueChanged = callback; },
             listProcessableItems: async function(actor, options) {
                 reads += 1;
@@ -112,4 +114,13 @@ test('slow sync cannot overlap another automatic run and exceptions allow later 
     h.intervals[0]();
     await h.flush();
     assert.equal(h.reads(), 3);
+});
+
+test('a queue with only abandoned syncing work wakes the processor for lease-protected recovery', async function() {
+    var h = harness();
+    h.context.offlineQueueService.listActiveItems = async function() {
+        return [{ userId: 'user-1', status: 'syncing', lastAttemptAt: new Date(Date.now() - 60000).toISOString() }];
+    };
+    await h.flush();
+    assert.equal(h.calls(), 1);
 });

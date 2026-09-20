@@ -67,6 +67,10 @@ export const workflowLocalStore = {
     },
     enqueue: function (kind, entityId, action, expectedAt) {
         var id = kind + '-' + (action || '') + '-' + entityId;
+        var existing = this.read('effects', id, null);
+        if (kind === 'invoice-sheets' && existing) {
+            return existing;
+        }
         var record = {
             id: id,
             kind: kind,
@@ -83,13 +87,48 @@ export const workflowLocalStore = {
     },
     finishEffect: function (effect) {
         var current = this.read('effects', effect.id, null);
-        if (current && current.revision === effect.revision) this.remove('effects', effect.id);
+        if (current && current.revision === effect.revision) {
+            if (effect.kind === 'invoice-sheets') {
+                current.needsReview = false;
+                current.nextAt = Number.MAX_SAFE_INTEGER;
+                current.acknowledged = true;
+                current.error = '';
+                current.errorCode = '';
+                this.write('effects', effect.id, current);
+            } else {
+                this.remove('effects', effect.id);
+            }
+        }
+    },
+    markEffectSending: function(effect) {
+        var current = this.read('effects', effect.id, null);
+        if (!current || current.revision !== effect.revision) {
+            throw new Error('The export changed before it could be sent.');
+        }
+        // Persist before sending. If the tab closes after delivery but before a
+        // receipt is stored, reopening must not blindly append the invoice again.
+        current.needsReview = true;
+        current.errorCode = 'sheets_delivery_interrupted';
+        current.error = 'An export started without a saved delivery receipt. Check the destination before resending.';
+        this.write('effects', effect.id, current);
+    },
+    holdEffect: function(effect, result) {
+        var current = this.read('effects', effect.id, null);
+        if (!current || current.revision !== effect.revision) {
+            return;
+        }
+        current.needsReview = true;
+        current.errorCode = result.code || 'sheets_review_required';
+        current.error = result.message || 'Check Sheets configuration and delivery.';
+        current.attempts += 1;
+        this.write('effects', effect.id, current);
     },
     retryEffect: function (effect, error) {
         var current = this.read('effects', effect.id, null);
         if (!current || current.revision !== effect.revision) return;
         current.attempts += 1;
         current.error = error.message || 'Background work needs another attempt.';
+        current.errorCode = error.code || error.name || 'workflow_retry';
         current.nextAt = Date.now() + Math.min(300000, 2000 * Math.pow(2, Math.min(current.attempts, 8)));
         this.write('effects', effect.id, current);
     },

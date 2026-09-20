@@ -1,3 +1,4 @@
+import emitRetrySyncResultModule from './Sync/emitRetrySyncResult.js';
 import emitCustomerMutationModule from "./Customers/emitCustomerMutation.js";
 import emitInvoiceWorkflowResultModule from './Workflow/emitInvoiceWorkflowResult.js';
 // ICF/Stages/Emitters/emitters.js
@@ -80,5 +81,7 @@ var emitters = {
 };
 
 emitters.emitCustomerMutation = emitCustomerMutationModule.emitCustomerMutation;
+
+emitters.emitRetrySyncResult = emitRetrySyncResultModule.emitRetrySyncResult;
 
 export default emitters;

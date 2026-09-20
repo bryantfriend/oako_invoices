@@ -463,12 +463,14 @@ test('validation rejects negative quantities and calendar rollover without savin
     }
 });
 
-test('Sheets requests time out and report a retryable failure', async function () {
+test('Sheets requests time out and hold uncertain delivery for review', async function () {
     var signal;
     var service = (
         await loadModule(
             'js/services/googleSheetsService.js',
             {
+                firebase: { auth: { currentUser: { uid: 'staff' } } },
+                syncSupportService: { syncSupportService: { recordIssue: async function() {} } },
                 settingsService: {
                     getGoogleSheetId() {
                         return 'sheet';
@@ -501,6 +503,7 @@ test('Sheets requests time out and report a retryable failure', async function (
     var result = await service.postPayload({ mode: 'upsert' });
     assert.equal(signal.aborted, true);
     assert.equal(result.success, false);
+    assert.equal(result.needsReview, true);
 });
 
 test('background Sheets effect waits for its queued order revision to commit', async function () {
@@ -540,6 +543,7 @@ test('background Sheets effect waits for its queued order revision to commit', a
             },
             workflowLocalStore: {
                 workflowLocalStore: {
+                    markEffectSending: function() {},
                     list() {
                         return [effect];
                     },

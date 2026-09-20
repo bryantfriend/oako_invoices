@@ -1,3 +1,4 @@
+import processRetrySyncModule from './Sync/processRetrySync.js';
 import processCustomerMutationModule from "./Customers/processCustomerMutation.js";
 import processRunWorkflowEffectModule from './Workflow/processRunWorkflowEffect.js';
 import processPrepareInvoiceBatchModule from './Workflow/processPrepareInvoiceBatch.js';
@@ -83,5 +84,7 @@ var processors = {
 };
 
 processors.processCustomerMutation = processCustomerMutationModule.processCustomerMutation;
+
+processors.processRetrySync = processRetrySyncModule.processRetrySync;
 
 export default processors;

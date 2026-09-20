@@ -57,7 +57,7 @@ function validateInvoiceWorkflowPayload(intent) {
     } else if (intent.type === 'RunWorkflowEffectIntent') {
         if (
             !payload.effect ||
-            ['sheets', 'reward'].indexOf(payload.effect.kind) === -1 ||
+            ['sheets', 'invoice-sheets', 'reward'].indexOf(payload.effect.kind) === -1 ||
             !payload.effect.entityId
         )
             return resultHelpers.validationFailure('Unknown background action.');

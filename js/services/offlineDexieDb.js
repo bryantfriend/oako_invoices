@@ -145,33 +145,55 @@ export async function acquireSyncLease(ownerId, nowMillis) {
     });
 }
 
-export async function releaseSyncLease(ownerId) {
+export async function renewSyncLease(ownerId, nowMillis) {
     var database = await openOfflineDexieDatabase();
-    var existing = await database.syncLocks.get(SYNC_LEASE_ID);
-    if (!existing || existing.ownerId !== ownerId) {
-        return false;
-    }
-    await database.syncLocks.delete(SYNC_LEASE_ID);
-    return true;
+    var currentMillis = Number(nowMillis) || Date.now();
+    return database.transaction('rw', database.syncLocks, async function() {
+        var existing = await database.syncLocks.get(SYNC_LEASE_ID);
+        if (!existing || existing.ownerId !== ownerId || new Date(existing.expiresAt).getTime() <= currentMillis) {
+            return false;
+        }
+        existing.expiresAt = new Date(currentMillis + SYNC_LEASE_TTL_MS).toISOString();
+        await database.syncLocks.put(existing);
+        return true;
+    });
 }
 
-export async function resetStaleSyncingIntents(nowMillis) {
+export async function releaseSyncLease(ownerId) {
+    var database = await openOfflineDexieDatabase();
+    return database.transaction('rw', database.syncLocks, async function() {
+        var existing = await database.syncLocks.get(SYNC_LEASE_ID);
+        if (!existing || existing.ownerId !== ownerId) {
+            return false;
+        }
+        await database.syncLocks.delete(SYNC_LEASE_ID);
+        return true;
+    });
+}
+
+export async function resetStaleSyncingIntents(nowMillis, ownerId) {
     var database = await openOfflineDexieDatabase();
     var currentMillis = Number(nowMillis) || Date.now();
     var staleBefore = new Date(currentMillis - SYNC_LEASE_TTL_MS).toISOString();
-    var syncingItems = await database.offlineIntents
-        .where('status')
-        .equals('syncing')
-        .toArray();
-
-    for (var index = 0; index < syncingItems.length; index += 1) {
-        var item = syncingItems[index];
-        if (!item.lastAttemptAt || item.lastAttemptAt < staleBefore) {
-            item.status = 'pending';
-            item.updatedAt = new Date().toISOString();
-            await database.offlineIntents.put(item);
+    return database.transaction('rw', database.syncLocks, database.offlineIntents, async function() {
+        var lock = await database.syncLocks.get(SYNC_LEASE_ID);
+        if (lock && new Date(lock.expiresAt).getTime() > currentMillis && lock.ownerId !== ownerId) {
+            return;
         }
-    }
+        var syncingItems = await database.offlineIntents
+            .where('status')
+            .equals('syncing')
+            .toArray();
+
+        for (var index = 0; index < syncingItems.length; index += 1) {
+            var item = syncingItems[index];
+            if (!item.lastAttemptAt || item.lastAttemptAt < staleBefore) {
+                item.status = 'pending';
+                item.updatedAt = new Date().toISOString();
+                await database.offlineIntents.put(item);
+            }
+        }
+    });
 }
 
 export async function cleanupAcknowledgedIntents(retentionDays) {

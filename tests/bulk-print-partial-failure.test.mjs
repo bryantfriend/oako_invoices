@@ -22,6 +22,7 @@ function harness(invoices) {
     };
     var context = vm.createContext({
         console: { info: function() {}, error: function() {} },
+        syncSupportService: { recordIssue: async function() {} },
         sessionDataStore: {
             getInvoicesSnapshot: function() { return { records: invoices }; },
             updateInvoiceRecord: function() {}

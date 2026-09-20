@@ -26,7 +26,7 @@ function getErrorCode(error) {
     if (!error) {
         return '';
     }
-    return String(error.code || error.name || '').toLowerCase();
+    return String(error.code || error.name || '').toLowerCase().replace(/^(firestore|auth)\//, '');
 }
 
 function getErrorMessage(error) {
@@ -61,7 +61,7 @@ export function classifySyncError(error) {
         };
     }
 
-    if (code === 'unauthenticated' || message.indexOf('auth') !== -1 && message.indexOf('expired') !== -1) {
+    if (['unauthenticated', 'user-token-expired', 'invalid-user-token'].indexOf(code) !== -1 || message.indexOf('auth') !== -1 && message.indexOf('expired') !== -1) {
         return {
             status: SYNC_RETRY_STATUSES.BLOCKED_AUTHENTICATION,
             retryable: false,
@@ -81,6 +81,9 @@ export function classifySyncError(error) {
 
     if (
         containsAny(code, RETRYABLE_CODES) ||
+        code === 'aborterror' || code === 'timeout' || code === 'network-request-failed' ||
+        message.indexOf('failed to fetch') !== -1 ||
+        message.indexOf('load failed') !== -1 ||
         message.indexOf('network') !== -1 ||
         message.indexOf('timeout') !== -1 ||
         message.indexOf('temporarily unavailable') !== -1 ||

@@ -1,5 +1,15 @@
 import { getGoogleSheetId, settingsService } from "./settingsService.js";
 import { getOrderItemUnitPrice } from "../core/pricing.js";
+import { auth } from '../core/firebase.js';
+import { syncSupportService } from './syncSupportService.js';
+
+async function recordSheetsIssue(payload, code, message, actorId) {
+    await syncSupportService.recordIssue({
+        source: 'sheets', id: payload.orderId || payload.invoiceId || 'configuration',
+        entityId: payload.orderId || payload.invoiceId, entityType: payload.entityType,
+        action: payload.mode, status: 'needs_review', errorCode: code, message: message
+    }, actorId);
+}
 
 function toIso(value) {
     if (!value) return '';
@@ -75,6 +85,8 @@ export const googleSheetsService = {
     },
 
     async postPayload(payload) {
+        var actorId = auth.currentUser ? auth.currentUser.uid : '';
+        var requestStarted = false;
         var timeoutId;
         try {
             const settings = await settingsService.getInvoiceSettings();
@@ -85,15 +97,14 @@ export const googleSheetsService = {
             const googleSheetId = getGoogleSheetId(settings.googleSheetId);
             const webhookUrl = String(settings.googleSheetsWebhookUrl || '').trim();
             if (!webhookUrl) {
-                console.warn('Google Sheets sync is enabled but Google Sheets Webhook URL is not configured. A Sheet ID opens the sheet, but browser code still needs an Apps Script webhook to append rows.', {
-                    googleSheetId,
-                    payload
-                });
-                return { skipped: true, payload };
+                var setupError = new Error('Google Sheets sync is enabled but its webhook URL is missing. Configure it in Settings.');
+                setupError.code = 'sheets_configuration_required';
+                throw setupError;
             }
 
             var controller = new AbortController();
             timeoutId = setTimeout(function() { controller.abort(); }, 20000);
+            requestStarted = true;
             const response = await fetch(webhookUrl, {
                 signal: controller.signal,
                 method: 'POST',
@@ -106,32 +117,51 @@ export const googleSheetsService = {
                 })
             });
 
-            if (response.type === 'opaque') return { success: true, opaque: true, payload };
+            if (response.type === 'opaque') {
+                var message = 'The Sheets request was sent, but the endpoint does not provide a readable receipt. Check the destination before retrying; automatic resend is paused to avoid duplicates.';
+                await recordSheetsIssue(payload, 'sheets_delivery_unconfirmed', message, actorId);
+                return { success: true, confirmed: false, needsReview: true, code: 'sheets_delivery_unconfirmed', message: message };
+            }
             if (!response.ok) throw new Error(`Google Sheets sync failed with ${response.status}`);
-            return { success: true, payload };
+            // A transport response alone is not proof that rows were committed.
+            var receipt = await response.json();
+            if (!receipt || receipt.success !== true || receipt.entityId !== (payload.orderId || payload.invoiceId) || (payload.deliveryId && receipt.deliveryId !== payload.deliveryId)) {
+                var receiptError = new Error('The Sheets endpoint did not confirm the saved entity. Check its response contract before retrying.');
+                receiptError.code = 'sheets_receipt_required';
+                throw receiptError;
+            }
+            await syncSupportService.recordIssue({
+                source: 'sheets', id: payload.orderId || payload.invoiceId,
+                entityId: payload.orderId || payload.invoiceId, entityType: payload.entityType,
+                action: payload.mode, status: 'acknowledged', needsReview: false,
+                message: 'The endpoint confirmed this entity was saved.'
+            }, actorId);
+            return { success: true, confirmed: true };
         } catch (error) {
-            console.warn('Google Sheets sync failed without blocking invoice completion.', error);
-            return { success: false, error };
+            var errorCode = error.code || (requestStarted ? 'sheets_delivery_uncertain' : 'sheets_setup_failed');
+            await recordSheetsIssue(payload, errorCode, error.message, actorId);
+            return { success: false, error: error, needsReview: true, code: errorCode, message: error.message };
         } finally {
             clearTimeout(timeoutId);
         }
     },
 
-    async postInvoiceRows(invoice) {
+    async postInvoiceRows(invoice, options) {
         const rows = this.buildRows(invoice);
         return this.postPayload({
             mode: 'append',
             entityType: 'invoice',
             invoiceId: invoice.id,
+            deliveryId: options && options.deliveryId ? options.deliveryId : '',
             rows
         });
     },
 
-    async syncCompletedInvoice(invoice) {
+    async syncCompletedInvoice(invoice, options) {
         if (invoice.status !== 'completed' && invoice.status !== 'fulfilled') {
             return { skipped: true };
         }
-        return this.postInvoiceRows(invoice);
+        return this.postInvoiceRows(invoice, options);
     },
 
     async syncPrintedInvoice(invoice) {
@@ -141,7 +171,7 @@ export const googleSheetsService = {
         });
     },
 
-    async syncOrderLifecycle(order) {
+    async syncOrderLifecycle(order, options) {
         const rowObjects = this.buildOrderRows(order);
         if (rowObjects.length === 0) {
             return { skipped: true, reason: 'no_rows' };
@@ -151,6 +181,7 @@ export const googleSheetsService = {
             mode: 'upsert',
             entityType: 'order',
             orderId: order.id,
+            deliveryId: options && options.deliveryId ? options.deliveryId : '',
             primaryKey: 'sheetRowKey',
             rowObjects,
             rows: rowObjects.map(row => row.values)

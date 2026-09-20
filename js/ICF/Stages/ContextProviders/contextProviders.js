@@ -1,3 +1,4 @@
+import addRetrySyncContextModule from './Sync/addRetrySyncContext.js';
 import addCustomerMutationContextModule from "./Customers/addCustomerMutationContext.js";
 import addInvoiceWorkflowContextModule from './Workflow/addInvoiceWorkflowContext.js';
 // ICF/Stages/ContextProviders/contextProviders.js
@@ -65,5 +66,7 @@ var contextProviders = {
 };
 
 contextProviders.addCustomerMutationContext = addCustomerMutationContextModule.addCustomerMutationContext;
+
+contextProviders.addRetrySyncContext = addRetrySyncContextModule.addRetrySyncContext;
 
 export default contextProviders;

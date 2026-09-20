@@ -2,6 +2,7 @@ import { layoutView } from "./layoutView.js";
 import { conflictService } from "../services/conflictService.js";
 import { syncService } from "../services/syncService.js";
 import { notificationService } from "../core/notificationService.js";
+import { mountSyncSupportPanel } from '../components/syncSupportPanel.js';
 
 function escapeHtml(value = '') {
     return String(value)
@@ -72,11 +73,14 @@ export async function renderConflictReview() {
                 <button id="conflicts-sync-now" class="btn btn-secondary">Sync Now</button>
             </div>
             ${conflicts.length ? conflicts.map(renderConflictCard).join('') : '<div class="card" style="text-align: center; color: var(--color-gray-500);">No open conflicts.</div>'}
+            <div id="sync-support-panel"></div>
         </div>
     `;
 
+    await mountSyncSupportPanel(document.getElementById('sync-support-panel'));
+
     document.getElementById('conflicts-sync-now')?.addEventListener('click', async function() {
-        const result = await syncService.processQueue();
+        const result = await syncService.processQueue({ manual: true });
         notificationService.info('Sync complete: ' + result.synced + ' synced, ' + result.failed + ' failed.');
         renderConflictReview();
     });
