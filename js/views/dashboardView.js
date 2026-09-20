@@ -1770,7 +1770,20 @@ export const renderDashboard = async (params, routeContext) => {
             }
             progressModal.close();
             progressModal = null;
-            notificationService.success(String(orderedOrderIds.length) + ' selected printable invoice' + (orderedOrderIds.length === 1 ? ' is' : 's are') + ' ready in one preview tab.');
+            var printResult = result.data;
+            var printedCount = printResult.invoiceCount;
+            notificationService.success(String(printedCount) + ' selected printable invoice' + (printedCount === 1 ? ' is' : 's are') + ' ready in one preview tab.');
+            if (printResult.failedInvoices && printResult.failedInvoices.length > 0) {
+                var skippedModal = new Modal({
+                    title: 'Quick Print: ' + printedCount + ' ready, ' + printResult.failedInvoices.length + ' skipped',
+                    content: '<p>The available invoices are ready in the preview tab. These invoices could not be printed:</p><ul>' + printResult.failedInvoices.map(function(message) {
+                        return '<li>' + escapeHtml(message) + '</li>';
+                    }).join('') + '</ul><p>Your selection has been kept so you can retry after resolving these issues.</p>',
+                    confirmText: 'Close',
+                    cancelText: 'Close'
+                });
+                skippedModal.open();
+            }
         } catch (error) {
             if (progressModal) {
                 progressModal.close();

@@ -224,7 +224,7 @@ function validateInvoice(invoice, orderId) {
     }
 }
 
-async function loadPrintableInvoices(orderIds) {
+async function loadPrintableInvoices(orderIds, loadErrors) {
     var snapshot = sessionDataStore.getInvoicesSnapshot();
     var cachedInvoices = snapshot && Array.isArray(snapshot.records)
         ? snapshot.records
@@ -242,7 +242,25 @@ async function loadPrintableInvoices(orderIds) {
         return !byOrderId[orderId];
     });
     if (missingOrderIds.length > 0) {
-        var loadedInvoices = await invoiceService.getInvoicesByOrderIds(missingOrderIds);
+        var loadedInvoices = [];
+        try {
+            loadedInvoices = await invoiceService.getInvoicesByOrderIds(missingOrderIds);
+        } catch (loadError) {
+            // Recover individually so a failed lookup cannot block cached invoices.
+            if (!loadErrors) {
+                throw loadError;
+            }
+            for (var missingOrderId of missingOrderIds) {
+                try {
+                    var loadedInvoice = await invoiceService.getInvoiceByOrderId(missingOrderId);
+                    if (loadedInvoice) {
+                        loadedInvoices.push(loadedInvoice);
+                    }
+                } catch (individualError) {
+                    loadErrors[missingOrderId] = individualError.message;
+                }
+            }
+        }
         index = 0;
         while (index < loadedInvoices.length) {
             if (loadedInvoices[index] && loadedInvoices[index].orderId) {
@@ -309,19 +327,8 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
     var startedAt = Date.now();
 
     try {
-        var invoices = await loadPrintableInvoices(orderIds);
-        var validationIndex = 0;
-        while (validationIndex < invoices.length) {
-            try {
-                validateInvoice(invoices[validationIndex], orderIds[validationIndex]);
-            } catch (validationError) {
-                failedInvoices.push(getInvoiceLabel(invoices[validationIndex]) + ': ' + validationError.message);
-            }
-            validationIndex = validationIndex + 1;
-        }
-        if (failedInvoices.length > 0) {
-            throw new Error('Could not print: ' + failedInvoices.join('; '));
-        }
+        var loadErrors = {};
+        var invoices = await loadPrintableInvoices(orderIds, loadErrors);
 
         var settings = context && context.settings ? context.settings : {};
         var filename = buildFilename(invoices.length, layout);
@@ -335,8 +342,13 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 throw new Error('This combined print operation is stale.');
             }
             var invoice = invoices[invoiceIndex];
-            emitProgress(options, completedInvoices, invoices.length, 'Generating invoice and QR code', getInvoiceLabel(invoice));
+            var previousPageCount = hasPdfPage ? pdf.getNumberOfPages() : 0;
+            emitProgress(options, invoiceIndex, invoices.length, 'Generating invoice and QR code', getInvoiceLabel(invoice));
             try {
+                if (loadErrors[orderIds[invoiceIndex]]) {
+                    throw new Error(loadErrors[orderIds[invoiceIndex]]);
+                }
+                validateInvoice(invoice, orderIds[invoiceIndex]);
                 invoice = await prepareInvoiceQr(invoice);
                 var pages = buildInvoicePrintPages({
                     invoice: invoice,
@@ -346,6 +358,9 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                     scale: 1,
                     showAllPages: true
                 });
+                if (pages.length === 0) {
+                    throw new Error('No printable invoice pages were generated.');
+                }
                 var pageIndex = 0;
                 while (pageIndex < pages.length) {
                     var canvas = await capturePage(pages[pageIndex]);
@@ -360,28 +375,38 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                     pageIndex = pageIndex + 1;
                     await yieldToBrowser();
                 }
+                completedInvoices = completedInvoices + 1;
             } catch (invoiceError) {
-                failedInvoices.push(getInvoiceLabel(invoice) + ': ' + invoiceError.message);
-                throw invoiceError;
+                failedInvoices.push((invoice ? getInvoiceLabel(invoice) : 'Order ' + orderIds[invoiceIndex]) + ': ' + invoiceError.message);
+                // Remove every page of a failed invoice, including partially rendered ones.
+                while (pdf.getNumberOfPages() > previousPageCount) {
+                    pdf.deletePage(pdf.getNumberOfPages());
+                }
+                hasPdfPage = previousPageCount > 0;
+                if (!hasPdfPage) {
+                    pdf.addPage();
+                }
             }
-            completedInvoices = completedInvoices + 1;
-            emitProgress(options, completedInvoices, invoices.length, 'Invoice added to combined PDF', getInvoiceLabel(invoice));
             invoiceIndex = invoiceIndex + 1;
+            emitProgress(options, invoiceIndex, invoices.length, String(completedInvoices) + ' ready, ' + failedInvoices.length + ' skipped', getInvoiceLabel(invoice));
         }
 
         if (!hasPdfPage) {
-            throw new Error('No printable invoice pages were generated.');
+            throw new Error('No printable invoice pages were generated. ' + failedInvoices.join('; '));
         }
 
+        filename = buildFilename(completedInvoices, layout);
+        pdf.setProperties({ title: filename });
         var opened = openPdfBlob(pdf, filename, options ? options.previewWindow : null);
         console.info('[BULK_PRINT] completed', {
-            invoiceCount: invoices.length,
+            invoiceCount: completedInvoices,
             layout: layout,
             durationMs: Date.now() - startedAt,
             failureStage: ''
         });
         return Object.assign({}, opened, {
-            invoiceCount: invoices.length,
+            invoiceCount: completedInvoices,
+            failedInvoices: failedInvoices,
             layout: layout,
             durationMs: Date.now() - startedAt
         });

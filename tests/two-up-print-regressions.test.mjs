@@ -86,6 +86,8 @@ test('Quick Print renders two copies of each invoice page for single, odd, even 
         var sheets = [[]];
         var invoices = labels.map(function(label) { return { invoiceNumber: label, pages: label.split(',') }; });
         var pdf = {
+            getNumberOfPages: function() { return sheets.length; },
+            setProperties: function() {},
             addPage: function() { sheets.push([]); },
             addImage: function(canvas, format, x, y) { sheets[sheets.length - 1].push({ label: canvas, y: y }); },
             setDrawColor: function() {}, setLineDashPattern: function() {}, line: function() {}
