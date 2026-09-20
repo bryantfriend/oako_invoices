@@ -1,5 +1,6 @@
 import resultHelpers from "../../../engine/resultHelpers.js";
 import { getCategoryProducts } from "../../../../core/productReconciliation.js";
+import { findProductCategory } from "../../../../core/productCategories.js";
 
 function authorizeConfirmProductMatch(intent) {
     var roles = ['admin', 'owner', 'manager', 'superadmin', 'super_admin'];
@@ -8,7 +9,10 @@ function authorizeConfirmProductMatch(intent) {
     }
     var payload = intent.payload;
     var catalog = intent.context.catalog;
-    if (payload.source.categoryId && payload.source.categoryId !== payload.categoryId) {
+    // Resolve historical aliases against the refreshed catalog. If the old
+    // category no longer exists, staff explicitly choose its current category.
+    var sourceCategory = findProductCategory(payload.source, catalog.categories);
+    if (sourceCategory && sourceCategory.id !== payload.categoryId) {
         return resultHelpers.authorizationFailure('Choose a product from the historical item’s category.');
     }
     var candidates = getCategoryProducts(catalog.products, catalog.categories, payload.categoryId);

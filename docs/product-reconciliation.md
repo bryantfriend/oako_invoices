@@ -4,6 +4,8 @@ Orders, Daily Orders, and Inventory resolve historical order items against the c
 
 Confirmed mappings are reused for the same historical ID/name/category. Unknown items are visibly flagged and excluded from stock and product totals until matched. Monetary order totals and stored invoices are preserved. Separate current product IDs remain separate even when their current names are identical.
 
+Historical category names, category IDs, and missing category fields can refer to the same confirmed identity. When the exact saved key is absent, reconciliation reuses an unambiguous confirmation for the same historical product ID and normalized name with compatible category data. Different known categories or conflicting targets still require review. Confirmed active product IDs remain valid when their current category moves or category documents are temporarily unavailable; retired targets still require confirmation. The transaction uses the same identity lookup to prevent conflicting confirmations under equivalent keys. Existing mappings are read in place without a migration.
+
 ## Additive storage plan
 
 The first confirmation creates the optional `settings/product_name_mappings` document. No migration, backfill, deletion, or rewrite of order/invoice history occurs. Each entry is keyed by an encoded historical identity and records the selected current product ID/category and confirming staff member/time. Transactions merge individual entries, preserve other matches, and reject conflicting active matches. A retired target requires another confirmation. Existing staff-only settings write rules cover this document; the client also checks the actor and same-category active product.

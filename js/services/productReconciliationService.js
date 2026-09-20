@@ -4,7 +4,7 @@ import { collection, query, where, documentId, doc, runTransaction } from "https
 import { getDocsWithCache, readCachedRowsAsync, writeCachedRows } from "../core/firestoreRead.js";
 import { offlineStatusService } from "./offlineStatusService.js";
 import { productService } from "./productService.js";
-import { reconcileProductRecords, getCategoryProducts } from "../core/productReconciliation.js";
+import { reconcileProductRecords, findConfirmedProductMatch } from "../core/productReconciliation.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import confirmProductMatchIntentModule from "../ICF/Intents/ConfirmProductMatchIntent.js";
 
@@ -86,8 +86,10 @@ async function writeConfirmedMatch(entry) {
     var savedMappings = await runTransaction(db, async function saveProductMapping(transaction) {
         var snapshot = await transaction.get(reference);
         var existing = snapshot.exists() ? snapshot.data().mappings || {} : {};
-        var previous = existing[entry.key];
-        var previousStillActive = previous && getCategoryProducts(catalog.products, catalog.categories, previous.categoryId).some(function(product) { return product.id === previous.productId; });
+        var previous = findConfirmedProductMatch(entry.source, existing, catalog.categories);
+        var previousStillActive = previous && catalog.products.some(function(product) {
+            return product.id === previous.productId && product.active !== false && product.archived !== true;
+        });
         if (previousStillActive && previous.productId !== entry.productId) {
             throw new Error('This name was already matched by another user. Refresh and review the saved match.');
         }

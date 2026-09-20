@@ -277,3 +277,72 @@ test('a newer staff confirmation supersedes an older local confirmation', async 
     await harness.api.loadContext(null, null, true);
     assert.equal(harness.api.projectRecords(historical)[0].items[0].productId, 'other-bread');
 });
+
+test('a saved match is reused across historical category representations and fresh sessions', async function() {
+    var server = { mappings: {} };
+    var first = serviceHarness(server);
+    await first.api.loadContext();
+    var records = [{ items: [{ productId: 'old-bread', name: 'Old bread', quantity: 3 }] }];
+    first.api.projectRecords(records);
+    await first.api.confirmMatch(first.api.getPendingMatches()[0], 'new-bread', 'bread');
+    var next = serviceHarness(server);
+    await next.api.loadContext();
+    next.api.projectRecords(historical);
+    assert.equal(next.api.getPendingMatches().length, 0);
+    assert.equal(next.api.projectRecords(historical)[0].items[0].productId, 'new-bread');
+    var categoryIssue = reconcileProductRecords(historical, context()).issues[0];
+    await assert.rejects(next.api.confirmMatch(categoryIssue, 'other-bread', 'bread'), /already matched/);
+});
+
+test('a confirmed product stays matched when category data is missing or the target changes category', function() {
+    var catalog = matchedContext();
+    catalog.categories = [];
+    assert.equal(reconcileProductRecords(historical, catalog).issues.length, 0);
+    catalog.categories = categories;
+    catalog.products = products.map(function(product) {
+        return Object.assign({}, product, product.id === 'new-bread' ? { categoryId: 'cookies' } : {});
+    });
+    assert.equal(reconcileProductRecords(historical, catalog).issues.length, 0);
+});
+
+test('category aliases reuse a saved match without merging different historical IDs or categories', function() {
+    var source = { productId: 'old-bread', name: 'Old bread', categoryName: 'Bread' };
+    var mappings = {};
+    mappings[getProductMatchKey(source)] = { source: source, productId: 'new-bread', categoryId: 'bread' };
+    assert.equal(reconcileProductRecords(historical, context(mappings)).issues.length, 0);
+    var unrelated = [{ items: [
+        { productId: 'different-id', name: 'Old bread', categoryId: 'bread' },
+        { productId: 'old-bread', name: 'Old bread', categoryId: 'cookies' }
+    ] }];
+    assert.equal(reconcileProductRecords(unrelated, context(mappings)).issues.length, 2);
+});
+
+test('missing categories cannot choose between conflicting saved product matches', function() {
+    var mappings = {};
+    ['bread', 'cookies'].forEach(function(categoryId) {
+        var source = { productId: 'old-bread', name: 'Old bread', categoryId: categoryId };
+        mappings[getProductMatchKey(source)] = { source: source, productId: categoryId === 'bread' ? 'new-bread' : 'cookie', categoryId: categoryId };
+    });
+    var records = [{ items: [{ productId: 'old-bread', name: 'Old bread' }] }];
+    assert.equal(reconcileProductRecords(records, context(mappings)).issues.length, 1);
+});
+
+test('unavailable category documents do not erase explicit historical category IDs', function() {
+    var records = [{ items: [{ productId: 'old', name: 'Old', categoryId: 'unavailable-category' }] }];
+    var result = reconcileProductRecords(records, { products: products, categories: [], mappings: {} });
+    assert.equal(result.issues[0].source.categoryId, 'unavailable-category');
+});
+
+test('confirmation resolves historical category aliases and allows staff to replace unavailable categories', async function() {
+    for (var categoryId of ['Bread', 'retired-category']) {
+        var harness = serviceHarness({ mappings: {} });
+        await harness.api.loadContext();
+        var source = { productId: 'old', name: 'Old', categoryId: categoryId };
+        var issue = { source: source, key: getProductMatchKey(source) };
+        if (categoryId === 'Bread') {
+            await assert.rejects(harness.api.confirmMatch(issue, 'cookie', 'cookies'));
+        }
+        await harness.api.confirmMatch(issue, 'new-bread', 'bread');
+        assert.equal(harness.api.projectRecords([{ items: [{ _catalogSource: source }] }])[0].items[0].productId, 'new-bread');
+    }
+});

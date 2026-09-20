@@ -29,6 +29,7 @@ function invoice(number, count) {
     };
 }
 const single = invoice('TEST-001', 3);
+const twoPage = invoice('TEST-014', 14);
 const long = invoice('TEST-041', 41);
 const records = [single, invoice('TEST-002', 5), long];
 for (const paperSize of ['letter', 'legal', 'a3', 'a5']) {
@@ -39,11 +40,13 @@ for (const [name, list] of [['single', [single]], ['odd-batch', records], ['mult
     const pages = list.flatMap(function(record) { return buildInvoicePrintPages({ invoice: record, settings: settings, showAllPages: true }); });
     fs.writeFileSync(path.join(output, 'native-' + name + '.html'), context.buildNativePrintDocument(pages, 'two-up-portrait', 'http://127.0.0.1:8766/', 'a4'));
 }
-for (const record of [single, long]) {
+for (const record of [single, twoPage, long]) {
     const originals = buildInvoicePrintPages({ invoice: record, settings: settings, currentPage: 2, scale: 1.5, showAllPages: true });
     const copies = buildInvoicePrintPages({ invoice: record, settings: settings, currentPage: 2, scale: 1.5, showAllPages: true, isCopy: true });
     const sheets = originals.map(function(page, index) { return '<div class="print-sheet"><div class="sheet-half">' + page + '</div><div class="sheet-half">' + copies[index] + '</div></div>'; });
-    fs.writeFileSync(path.join(output, 'individual-' + record.invoiceNumber + '.html'), '<!doctype html><meta charset="utf-8">' + style + '<body><div id="invoice-doc-container" class="printing-2up-portrait"><div class="print-wrapper">' + sheets.join('') + '</div></div>');
+    // Include the real preview's flex wrapper: omitting it hides print fragmentation bugs.
+    const wrapper = viewSource.match(/<div class="print-wrapper invoice-document"[^>]*>/)[0];
+    fs.writeFileSync(path.join(output, 'individual-' + record.invoiceNumber + '.html'), '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css">' + style + '<body><div id="invoice-doc-container" class="printing-2up-portrait">' + wrapper + sheets.join('') + '</div></div>');
 }
 await build({
     entryPoints: ['js/services/bulkInvoicePrintService.js'], bundle: true, outfile: path.join(output, 'bulk-service.js'), format: 'iife', globalName: 'bulkTest',

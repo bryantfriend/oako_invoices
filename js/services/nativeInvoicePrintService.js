@@ -61,7 +61,9 @@ export function buildNativePrintDocument(pages, layout, baseUrl, paperSize) {
         'mm;height:' +
         size[1] +
         'mm;background:white;margin:14px auto;break-after:page;page-break-after:always;overflow:hidden}.print-sheet:last-child{break-after:auto;page-break-after:auto}' +
-        '.print-slot{width:100%;height:' +
+        // Containment prevents the rotated page's original height from being
+        // fragmented at the physical page boundary inside the lower copy.
+        '.print-slot{contain:strict;width:100%;height:' +
         (twoUp ? '50%' : '100%') +
         ';position:relative;overflow:hidden}.print-slot+.print-slot{border-top:1px dashed #aaa}' +
         '.invoice-page{display:block!important;position:absolute!important;top:0!important;left:0!important;width:210mm!important;height:296mm!important;margin:0!important;box-shadow:none!important;transform-origin:0 0!important;transform:' +

@@ -1762,20 +1762,19 @@ export const renderInvoiceDetail = async ({ id }) => {
         let realTotalPages = 1;
 
         if (is2UpMode) {
-            // Render BOTH versions (Original and Copy) for interleaving
+            // Duplicate each already-paginated page so both halves are identical.
             const originalPages = renderDocument(currentLang, false);
-            const copyPages = renderDocument(currentLang, true);
             realTotalPages = originalPages.length;
             if (currentPage > realTotalPages) {
                 currentPage = realTotalPages;
                 return refreshBody();
             }
 
-            originalPages.forEach((page, i) => {
+            originalPages.forEach(function appendDuplicateSheet(page) {
                 finalHtml += `
                     <div class="print-sheet">
                         <div class="sheet-half">${page}</div>
-                        <div class="sheet-half">${copyPages[i] || ''}</div>
+                        <div class="sheet-half">${page}</div>
                     </div>
                 `;
             });
@@ -1943,6 +1942,11 @@ export const renderInvoiceDetail = async ({ id }) => {
                         margin: 0 !important;
                         box-shadow: none !important;
                     }
+
+                    /* Print complete physical sheets in block flow. */
+                    #invoice-doc-container > .print-wrapper {
+                        display: block !important;
+                    }
                     
                     ::-webkit-scrollbar { display: none !important; }
 
@@ -1977,7 +1981,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                         display: block !important;
                         position: relative !important;
                         width: 210mm !important;
-                        height: 297mm !important; 
+                        height: 297mm !important;
+                        break-inside: avoid !important;
+                        page-break-inside: avoid !important;
                         page-break-after: always !important;
                         margin: 0 !important;
                         padding: 0 !important;
@@ -1992,6 +1998,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                     }
 
                     .sheet-half {
+                        /* Isolate the unrotated A4 layout from page fragmentation.
+                           Otherwise later content in the lower copy can disappear. */
+                        contain: strict !important;
                         width: 210mm !important;
                         height: 148.5mm !important;
                         position: relative !important;

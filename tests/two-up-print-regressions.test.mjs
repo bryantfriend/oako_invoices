@@ -6,6 +6,30 @@ import vm from 'node:vm';
 var bulkSource = fs.readFileSync(new URL('../js/services/bulkInvoicePrintService.js', import.meta.url), 'utf8');
 function section(source, start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 
+test('individual two-up sheets duplicate each paginated page from one render', function() {
+    var source = fs.readFileSync(new URL('../js/views/invoiceView.js', import.meta.url), 'utf8');
+    var calls = 0;
+    var context = vm.createContext({
+        is2UpMode: true, currentPage: 1, currentLang: 'en',
+        renderDocument: function() { calls += 1; return ['<p>Items 1–7</p>', '<p>Items 8–14</p>']; }
+    });
+    vm.runInContext('(function renderSheets() {\n' + section(source, "        let finalHtml = '';", '        container.innerHTML = `') + '\nglobalThis.html = finalHtml;\n}());', context);
+    assert.equal(calls, 1);
+    var halves = Array.from(context.html.matchAll(/class="sheet-half">(.*?)<\/div>/g)).map(function(match) { return match[1]; });
+    assert.deepEqual(halves, ['<p>Items 1–7</p>', '<p>Items 1–7</p>', '<p>Items 8–14</p>', '<p>Items 8–14</p>']);
+});
+
+test('rotated copies are contained so physical page breaks cannot fragment their unrotated contents', function() {
+    var individual = fs.readFileSync(new URL('../js/views/invoiceView.js', import.meta.url), 'utf8');
+    var printCss = individual.slice(individual.indexOf('@media print {', individual.indexOf('const refreshBody =')));
+    assert.match(printCss, /\.sheet-half\s*\{[^}]*contain:\s*strict\s*!important/);
+    var native = fs.readFileSync(new URL('../js/services/nativeInvoicePrintService.js', import.meta.url), 'utf8');
+    var context = vm.createContext({ escapeHtml: String });
+    vm.runInContext(section(native, 'export function buildNativePrintDocument(', 'async function waitForPrintAssets(').replace('export function', 'function'), context);
+    var document = context.buildNativePrintDocument(['<p>Page one</p>', '<p>Page two</p>'], 'two-up-portrait', '/', 'a4');
+    assert.match(document, /\.print-slot\{[^}]*contain:strict/);
+});
+
 test('invoice pages repeat complete details and identical copies with bounded item pagination', async function() {
     globalThis.localStorage = { getItem: function() { return 'en'; } };
     var template = await import('../js/services/invoicePrintTemplate.js');
