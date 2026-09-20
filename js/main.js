@@ -57,12 +57,15 @@ import { renderConflictReview } from "./views/conflictReviewView.js";
 import { renderOfflineCache } from "./views/offlineCacheView.js";
 import { renderMobileInvoice } from "./views/mobileInvoiceView.js";
 
+import { initializeAutomaticSync } from "./services/automaticSyncService.js";
+
 async function initApp() {
     try {
         // Initialize Auth
         await authService.init();
         offlineStatusService.init();
         initializeWorkflowEffects();
+        initializeAutomaticSync();
 
         if (offlinePersistenceState.warning) {
             notificationService.info(offlinePersistenceState.warning);
