@@ -28,6 +28,7 @@ export const ROUTES = {
     PRODUCTION_PLANNER: '/production-planner',
     DELIVERY: '/delivery',
     SETTINGS: '/settings',
+    LEGACY_PRODUCTS: '/legacy-products',
     PROFILE: '/profile',
     OFFLINE_DATA: '/offline',
     SYNC_CONFLICTS: '/sync-conflicts'

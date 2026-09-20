@@ -813,7 +813,7 @@ export const statsService = {
 
         orders.forEach(order => {
             (order.items || []).forEach(item => {
-                if (item.productMatchPending === true) return;
+                if (item.productMatchPending === true || item.productMatchUnavailable === true) return;
                 if (categoryId && (item.categoryId || 'uncategorized') !== categoryId) return;
 
                 const name = item.name || item.name_en || item.name_ru || 'Unknown product';
@@ -851,7 +851,7 @@ export const statsService = {
 
         orders.forEach(order => {
             (order.items || []).forEach(item => {
-                if (item.productMatchPending === true) return;
+                if (item.productMatchPending === true || item.productMatchUnavailable === true) return;
                 const categoryId = item.categoryId || 'uncategorized';
                 const categoryName = item.categoryName || 'Uncategorized';
                 const qty = Number(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity) || 0;

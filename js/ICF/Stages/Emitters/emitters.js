@@ -33,10 +33,12 @@ import emitSaveDailyOrderResultModule from "./Orders/emitSaveDailyOrderResult.js
  */
 
 import emitConfirmProductMatchModule from "./Products/emitConfirmProductMatch.js";
+import emitSetHistoricalProductReviewModule from "./Products/emitSetHistoricalProductReview.js";
 
 var emitters = {
   emitInvoiceWorkflowResult: emitInvoiceWorkflowResultModule.emitInvoiceWorkflowResult,
   emitConfirmProductMatch: emitConfirmProductMatchModule.emitConfirmProductMatch,
+  emitSetHistoricalProductReview: emitSetHistoricalProductReviewModule.emitSetHistoricalProductReview,
   passEmit: passEmitModule.passEmit,
   emitArchiveInvoiceResult:
     emitArchiveInvoiceResultModule.emitArchiveInvoiceResult,

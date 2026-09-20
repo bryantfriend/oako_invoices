@@ -7,6 +7,7 @@ import { productService } from "./productService.js";
 import { reconcileProductRecords, findConfirmedProductMatch } from "../core/productReconciliation.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
 import confirmProductMatchIntentModule from "../ICF/Intents/ConfirmProductMatchIntent.js";
+import setHistoricalProductReviewIntentModule from "../ICF/Intents/SetHistoricalProductReviewIntent.js";
 
 var SETTINGS_ID = 'product_name_mappings';
 var CACHE_KEY = 'settings:product-name-mappings';
@@ -67,9 +68,10 @@ function projectRecords(records, scope) {
     return result.records;
 }
 
-function getPendingMatches() {
+function getPendingMatches(onlyScope) {
     var pending = {};
     Object.keys(issueGroups).forEach(function(scope) {
+        if (onlyScope && scope !== onlyScope) { return; }
         issueGroups[scope].forEach(function(issue) {
             var check = reconcileProductRecords([{ items: [{ _catalogSource: issue.source }] }], catalog);
             if (check.issues.length) { pending[issue.key] = issue; }
@@ -78,9 +80,17 @@ function getPendingMatches() {
     return Object.keys(pending).map(function(key) { return pending[key]; });
 }
 
-async function writeConfirmedMatch(entry) {
+function getDeletedMatches() {
+    return Object.keys(catalog.mappings).filter(function isDeleted(key) {
+        return catalog.mappings[key].resolution === 'unavailable';
+    }).map(function getDeletedEntry(key) {
+        return Object.assign({}, catalog.mappings[key], { key: key });
+    });
+}
+
+async function writeProductReview(entry) {
     if (!auth.currentUser || !offlineStatusService.canAttemptCloudRead()) {
-        throw new Error('Connect and sign in to save a product match. You can try again later.');
+        throw new Error('Connect and sign in to save your product review. You can try again later.');
     }
     var reference = doc(db, 'settings', SETTINGS_ID);
     var savedMappings = await runTransaction(db, async function saveProductMapping(transaction) {
@@ -93,6 +103,16 @@ async function writeConfirmedMatch(entry) {
         if (previousStillActive && previous.productId !== entry.productId) {
             throw new Error('This name was already matched by another user. Refresh and review the saved match.');
         }
+        if (previous && previous.resolution === 'unavailable' && entry.resolution === 'matched') {
+            throw new Error('This historical product was deleted from review. Restore it before matching.');
+        }
+        if (entry.resolution === 'pending' && (!previous || (previous.resolution !== 'unavailable' && previous.resolution !== 'pending'))) {
+            throw new Error('This review decision changed. Refresh before restoring it.');
+        }
+        // Give a later decision a later timestamp even when staff devices have
+        // different clocks, so a stale cached deletion cannot undo a restore.
+        var previousTime = previous ? Date.parse(previous.confirmedAt) || 0 : 0;
+        entry.confirmedAt = new Date(Math.max(Date.now(), previousTime + 1)).toISOString();
         var patch = {};
         patch[entry.key] = entry;
         transaction.set(reference, { mappings: patch }, { merge: true });
@@ -104,18 +124,29 @@ async function writeConfirmedMatch(entry) {
     return entry;
 }
 
-async function confirmMatch(issue, productId, categoryId) {
+async function runReviewIntent(createIntent, payload) {
     var profile = store.getState().adminProfile || {};
     var user = auth.currentUser;
     var actor = { id: user ? user.uid : 'anonymous', role: user ? profile.role || '' : '' };
-    var intent = confirmProductMatchIntentModule.createConfirmProductMatchIntent(actor, {
-        source: issue.source, key: issue.key, productId: productId, categoryId: categoryId,
+    var intent = createIntent(actor, Object.assign({}, payload, {
         catalogApi: { load: function() { return loadContext(null, null, true); } },
-        mappingApi: { save: writeConfirmedMatch }
-    });
+        mappingApi: { save: writeProductReview }
+    }));
     var result = await icfPipeline.run(intent);
     if (!result.ok) { throw new Error((result.errors || ['Could not save the product match.']).join(' ')); }
     return result.data;
+}
+
+function confirmMatch(issue, productId, categoryId) {
+    return runReviewIntent(confirmProductMatchIntentModule.createConfirmProductMatchIntent, {
+        source: issue.source, key: issue.key, productId: productId, categoryId: categoryId
+    });
+}
+
+function setReviewState(issue, resolution) {
+    return runReviewIntent(setHistoricalProductReviewIntentModule.createSetHistoricalProductReviewIntent, {
+        source: issue.source, key: issue.key, resolution: resolution
+    });
 }
 
 export const productReconciliationService = {
@@ -123,5 +154,7 @@ export const productReconciliationService = {
     getContext: function() { return catalog; },
     projectRecords: projectRecords,
     getPendingMatches: getPendingMatches,
+    getDeletedMatches: getDeletedMatches,
+    setReviewState: setReviewState,
     confirmMatch: confirmMatch
 };

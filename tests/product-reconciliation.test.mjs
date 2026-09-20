@@ -159,8 +159,14 @@ function serviceHarness(server) {
                 collection: function() {}, query: function() {}, where: function() {}, documentId: function() {}, doc: function() {},
                 runTransaction: async function(db, callback) {
                     if (state.reject) throw new Error('permission-denied');
+                    if (state.beforeTransaction) { state.beforeTransaction(); state.beforeTransaction = null; }
                     return await callback({ get: async function() { return { exists: function() { return true; }, data: function() { return server; } }; },
-                        set: function(reference, patch) { Object.assign(server.mappings, patch.mappings); state.writes += 1; }
+                        set: function(reference, patch) {
+                            Object.keys(patch.mappings).forEach(function(key) {
+                                server.mappings[key] = Object.assign({}, server.mappings[key], patch.mappings[key]);
+                            });
+                            state.writes += 1;
+                        }
                     });
                 }
             };
@@ -345,4 +351,130 @@ test('confirmation resolves historical category aliases and allows staff to repl
         await harness.api.confirmMatch(issue, 'new-bread', 'bread');
         assert.equal(harness.api.projectRecords([{ items: [{ _catalogSource: source }] }])[0].items[0].productId, 'new-bread');
     }
+});
+
+test('deleting an unavailable product persists, removes it from review and stock, and preserves history and money', async function() {
+    var server = { mappings: {} };
+    var harness = serviceHarness(server);
+    await harness.api.loadContext();
+    var before = JSON.stringify(historical);
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    await harness.api.setReviewState(issue, 'unavailable');
+    assert.equal(harness.api.getPendingMatches().length, 0);
+    assert.equal(harness.api.getDeletedMatches().length, 1);
+    var next = serviceHarness(server);
+    await next.api.loadContext();
+    var projected = next.api.projectRecords(historical);
+    var deletedItem = projected[0].items[0];
+    assert.equal(deletedItem.productMatchUnavailable, true);
+    assert.equal(deletedItem.productMatchPending, false);
+    assert.equal(deletedItem.name, 'Old bread');
+    assert.equal(deletedItem.quantity, 3);
+    assert.equal(deletedItem.price, 20);
+    assert.equal(deletedItem.returnedQuantity, 1);
+    assert.equal(projected[0].totalAmount, 140);
+    assert.equal(next.api.getPendingMatches().length, 0);
+    assert.equal(buildInventoryOrderTotals(projected, '2026-09-06')['old-bread'], undefined);
+    assert.deepEqual(statsService._getTopProducts(projected).data, [4]);
+    assert.deepEqual(statsService._getTopCategories(projected).data, [4]);
+    assert.equal(JSON.stringify(historical), before);
+});
+
+test('delete and restore are reusable across sessions and stale refreshes, and restored products can be matched', async function() {
+    var server = { mappings: {} };
+    var harness = serviceHarness(server);
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    await harness.api.setReviewState(issue, 'unavailable');
+    await harness.api.setReviewState(issue, 'unavailable');
+    var deletedMappings = structuredClone(server.mappings);
+    await assert.rejects(harness.api.confirmMatch(issue, 'new-bread', 'bread'), /Restore/);
+    await harness.api.setReviewState(harness.api.getDeletedMatches()[0], 'pending');
+    assert.equal(harness.api.getDeletedMatches().length, 0);
+    assert.equal(harness.api.getPendingMatches().length, 1);
+    harness.state.staleMappings = deletedMappings;
+    await harness.api.loadContext(null, null, true);
+    assert.equal(harness.api.getPendingMatches().length, 1);
+    var next = serviceHarness(server);
+    await next.api.loadContext();
+    assert.equal(next.api.projectRecords(historical)[0].items[0].productMatchUnavailable, false);
+    assert.equal(next.api.getDeletedMatches().length, 0);
+    await next.api.confirmMatch(next.api.getPendingMatches()[0], 'new-bread', 'bread');
+    assert.equal(server.mappings[issue.key].resolution, 'matched', 'A Firestore merge must replace the prior review state');
+    assert.equal(next.api.getPendingMatches().length, 0);
+    assert.equal(next.api.projectRecords(historical)[0].items[0].productId, 'new-bread');
+});
+
+test('failed, offline and unauthorized deletion leaves the product awaiting review', async function() {
+    var harness = serviceHarness({ mappings: {} });
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    await assert.rejects(harness.api.setReviewState(issue, 'invalid'));
+    await assert.rejects(harness.api.setReviewState(issue, 'pending'));
+    harness.state.role = 'viewer';
+    await assert.rejects(harness.api.setReviewState(issue, 'unavailable'));
+    harness.state.role = 'admin'; harness.state.online = false;
+    await assert.rejects(harness.api.setReviewState(issue, 'unavailable'));
+    harness.state.online = true; harness.state.reject = true;
+    await assert.rejects(harness.api.setReviewState(issue, 'unavailable'));
+    assert.equal(harness.state.writes, 0);
+    assert.equal(harness.api.getPendingMatches().length, 1);
+    assert.equal(harness.api.getDeletedMatches().length, 0);
+});
+
+test('concurrent matches cannot be overwritten by deletion and concurrent deletion blocks a stale match', async function() {
+    var server = { mappings: {} };
+    var harness = serviceHarness(server);
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    harness.state.beforeTransaction = function() {
+        server.mappings[issue.key] = { source: issue.source, productId: 'new-bread', categoryId: 'bread' };
+    };
+    await assert.rejects(harness.api.setReviewState(issue, 'unavailable'), /already matched/);
+    assert.equal(harness.state.writes, 0);
+    server.mappings = {};
+    harness.state.staleMappings = {};
+    harness.state.beforeTransaction = function() {
+        server.mappings[issue.key] = { source: issue.source, productId: '', categoryId: '', resolution: 'unavailable' };
+    };
+    await assert.rejects(harness.api.confirmMatch(issue, 'new-bread', 'bread'), /Restore/);
+    assert.equal(harness.state.writes, 0);
+});
+
+test('unavailable decisions reuse compatible identities and keep return history excluded', async function() {
+    var harness = serviceHarness({ mappings: {} });
+    await harness.api.loadContext();
+    var missingCategory = [{ items: [{ productId: 'old-bread', name: 'Old bread', quantity: 2 }] }];
+    harness.api.projectRecords(missingCategory);
+    await harness.api.setReviewState(harness.api.getPendingMatches()[0], 'unavailable');
+    var record = structuredClone(historical[0]);
+    record.courierReturns = [{ items: [{ productId: 'old-bread', quantity: 1, returnAmount: 20 }] }];
+    var projected = harness.api.projectRecords([record]);
+    assert.equal(harness.api.getPendingMatches().length, 0);
+    assert.equal(projected[0].courierReturns[0].items[0].productMatchUnavailable, true);
+    assert.equal(projected[0].courierReturns[0].items[0].returnAmount, 20);
+});
+
+test('restore is newer than a cached deletion even when the deleting device clock was ahead', async function() {
+    var server = { mappings: {} };
+    var harness = serviceHarness(server);
+    await harness.api.loadContext();
+    harness.api.projectRecords(historical);
+    var issue = harness.api.getPendingMatches()[0];
+    await harness.api.setReviewState(issue, 'unavailable');
+    server.mappings[issue.key].confirmedAt = '2099-01-01T00:00:00.000Z';
+    var oldMappings = structuredClone(server.mappings);
+    await harness.api.setReviewState(issue, 'pending');
+    assert.ok(server.mappings[issue.key].confirmedAt > oldMappings[issue.key].confirmedAt);
+    var next = serviceHarness(server);
+    next.state.cached = structuredClone(harness.state.cached);
+    next.state.staleMappings = oldMappings;
+    await next.api.loadContext();
+    next.api.projectRecords(historical);
+    assert.equal(next.api.getPendingMatches().length, 1);
+    assert.equal(next.api.getDeletedMatches().length, 0);
 });

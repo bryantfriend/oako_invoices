@@ -30,10 +30,12 @@ import addPreparePrintableInvoiceContextModule from "./Invoices/addPreparePrinta
  */
 
 import addConfirmProductMatchContextModule from "./Products/addConfirmProductMatchContext.js";
+import addSetHistoricalProductReviewContextModule from "./Products/addSetHistoricalProductReviewContext.js";
 
 var contextProviders = {
   addInvoiceWorkflowContext: addInvoiceWorkflowContextModule.addInvoiceWorkflowContext,
   addConfirmProductMatchContext: addConfirmProductMatchContextModule.addConfirmProductMatchContext,
+  addSetHistoricalProductReviewContext: addSetHistoricalProductReviewContextModule.addSetHistoricalProductReviewContext,
   passContext: passContextModule.passContext,
   passAddContext: passAddContextModule.passAddContext,
 

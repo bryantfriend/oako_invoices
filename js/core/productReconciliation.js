@@ -79,11 +79,11 @@ function findConfirmedProductMatch(source, mappings, categories) {
         // its ID. Reuse only an unambiguous staff confirmation of this identity.
         if (hasHistoricalCategory(source)) {
             var savedCategory = hasHistoricalCategory(savedSource) ? savedSource : { categoryId: entry.categoryId };
-            if (!categoriesAgree(source, savedCategory, categories)) {
+            if (hasHistoricalCategory(savedCategory) && !categoriesAgree(source, savedCategory, categories)) {
                 continue;
             }
         }
-        if (match && match.productId !== entry.productId) {
+        if (match && (match.productId !== entry.productId || (match.resolution || 'matched') !== (entry.resolution || 'matched'))) {
             return null;
         }
         match = entry;
@@ -107,6 +107,13 @@ function reconcileProductRecords(records, context) {
         var source = getSourceIdentity(item, products, categories);
         var key = getProductMatchKey(source);
         var mapping = findConfirmedProductMatch(source, mappings, categories);
+        if (mapping && mapping.resolution === 'unavailable') {
+            var historicalName = source.name || 'Unavailable historical product';
+            return Object.assign({}, item, {
+                _catalogSource: source, productMatchPending: false, productMatchUnavailable: true,
+                productId: source.productId, name: historicalName, productName: historicalName, displayName: historicalName
+            });
+        }
         var matched = mapping && products.find(function(product) { return product.id === mapping.productId; });
         // The category was checked at confirmation time. Moving an active
         // product or temporarily missing category data must not undo that match.
@@ -124,7 +131,7 @@ function reconcileProductRecords(records, context) {
             var category = findProductCategory(matched, categories);
             var name = getCurrentProductName(matched);
             return Object.assign({}, item, {
-                _catalogSource: source, productMatchPending: false,
+                _catalogSource: source, productMatchPending: false, productMatchUnavailable: false,
                 productId: matched.id, name: name, productName: name, displayName: name,
                 categoryId: category ? category.id : '', categoryName: category ? category.name : ''
             });
@@ -135,7 +142,7 @@ function reconcileProductRecords(records, context) {
         issues[key].occurrences += 1;
         issues[key].quantity += Number(item.adjustedQuantity !== undefined ? item.adjustedQuantity : item.quantity) || 0;
         return Object.assign({}, item, {
-            _catalogSource: source, productMatchPending: true,
+            _catalogSource: source, productMatchPending: true, productMatchUnavailable: false,
             productId: '', name: 'Product match needed', productName: 'Product match needed', displayName: 'Product match needed'
         });
     }

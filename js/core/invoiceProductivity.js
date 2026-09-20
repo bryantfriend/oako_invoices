@@ -85,7 +85,7 @@ export function buildDailyBatchRows(customers, orders, products, date, priceMode
                     !product ||
                     product.active === false ||
                     product.isActive === false ||
-                    item.productMatchPending
+                    item.productMatchPending || item.productMatchUnavailable
                 ) {
                     warnings.push(
                         (item.name || 'Product') +
@@ -158,7 +158,7 @@ export function suggestReturnQuantities(items, history) {
                 var line = (order.items || []).find(function (entry) {
                     return item.productId && entry.productId === item.productId;
                 });
-                if (!line || line.productMatchPending) return;
+                if (!line || line.productMatchPending || line.productMatchUnavailable) return;
                 var quantity =
                     Number(line.adjustedQuantity !== undefined ? line.adjustedQuantity : line.quantity) || 0;
                 var returnLine = (order.returnItems || []).find(function (entry) {

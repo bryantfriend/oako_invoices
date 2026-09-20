@@ -35,12 +35,14 @@ import processSaveDailyOrderModule from "./Orders/processSaveDailyOrder.js";
  */
 
 import processConfirmProductMatchModule from "./Products/processConfirmProductMatch.js";
+import processSetHistoricalProductReviewModule from "./Products/processSetHistoricalProductReview.js";
 
 var processors = {
   processRunWorkflowEffect: processRunWorkflowEffectModule.processRunWorkflowEffect,
   processPrepareInvoiceBatch: processPrepareInvoiceBatchModule.processPrepareInvoiceBatch,
   processSaveAndPrepareInvoice: processSaveAndPrepareInvoiceModule.processSaveAndPrepareInvoice,
   processConfirmProductMatch: processConfirmProductMatchModule.processConfirmProductMatch,
+  processSetHistoricalProductReview: processSetHistoricalProductReviewModule.processSetHistoricalProductReview,
   doNothing: doNothingModule.doNothing,
   passProcess: passProcessModule.passProcess,
   exampleSetCreatedProductResult:

@@ -41,10 +41,12 @@ import validateSaveDailyOrderPayloadModule from "./Orders/validateSaveDailyOrder
  */
 
 import validateConfirmProductMatchModule from "./Products/validateConfirmProductMatch.js";
+import validateSetHistoricalProductReviewModule from "./Products/validateSetHistoricalProductReview.js";
 
 var validators = {
   validateInvoiceWorkflowPayload: validateInvoiceWorkflowPayloadModule.validateInvoiceWorkflowPayload,
   validateConfirmProductMatch: validateConfirmProductMatchModule.validateConfirmProductMatch,
+  validateSetHistoricalProductReview: validateSetHistoricalProductReviewModule.validateSetHistoricalProductReview,
   passValidation: passValidationModule.passValidation,
   passValidate: passValidateModule.passValidate,
 

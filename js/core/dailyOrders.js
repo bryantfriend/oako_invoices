@@ -153,7 +153,7 @@ function getVisibleOrderItems(order, products, categories, settings) {
     var productMap = buildProductMap(products, categories);
     var filter = getDailyOrderFilter(settings, categories);
     return (Array.isArray(order && order.items) ? order.items : []).filter(function(item) {
-        return item && item.productMatchPending !== true && Number(item.quantity) > 0 && itemMatchesFilter(item, productMap, filter);
+        return item && item.productMatchPending !== true && item.productMatchUnavailable !== true && Number(item.quantity) > 0 && itemMatchesFilter(item, productMap, filter);
     });
 }
 

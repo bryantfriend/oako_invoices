@@ -32,10 +32,12 @@ import normalizeSaveDailyOrderPayloadModule from "./Orders/normalizeSaveDailyOrd
  */
 
 import normalizeConfirmProductMatchModule from "./Products/normalizeConfirmProductMatch.js";
+import normalizeSetHistoricalProductReviewModule from "./Products/normalizeSetHistoricalProductReview.js";
 
 var normalizers = {
   normalizeInvoiceWorkflowPayload: normalizeInvoiceWorkflowPayloadModule.normalizeInvoiceWorkflowPayload,
   normalizeConfirmProductMatch: normalizeConfirmProductMatchModule.normalizeConfirmProductMatch,
+  normalizeSetHistoricalProductReview: normalizeSetHistoricalProductReviewModule.normalizeSetHistoricalProductReview,
   passNormalization: passNormalizationModule.passNormalization,
   passNormalize: passNormalizeModule.passNormalize,
   exampleTrimProductName: exampleTrimProductNameModule.exampleTrimProductName,

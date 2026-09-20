@@ -58,6 +58,7 @@ export class Sidebar {
                 ${this.createNavItem(t('sidebar_inventory'), ROUTES.INVENTORY, 'inventory', 'lowStock')}
                 ${this.createNavItem(t('sidebar_customers'), ROUTES.CUSTOMERS, 'customers')}
                 ${this.createNavItem(t('sidebar_settings'), ROUTES.SETTINGS, 'settings')}
+                ${this.createNavItem('Legacy products', ROUTES.LEGACY_PRODUCTS, 'inventory')}
                 ${this.createNavItem('Offline Data', ROUTES.OFFLINE_DATA, 'offline')}
                 ${this.createNavItem('Conflicts', ROUTES.SYNC_CONFLICTS, 'settings', 'conflicts')}
                 ${this.createNavItem('Profile', ROUTES.PROFILE, 'profile')}

@@ -38,7 +38,7 @@ function validateInvoiceWorkflowPayload(intent) {
             draft.items.some(function (item) {
                 return (
                     Number(item.quantity) > 0 &&
-                    (item.productMatchPending ||
+                    (item.productMatchPending || item.productMatchUnavailable ||
                         !Number.isFinite(Number(item.quantity)) ||
                         Number(item.quantity) < 0 ||
                         !Number.isFinite(

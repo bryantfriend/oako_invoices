@@ -31,10 +31,12 @@ import authorizePreparePrintableInvoiceModule from "./Invoices/authorizePrepareP
  */
 
 import authorizeConfirmProductMatchModule from "./Products/authorizeConfirmProductMatch.js";
+import authorizeSetHistoricalProductReviewModule from "./Products/authorizeSetHistoricalProductReview.js";
 
 var authorizers = {
   authorizeInvoiceWorkflow: authorizeInvoiceWorkflowModule.authorizeInvoiceWorkflow,
   authorizeConfirmProductMatch: authorizeConfirmProductMatchModule.authorizeConfirmProductMatch,
+  authorizeSetHistoricalProductReview: authorizeSetHistoricalProductReviewModule.authorizeSetHistoricalProductReview,
   allow: allowModule.allow,
   deny: denyModule.deny,
   passAuthorize: passAuthorizeModule.passAuthorize,
