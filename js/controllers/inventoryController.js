@@ -1,7 +1,5 @@
 import { inventoryService } from "../services/inventoryService.js";
 import { productService } from "../services/productService.js";
-import { notificationService } from "../core/notificationService.js";
-import { t } from "../core/i18n.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { runSingleFlight } from "../core/singleFlight.js";
 import { isNavigationStillCurrent, ignoreStaleRouteResult } from "../core/routeGuard.js";
@@ -26,7 +24,7 @@ export const inventoryController = {
         var safeOptions = options || {};
         try {
             // 1. Fetch enabled categories
-            const settings = await inventoryService.getInventorySettings();
+            const settings = await inventoryService.getInventorySettings({ requireAvailable: true });
             var enabledCatIds = Array.isArray(settings.enabledCategories) ? settings.enabledCategories.slice() : [];
             var usesBreadDefault = false;
 
@@ -52,7 +50,7 @@ export const inventoryController = {
             }
 
             // 4. Fetch daily record (baked totals, lock status)
-            const dailyRecords = await inventoryService.getDailyInventory(date);
+            const dailyRecords = await inventoryService.getDailyInventory(date, safeOptions);
 
             // 5. Count saved orders for their scheduled date, including drafts.
             var orderSnapshot = sessionDataStore.getOrdersSnapshot();
@@ -79,11 +77,12 @@ export const inventoryController = {
                     var categoryProducts = allProducts.filter(function(product) {
                         return productBelongsToCategory(product, category);
                     }).map(function(product) {
-                        const record = dailyRecords[product.id] || { totalBaked: 0, locked: false };
+                        const record = dailyRecords[product.id] || { locked: false };
                         // Invoice counters describe the same orders; adding them would reserve stock twice.
                         var quantities = getInventoryProductQuantities(record, orderTotals[product.id]);
                         return Object.assign({}, product, quantities, {
                             locked: record.locked,
+                            hasProductionRecord: record.totalBaked !== undefined,
                             sold: quantities.ordered,
                             inventoryDate: date,
                             reservesSavedOrders: true
@@ -98,60 +97,59 @@ export const inventoryController = {
                     return category.products.length > 0;
                 });
 
+            categoriesWithProducts.readSource = settings.__stale ? 'cache' : dailyRecords.__readSource || 'server';
+            categoriesWithProducts.confirmedEmpty = categoriesWithProducts.readSource === 'server' && Object.keys(dailyRecords).length === 0;
             return categoriesWithProducts;
         } catch (error) {
             console.error("Error loading inventory data:", error);
-            notificationService.error(t('msg_load_fail'));
-            return [];
+            throw error;
         }
     },
 
-    async saveProduction(date, productId, totalBaked, locked) {
-        return await inventoryService.saveProductionRecord(date, productId, { totalBaked, locked });
+    async saveProduction(date, productId, totalBaked) {
+        return inventoryService.saveProductionRecord(date, productId, { totalBaked: totalBaked });
     },
 
     async bulkUpdateLockStatus(date, categories, locked) {
-        try {
-            const promises = [];
-            categories.forEach(cat => {
-                cat.products.forEach(p => {
-                    promises.push(inventoryService.saveProductionRecord(date, p.id, {
-                        totalBaked: p.totalBaked,
-                        locked: locked
-                    }));
-                });
+        var entries = [];
+        var seen = new Set();
+        categories.forEach(function collectCategory(category) {
+            category.products.forEach(function collectProduct(product) {
+                if (seen.has(product.id)) return;
+                seen.add(product.id);
+                entries.push({ productId: product.id, data: { locked: locked } });
             });
-            await Promise.all(promises);
-            notificationService.success(t('msg_update_success'));
-            return true;
-        } catch (error) {
-            console.error("Bulk update failed:", error);
-            notificationService.error(t('msg_update_fail'));
-            return false;
-        }
+        });
+        return inventoryService.setLockStatus(date, entries);
     },
 
-    async importYesterday(todayDate) {
-        try {
-            const yesterday = new Date(todayDate);
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yDateStr = yesterday.toISOString().split('T')[0];
+    async setLockStatus(date, productId, locked) {
+        return inventoryService.setLockStatus(date, [{ productId: productId, data: { locked: locked } }]);
+    },
 
-            const yesterdayRecords = await inventoryService.getDailyInventory(yDateStr);
-            const promises = Object.values(yesterdayRecords).map(record =>
-                inventoryService.saveProductionRecord(todayDate, record.productId, {
-                    totalBaked: record.totalBaked,
-                    locked: false // Don't import lock status
-                })
-            );
+    async initializeDay(date, entries) {
+        return inventoryService.initializeDay(date, entries);
+    },
 
-            await Promise.all(promises);
-            notificationService.success(t('msg_update_success'));
-            return true;
-        } catch (error) {
-            notificationService.error(t('msg_update_fail'));
-            return false;
+    async importYesterday(todayDate, retryEntries, allowedProductIds) {
+        var entries = retryEntries;
+        if (!entries) {
+            var yesterday = new Date(todayDate + 'T12:00:00Z');
+            yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+            var records = await inventoryService.getDailyInventory(yesterday.toISOString().slice(0, 10), { forceRefresh: true });
+            if (records.__readSource !== 'server') throw new Error('Reconnect to verify yesterday’s inventory before importing.');
+            entries = Object.values(records).filter(function eligibleRecord(record) {
+                return !allowedProductIds || allowedProductIds.indexOf(record.productId) !== -1;
+            }).map(function importRecord(record) {
+                return { productId: record.productId, data: { totalBaked: record.totalBaked, locked: false } };
+            });
         }
+        if (!entries.length) throw new Error('No production records to import from yesterday.');
+        var result = await inventoryService.importDay(todayDate, entries);
+        result.retryEntries = entries.filter(function failedEntry(entry) {
+            return result.failed.some(function matchesFailure(failure) { return failure.productId === entry.productId; });
+        });
+        return result;
     },
 
     isSameDate(d1, d2) {

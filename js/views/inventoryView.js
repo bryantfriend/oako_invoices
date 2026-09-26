@@ -1,4 +1,22 @@
-import { withOvenLoading } from '../components/ovenLoading.js';
+import { createViewRequestGuard } from '../core/viewRequestGuard.js';
+import { parseProductionQuantity } from '../core/inventoryValidation.js';
+import { notificationService } from '../core/notificationService.js';
+var beginInventoryRequest = createViewRequestGuard();
+
+function showInventoryFailure(error) {
+    notificationService.error(error.message || 'Inventory could not be saved. Your entries have been kept.');
+}
+
+function describeInventoryResult(result, categories) {
+    if (result.ok) return;
+    var names = {};
+    categories.forEach(function nameCategory(category) {
+        category.products.forEach(function nameProduct(product) { names[product.id] = product.displayName || product.name || product.id; });
+    });
+    throw new Error(result.failed.map(function describeFailure(failure) { return names[failure.productId] + ': ' + failure.error; }).join(' '));
+}
+
+import { startOvenLoading, withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { inventoryController } from "../controllers/inventoryController.js";
 import { createCard } from "../components/card.js";
@@ -11,44 +29,46 @@ import { mountProductReconciliation } from "../components/productReconciliationM
 export async function renderInventory(options) {
     layoutView.render();
     layoutView.updateTitle(t('inventory_title'));
-
-    const container = document.getElementById('page-container');
-    container.innerHTML = LoadingSkeleton();
-
-    const today = getLocalDateKey(new Date());
-    const data = await inventoryController.loadInventoryData(today, options);
-
-    // If no data is initialized (no total baked set for any item), show initialization modal
-    const hasData = data.some(cat => cat.products.some(p => p.totalBaked > 0 || p.locked));
-
-    if (data.length === 0) {
-        container.innerHTML = `
-            <div class="p-8 text-center" style="display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%;">
-                <div style="font-size: 48px;">📦</div>
-                <h3 style="font-weight: 700; color: var(--color-gray-800);">No Inventory Enabled</h3>
-                <p style="color: var(--color-gray-500); max-width: 400px;">Please go to Settings > Inventory and select which product categories you want to track production for.</p>
-                <a class="btn btn-primary" href="#/settings">Go to Settings</a>
-            </div>
-        `;
-        return;
-    }
-
-    renderMainView(container, today, data);
-    var needsMatches = mountProductReconciliation(container, renderInventory, 'inventory');
-    if (!hasData && !needsMatches) {
-        showInitializationModal(today, data);
-    }
+    var container = document.getElementById('page-container');
+    var isCurrent = beginInventoryRequest(container);
+    var hadTable = Boolean(container.querySelector('.inventory-category-group'));
+    if (!hadTable) container.innerHTML = LoadingSkeleton();
+    var loading = startOvenLoading('Loading inventory');
+    try {
+        var today = getLocalDateKey(new Date());
+        var data = await inventoryController.loadInventoryData(today, options);
+        if (!isCurrent()) return;
+        container.dataset.inventoryView = 'true';
+        if (!data.length) {
+            container.innerHTML = '<p>No inventory categories with products are enabled. <a href="#/settings">Open Settings</a></p>';
+            return;
+        }
+        renderMainView(container, today, data, isCurrent);
+        var needsMatches = mountProductReconciliation(container, function reloadAfterReconciliation() {
+            if (isCurrent()) return renderInventory();
+        }, 'inventory');
+        if (data.confirmedEmpty && !needsMatches) showInitializationModal(today, data, isCurrent);
+    } catch (error) {
+        loading.fail();
+        if (!isCurrent()) return;
+        if (!hadTable) container.innerHTML = '<div role="alert">Inventory is unavailable. Reconnect and retry. <button id="retry-inventory" class="btn btn-secondary">Retry</button></div>';
+        else container.insertAdjacentHTML('afterbegin', '<p role="alert">Refresh failed. Previously loaded inventory is still shown.</p>');
+        var retry = container.querySelector('#retry-inventory');
+        if (retry) retry.addEventListener('click', function retryInventory() { if (isCurrent()) return renderInventory({ forceRefresh: true }); });
+        showInventoryFailure(error);
+    } finally { loading.finish(); }
 }
 
-const renderMainView = (container, date, categories) => {
+function renderMainView(container, date, categories, isCurrent) {
     const usesBreadDefault = categories.some(function(category) {
         return category && category.inventoryUsesBreadDefault === true;
     });
     container.innerHTML = `
         <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-6); width: 100%;">
+            ${categories.readSource !== 'server' ? '<p role="status">Cached inventory is shown. Reconnect and refresh before editing.</p>' : ''}
             ${usesBreadDefault ? '<div class="daily-data-notice" role="status"><span>🥖</span><div><strong>Showing bread inventory by default</strong><p>Select different Inventory categories in Settings whenever you want to track other products.</p></div></div>' : ''}
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: var(--space-4);">
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4);">
                     <div style="font-size: 14px; color: var(--color-gray-500);">
                         Showing inventory for <strong>${date}</strong>
                         <div style="margin-top: 4px; font-size: 12px;">Saved orders reserve stock for this day. Left = Total Baked − Ordered + Returned.</div>
@@ -61,7 +81,7 @@ const renderMainView = (container, date, categories) => {
                 <button id="refresh-inventory" class="btn btn-ghost btn-sm">🔄 Refresh Data</button>
             </div>
 
-            ${categories.map(cat => `
+            ${categories.map(function renderCategory(cat) { return `
                 <div class="inventory-category-group">
                     <h3 style="font-size: 14px; font-weight: 700; color: var(--color-primary-700); margin-bottom: 12px; padding-left: 4px; border-left: 4px solid var(--color-primary-500);">
                         ${cat.name.toUpperCase()}
@@ -81,7 +101,7 @@ const renderMainView = (container, date, categories) => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${cat.products.map(p => {
+                                        ${cat.products.map(function renderProduct(p) {
             const isOversold = p.left < 0;
             const rowStyle = isOversold ? 'background: var(--color-error-bg);' : '';
             return `
@@ -93,7 +113,7 @@ const renderMainView = (container, date, categories) => {
                                                             </div>
                                                             <div style="display: flex; flex-direction: column; gap: 2px;">
                                                                 <strong style="color: var(--color-gray-900); white-space: nowrap;">${p.displayName || p.name}</strong>
-                                                                ${isOversold ? `<span style="font-size: 11px; color: var(--color-error); font-weight: 600;">⚠️ Oversold</span>` : ''}
+                                                                <span class="inventory-oversold" ${isOversold ? '' : 'hidden'} style="font-size: 11px; color: var(--color-error); font-weight: 600;">⚠️ Oversold</span>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -101,16 +121,16 @@ const renderMainView = (container, date, categories) => {
                                                         <span style="font-weight: 600; color: var(--color-gray-900);">${p.ordered}</span>
                                                     </td>
                                                     <td style="text-align: center; padding: 12px 16px;">
-                                                        <input type="number" 
-                                                            class="baked-input" 
-                                                            data-id="${p.id}" 
-                                                            value="${p.totalBaked}" 
+                                                        <input type="number" min="0" step="any"
+                                                            class="baked-input"
+                                                            data-id="${p.id}"
+                                                            value="${p.totalBaked}"
                                                             ${p.locked ? 'disabled' : ''}
                                                             style="width: 70px; text-align: center; padding: 4px; border: 1px solid ${p.locked ? 'transparent' : 'var(--color-gray-200)'}; border-radius: 4px; background: ${p.locked ? 'transparent' : 'white'}; font-weight: ${p.locked ? '700' : '400'};"
                                                         >
                                                     </td>
                                                     <td style="text-align: center; padding: 12px 16px;">
-                                                        <span style="font-weight: 700; color: ${isOversold ? 'var(--color-error)' : 'var(--color-success)'};">
+                                                        <span class="inventory-left" style="font-weight: 700; color: ${isOversold ? 'var(--color-error)' : 'var(--color-success)'};">
                                                             ${p.left}
                                                         </span>
                                                     </td>
@@ -128,51 +148,111 @@ const renderMainView = (container, date, categories) => {
                         `
     })}
                 </div>
-            `).join('')}
+            `; }).join('')}
         </div>
     `;
 
-    // Attach Events
-    container.querySelectorAll('.baked-input').forEach(input => {
-        input.addEventListener('change', withOvenLoading(async (e) => {
-            const id = e.target.dataset.id;
-            const val = parseInt(e.target.value) || 0;
-            await inventoryController.saveProduction(date, id, val, false);
-            renderInventory(); // Refresh
-        }, "Updating inventory"));
-    });
-
-    container.querySelectorAll('.lock-toggle').forEach(btn => {
-        btn.addEventListener('click', withOvenLoading(async (e) => {
-            const id = btn.dataset.id;
-            const isLocked = btn.dataset.locked === 'true';
-            const input = container.querySelector(`.baked-input[data-id="${id}"]`);
-            const val = parseInt(input.value) || 0;
-
-            await inventoryController.saveProduction(date, id, val, !isLocked);
-            renderInventory(); // Refresh
-        }, "Updating inventory"));
-    });
-
-    var refreshButton = document.getElementById('refresh-inventory');
-    if (refreshButton) {
-        refreshButton.addEventListener('click', function() {
-            renderInventory({ forceRefresh: true });
+    var busy = false;
+    var readOnly = categories.readSource !== 'server';
+    function setBusy(value) {
+        busy = value;
+        var hasFailed = Boolean(container.querySelector('[data-save-failed="true"]'));
+        container.querySelectorAll('button, input').forEach(function updateControl(control) {
+            var locked = control.classList.contains('baked-input') && control.dataset.locked === 'true';
+            control.disabled = value || locked || (hasFailed && control.tagName === 'BUTTON' && !control.classList.contains('retry-baked-save')) || (readOnly && control.id !== 'refresh-inventory');
         });
     }
+    function applyLockResult(result, locked) {
+        result.results.forEach(function updateSuccessfulLock(record) {
+            if (!record.ok) return;
+            container.querySelectorAll('.lock-toggle').forEach(function matchButton(button) {
+                if (button.dataset.id !== record.productId) return;
+                button.dataset.locked = String(locked);
+                button.textContent = locked ? '🔒' : '🔓';
+                button.closest('tr').querySelector('.baked-input').dataset.locked = String(locked);
+            });
+        });
+    }
+    async function perform(action) {
+        if (busy || !isCurrent()) return;
+        setBusy(true);
+        try { await action(); }
+        catch (error) { showInventoryFailure(error); return false; }
+        finally { if (isCurrent()) setBusy(false); }
+    }
+    container.querySelectorAll('.baked-input').forEach(function bindQuantity(input) {
+        input.dataset.locked = String(input.disabled);
+        input.addEventListener('change', withOvenLoading(async function saveQuantity() {
+            return perform(async function writeQuantity() {
+                try {
+                    var quantity = parseProductionQuantity(input.value);
+                    await inventoryController.saveProduction(date, input.dataset.id, quantity);
+                } catch (error) {
+                    input.dataset.saveFailed = 'true';
+                    input.setAttribute('aria-invalid', 'true');
+                    if (!input.parentElement.querySelector('.retry-baked-save')) {
+                        var retry = document.createElement('button');
+                        retry.className = 'retry-baked-save btn btn-secondary btn-sm';
+                        retry.textContent = 'Retry save';
+                        retry.title = 'This quantity has not been saved.';
+                        retry.style.color = 'var(--color-error)';
+                        retry.addEventListener('click', function retrySave() { input.dispatchEvent(new Event('change')); });
+                        input.parentElement.appendChild(retry);
+                    }
+                    throw error;
+                }
+                delete input.dataset.saveFailed;
+                var retry = input.parentElement.querySelector('.retry-baked-save');
+                if (retry) retry.remove();
+                if (!isCurrent()) return;
+                input.value = String(quantity);
+                input.removeAttribute('aria-invalid');
+                // Update only this row so another unfinished input cannot be lost.
+                var product;
+                categories.forEach(function findCategory(category) {
+                    category.products.forEach(function findProduct(candidate) { if (candidate.id === input.dataset.id) product = candidate; });
+                });
+                var left = product.left + quantity - product.totalBaked;
+                product.totalBaked = quantity;
+                product.left = left;
+                var cell = input.closest('tr').querySelector('.inventory-left');
+                cell.textContent = String(left);
+                input.closest('tr').querySelector('.inventory-oversold').hidden = left >= 0;
+                input.closest('tr').style.background = left < 0 ? 'var(--color-error-bg)' : '';
+                cell.style.color = left < 0 ? 'var(--color-error)' : 'var(--color-success)';
+            });
+        }, 'Saving baked quantity'));
+    });
+    container.querySelectorAll('.lock-toggle').forEach(function bindLock(button) {
+        button.addEventListener('click', withOvenLoading(async function toggleLock() {
+            return perform(async function writeLock() {
+                var locked = button.dataset.locked !== 'true';
+                var result = await inventoryController.setLockStatus(date, button.dataset.id, locked);
+                if (isCurrent()) applyLockResult(result, locked);
+                describeInventoryResult(result, categories);
+            });
+        }, 'Updating inventory lock'));
+    });
+    ['lock-all-btn', 'unlock-all-btn'].forEach(function bindBulk(id) {
+        var retryCategories = null;
+        container.querySelector('#' + id).addEventListener('click', withOvenLoading(async function bulkLock() {
+            return perform(async function writeBulkLocks() {
+                var locked = id === 'lock-all-btn';
+                var result = await inventoryController.bulkUpdateLockStatus(date, retryCategories || categories, locked);
+                retryCategories = [{ products: result.failed.map(function retryProduct(record) { return { id: record.productId }; }) }];
+                if (result.ok) retryCategories = null;
+                if (isCurrent()) applyLockResult(result, locked);
+                describeInventoryResult(result, categories);
+            });
+        }, 'Updating inventory locks'));
+    });
+    container.querySelector('#refresh-inventory').addEventListener('click', withOvenLoading(async function refreshInventory() {
+        return perform(async function refreshData() { await renderInventory({ forceRefresh: true }); });
+    }, 'Refreshing inventory'));
+    setBusy(false);
+}
 
-    document.getElementById('lock-all-btn')?.addEventListener('click', withOvenLoading(async () => {
-        await inventoryController.bulkUpdateLockStatus(date, categories, true);
-        renderInventory();
-    }, "Updating inventory"));
-
-    document.getElementById('unlock-all-btn')?.addEventListener('click', withOvenLoading(async () => {
-        await inventoryController.bulkUpdateLockStatus(date, categories, false);
-        renderInventory();
-    }, "Updating inventory"));
-};
-
-const showInitializationModal = (date, categories) => {
+function showInitializationModal(date, categories, isCurrent) {
     const modal = new Modal({
         title: `Initialize Inventory: ${date}`,
         content: `
@@ -189,9 +269,9 @@ const showInitializationModal = (date, categories) => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${categories.map(cat => `
+                            ${categories.map(function renderCategory(cat) { return `
                                 <tr style="background: #f8fafc;"><td colspan="2" style="padding: 4px 12px; font-weight: 700; font-size: 11px; color: var(--color-gray-500);">${cat.name.toUpperCase()}</td></tr>
-                                ${cat.products.map(p => `
+                                ${cat.products.map(function renderProduct(p) { return `
                                     <tr style="border-bottom: 1px solid var(--color-gray-100);">
                                         <td style="padding: 8px 12px;">
                                             <div style="display: flex; align-items: center; gap: 12px;">
@@ -202,11 +282,11 @@ const showInitializationModal = (date, categories) => {
                                             </div>
                                         </td>
                                         <td style="padding: 8px 12px; text-align: center;">
-                                            <input type="number" class="init-baked-input" data-id="${p.id}" value="0" style="width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
+                                            <input type="number" min="0" step="any" class="init-baked-input" data-id="${p.id}" value="0" style="width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
                                         </td>
                                     </tr>
-                                `).join('')}
-                            `).join('')}
+                                `; }).join('')}
+                            `; }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -220,27 +300,42 @@ const showInitializationModal = (date, categories) => {
     });
 
     modal.open();
-
-    document.getElementById('import-yesterday-btn').addEventListener('click', withOvenLoading(async () => {
-        const success = await inventoryController.importYesterday(date);
-        if (success) {
+    function closeOnNavigation() { modal.close(); window.removeEventListener('hashchange', closeOnNavigation); }
+    window.addEventListener('hashchange', closeOnNavigation);
+    var busy = false;
+    var importedEntries = null;
+    var completed = new Set();
+    var confirmButton = modal.modalEl.querySelector('#confirm-init-btn');
+    var importButton = modal.modalEl.querySelector('#import-yesterday-btn');
+    async function initialize(importing) {
+        if (busy || !isCurrent()) return;
+        busy = true;
+        confirmButton.disabled = true;
+        importButton.disabled = true;
+        var inputs = Array.from(modal.modalEl.querySelectorAll('.init-baked-input'));
+        try {
+            var entries = inputs.filter(function pendingInput(input) { return !completed.has(input.dataset.id); }).map(function readInput(input) {
+                return { productId: input.dataset.id, data: { totalBaked: parseProductionQuantity(input.value), locked: false } };
+            });
+            var result;
+            if (importing) result = await inventoryController.importYesterday(date, importedEntries, entries.map(function getId(entry) { return entry.productId; }));
+            else result = await inventoryController.initializeDay(date, entries);
+            if (importing) importedEntries = result.retryEntries;
+            result.results.forEach(function rememberSuccess(record) { if (record.ok) completed.add(record.productId); });
+            inputs.forEach(function preserveCompleted(input) { if (completed.has(input.dataset.id)) input.disabled = true; });
+            describeInventoryResult(result, categories);
             modal.close();
-            renderInventory();
+            window.removeEventListener('hashchange', closeOnNavigation);
+            if (isCurrent()) await renderInventory();
+        } catch (error) {
+            showInventoryFailure(error);
+            return false;
+        } finally {
+            busy = false;
+            confirmButton.disabled = importedEntries && importedEntries.length > 0;
+            importButton.disabled = completed.size > 0 && !importedEntries;
         }
-    }, "Updating inventory"));
-
-    document.getElementById('confirm-init-btn').addEventListener('click', withOvenLoading(async () => {
-        const inputs = document.querySelectorAll('.init-baked-input');
-        const promises = Array.from(inputs).map(input => {
-            const val = parseInt(input.value) || 0;
-            if (val > 0) {
-                return inventoryController.saveProduction(date, input.dataset.id, val, false);
-            }
-            return Promise.resolve();
-        });
-
-        await Promise.all(promises);
-        modal.close();
-        renderInventory();
-    }, "Updating inventory"));
-};
+    }
+    importButton.addEventListener('click', withOvenLoading(async function importInventory() { return initialize(true); }, 'Importing inventory'));
+    confirmButton.addEventListener('click', withOvenLoading(async function confirmInventory() { return initialize(false); }, 'Initializing inventory'));
+}

@@ -1,3 +1,4 @@
+import emitInventoryMutationResultModule from './Inventory/emitInventoryMutationResult.js';
 import emitRetrySyncResultModule from './Sync/emitRetrySyncResult.js';
 import emitCustomerMutationModule from "./Customers/emitCustomerMutation.js";
 import emitInvoiceWorkflowResultModule from './Workflow/emitInvoiceWorkflowResult.js';
@@ -83,5 +84,7 @@ var emitters = {
 emitters.emitCustomerMutation = emitCustomerMutationModule.emitCustomerMutation;
 
 emitters.emitRetrySyncResult = emitRetrySyncResultModule.emitRetrySyncResult;
+
+emitters.emitInventoryMutationResult = emitInventoryMutationResultModule.emitInventoryMutationResult;
 
 export default emitters;

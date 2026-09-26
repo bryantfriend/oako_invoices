@@ -1,9 +1,16 @@
+import { validateInventoryEntry, parseProductionQuantity } from '../core/inventoryValidation.js';
+import icfPipeline from '../ICF/engine/pipeline.js';
+import { createSaveProductionRecordIntent } from '../ICF/Intents/SaveProductionRecordIntent.js';
+import { createSetInventoryLockStatusIntent } from '../ICF/Intents/SetInventoryLockStatusIntent.js';
+import { createInitializeInventoryDayIntent } from '../ICF/Intents/InitializeInventoryDayIntent.js';
+import { createImportInventoryDayIntent } from '../ICF/Intents/ImportInventoryDayIntent.js';
 import { db } from "../core/firebase.js";
 import {
     collection,
     doc,
     getDoc,
     setDoc,
+    runTransaction,
     query,
     where,
     serverTimestamp
@@ -133,67 +140,96 @@ async function writeInventorySettingsToServer(settings) {
     return cacheInventorySettings(normalized, false);
 }
 
+var pendingProductWrites = new Map();
+
+async function writeProductionRecord(date, productId, data, onlyUninitialized) {
+    validateInventoryEntry(date, productId, data);
+    var key = date + '_' + productId;
+    var previous = pendingProductWrites.get(key) || Promise.resolve();
+    var pending = previous.catch(function ignorePreviousFailure() {}).then(async function saveAfterPrevious() {
+        var reference = doc(db, COLLECTION, key);
+        await runTransaction(db, async function saveTransaction(transaction) {
+            var snapshot = await transaction.get(reference);
+            var existing = snapshot.exists() ? snapshot.data() : {};
+            if (onlyUninitialized && existing.totalBaked !== undefined) {
+                throw new Error('This product was already initialized. Refresh to review its current quantity.');
+            }
+            var patch = { date: date, productId: productId, updatedAt: serverTimestamp() };
+            if (data.locked !== undefined) patch.locked = data.locked;
+            else if (existing.locked === undefined) patch.locked = false;
+            if (data.totalBaked !== undefined) {
+                if (existing.locked === true) throw new Error('Unlock this product before changing its baked quantity.');
+                patch.totalBaked = parseProductionQuantity(data.totalBaked);
+                patch.availableQuantity = patch.totalBaked - Number(existing.invoiceQuantity || 0) + Number(existing.returnedQuantity || 0);
+                if (!Number.isFinite(patch.availableQuantity)) throw new Error('Inventory counters need review before saving.');
+            } else if (existing.totalBaked === undefined) {
+                // A new lock record must satisfy the existing Firestore schema.
+                patch.totalBaked = 0;
+                patch.availableQuantity = -Number(existing.invoiceQuantity || 0) + Number(existing.returnedQuantity || 0);
+            }
+            // Counter fields belong to invoice transactions and are never copied back.
+            transaction.set(reference, patch, { merge: true });
+        });
+        return true;
+    });
+    pendingProductWrites.set(key, pending);
+    try { return await pending; }
+    finally { if (pendingProductWrites.get(key) === pending) pendingProductWrites.delete(key); }
+}
+
+async function runInventoryMutation(factory, date, entries, onlyUninitialized) {
+    var result = await icfPipeline.run(factory({ date: date, entries: entries, writeRecord: writeProductionRecord, onlyUninitialized: onlyUninitialized }));
+    if (!result || !result.ok) {
+        throw new Error(result && result.errors ? result.errors.join(' ') : 'Inventory operation failed.');
+    }
+    return result.intent.context.resultData;
+}
+
 export const inventoryService = {
     /**
      * Get inventory records for a specific date (YYYY-MM-DD)
      */
-    async getDailyInventory(date) {
-        try {
-            const q = query(collection(db, COLLECTION), where('date', '==', date));
-            const rows = await getDocsWithCache(q, {
-                collectionName: COLLECTION,
-                cacheKey: `inventory:daily:${date}`,
-                timeoutMs: 45000,
-                attempts: 2
-            });
-            const results = {};
-            rows.forEach(row => {
-                results[row.productId] = row;
-            });
-            return results;
-        } catch (error) {
-            console.error("Error fetching daily inventory:", error);
-            return {};
-        }
+    async getDailyInventory(date, options) {
+        var source = 'cache';
+        var rows = await getDocsWithCache(query(collection(db, COLLECTION), where('date', '==', date)), {
+            collectionName: COLLECTION, cacheKey: 'inventory:daily:' + date, timeoutMs: 45000, attempts: 2,
+            preferServer: Boolean(options && options.forceRefresh),
+            onReadSource: function recordSource(value) { source = value; }
+        });
+        if (source !== 'server' && rows.length === 0) throw new Error('Could not confirm inventory for this day. Reconnect and retry.');
+        var results = {};
+        rows.forEach(function collectRecord(row) { results[row.productId] = row; });
+        Object.defineProperty(results, '__readSource', { value: source });
+        return results;
     },
 
-    /**
-     * Save production record for an item
-     */
     async saveProductionRecord(date, productId, data) {
-        try {
-            const docId = `${date}_${productId}`;
-            const docRef = doc(db, COLLECTION, docId);
-            const existingSnap = await getDoc(docRef);
-            const existingData = existingSnap.exists() ? existingSnap.data() : {};
-            const nextData = data || {};
-            const totalBaked = Number(nextData.totalBaked !== undefined ? nextData.totalBaked : existingData.totalBaked) || 0;
-            const invoiceQuantity = Number(existingData.invoiceQuantity || 0);
-            const returnedQuantity = Number(existingData.returnedQuantity || 0);
-            await setDoc(docRef, {
-                date,
-                productId,
-                ...nextData, // totalBaked, locked
-                totalBaked,
-                invoiceQuantity,
-                returnedQuantity,
-                availableQuantity: totalBaked - invoiceQuantity + returnedQuantity,
-                updatedAt: serverTimestamp()
-            }, { merge: true });
-            return true;
-        } catch (error) {
-            console.error("Error saving production record:", error);
-            return false;
-        }
+        var result = await runInventoryMutation(createSaveProductionRecordIntent, date, [{ productId: productId, data: data }], false);
+        if (!result.ok) throw new Error(result.failed[0].error);
+        return true;
+    },
+
+    async setLockStatus(date, entries) {
+        return runInventoryMutation(createSetInventoryLockStatusIntent, date, entries, false);
+    },
+
+    async initializeDay(date, entries) {
+        return runInventoryMutation(createInitializeInventoryDayIntent, date, entries, true);
+    },
+
+    async importDay(date, entries) {
+        return runInventoryMutation(createImportInventoryDayIntent, date, entries, true);
     },
 
     /**
      * Get inventory-enabled categories
      */
-    async getInventorySettings() {
+    async getInventorySettings(options) {
         try {
             if (!offlineStatusService.isOnline()) {
-                return applyPendingInventorySettings((await readCachedRowsAsync(INVENTORY_SETTINGS_CACHE_KEY))[0] || { enabledCategories: [] });
+                var cachedSettings = (await readCachedRowsAsync(INVENTORY_SETTINGS_CACHE_KEY))[0];
+                if (!cachedSettings && options && options.requireAvailable) throw new Error('Inventory settings are unavailable. Reconnect and retry.');
+                return Object.assign({}, applyPendingInventorySettings(cachedSettings || { enabledCategories: [] }), { __stale: true });
             }
 
             const docRef = doc(db, 'settings', SETTINGS_DOC);
@@ -203,10 +239,13 @@ export const inventoryService = {
             this.flushPendingInventorySettings().catch(error => {
                 console.warn('[inventory-settings] Pending settings sync failed.', error);
             });
+            if (snap.metadata && snap.metadata.fromCache) return Object.assign({}, cached, { __stale: true });
             return cached;
         } catch (error) {
             console.error("Error fetching inventory settings:", error);
-            return applyPendingInventorySettings((await readCachedRowsAsync(INVENTORY_SETTINGS_CACHE_KEY))[0] || { enabledCategories: [] });
+            var cachedSettings = (await readCachedRowsAsync(INVENTORY_SETTINGS_CACHE_KEY))[0];
+                if (!cachedSettings && options && options.requireAvailable) throw new Error('Inventory settings are unavailable. Reconnect and retry.');
+                return Object.assign({}, applyPendingInventorySettings(cachedSettings || { enabledCategories: [] }), { __stale: true });
         }
     },
 

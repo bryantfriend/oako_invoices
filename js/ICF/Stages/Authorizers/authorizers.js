@@ -1,3 +1,4 @@
+import authorizeInventoryMutationModule from './Inventory/authorizeInventoryMutation.js';
 import authorizeRetrySyncModule from './Sync/authorizeRetrySync.js';
 import authorizeCustomerMutationModule from "./Customers/authorizeCustomerMutation.js";
 import authorizeInvoiceWorkflowModule from './Workflow/authorizeInvoiceWorkflow.js';
@@ -75,5 +76,7 @@ var authorizers = {
 authorizers.authorizeCustomerMutation = authorizeCustomerMutationModule.authorizeCustomerMutation;
 
 authorizers.authorizeRetrySync = authorizeRetrySyncModule.authorizeRetrySync;
+
+authorizers.authorizeInventoryMutation = authorizeInventoryMutationModule.authorizeInventoryMutation;
 
 export default authorizers;

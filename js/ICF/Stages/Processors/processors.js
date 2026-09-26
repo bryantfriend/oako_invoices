@@ -1,3 +1,4 @@
+import processInventoryMutationModule from './Inventory/processInventoryMutation.js';
 import processRetrySyncModule from './Sync/processRetrySync.js';
 import processCustomerMutationModule from "./Customers/processCustomerMutation.js";
 import processRunWorkflowEffectModule from './Workflow/processRunWorkflowEffect.js';
@@ -86,5 +87,7 @@ var processors = {
 processors.processCustomerMutation = processCustomerMutationModule.processCustomerMutation;
 
 processors.processRetrySync = processRetrySyncModule.processRetrySync;
+
+processors.processInventoryMutation = processInventoryMutationModule.processInventoryMutation;
 
 export default processors;

@@ -1,4 +1,6 @@
-import { withOvenLoading } from '../components/ovenLoading.js';
+import { createViewRequestGuard } from '../core/viewRequestGuard.js';
+var beginCollectionsRequest = createViewRequestGuard();
+import { startOvenLoading, withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { customerService } from "../services/customerService.js";
@@ -91,7 +93,7 @@ function renderCollectionRow(row) {
         + '</article>';
 }
 
-function attachCollectionEvents() {
+function attachCollectionEvents(isCurrent) {
     var customerButtons = document.querySelectorAll('.collection-customer');
     customerButtons.forEach(function(button) {
         button.addEventListener('click', function() {
@@ -102,6 +104,7 @@ function attachCollectionEvents() {
     var paidButtons = document.querySelectorAll('.mark-paid-button');
     paidButtons.forEach(function(button) {
         button.addEventListener('click', withOvenLoading(async function() {
+            if (button.disabled || !isCurrent()) return;
             var orderId = button.dataset.orderId;
             button.disabled = true;
             button.textContent = 'Saving...';
@@ -113,12 +116,13 @@ function attachCollectionEvents() {
                     updatedAt: new Date()
                 }, 'collections-mark-paid');
                 notificationService.success('Payment recorded.');
-                await renderCollections();
+                if (isCurrent()) await renderCollections();
             } catch (error) {
                 console.error('Could not mark collection paid.', error);
                 notificationService.error(error.message || 'Could not record payment.');
                 button.disabled = false;
                 button.textContent = 'Mark paid';
+                return false;
             }
         }, "Updating payments"));
     });
@@ -128,32 +132,52 @@ export async function renderCollections() {
     layoutView.render('route-change');
     layoutView.updateTitle('Payment Collections');
     var container = document.getElementById('page-container');
-    container.innerHTML = '<section class="ops-page"><div class="ops-loading">Loading outstanding balances...</div></section>';
+    var isCurrent = beginCollectionsRequest(container);
+    var hadData = Boolean(container.querySelector('#collections-refresh'));
+    if (!hadData) container.innerHTML = '<section class="ops-page"><div class="ops-loading">Loading outstanding balances...</div></section>';
+    var loading = startOvenLoading('Loading collections');
+    try {
 
-    var data = await loadCollectionsData();
-    var rows = buildCollectionRows(data.orders, data.customers, new Date());
-    var summary = summarizeCollections(rows);
+        var data = await loadCollectionsData();
+        if (!isCurrent()) return;
+        var rows = buildCollectionRows(data.orders, data.customers, new Date());
+        var summary = summarizeCollections(rows);
 
-    container.innerHTML = '<section class="ops-page animate-fade-in">'
-        + '<header class="ops-page-header"><div><span class="ops-eyebrow">Receivables</span><h1>Payment collection center</h1><p>Prioritized follow-ups with customer contact details and one-tap payment completion.</p></div>'
-        + '<button class="btn btn-secondary" id="collections-refresh">Refresh</button></header>'
-        + '<div class="ops-metric-grid">'
-        + renderMetric('Outstanding', formatCurrency(summary.outstanding), 'attention')
-        + renderMetric('Overdue', formatCurrency(summary.overdue), 'warning')
-        + renderMetric('Critical accounts', summary.critical, 'danger')
-        + renderMetric('Customers to contact', summary.customers, 'calm')
-        + '</div>'
-        + '<section class="ops-panel"><div class="ops-panel-heading"><div><h2>Collection queue</h2><p>Oldest balances appear first.</p></div><span class="metric-pill">' + rows.length + ' open</span></div>'
-        + '<div class="ops-work-list">' + (rows.length ? rows.map(renderCollectionRow).join('') : '<div class="ops-empty">Everything is collected. No outstanding balances need attention.</div>') + '</div></section>'
-        + '</section>';
+        container.innerHTML = '<section class="ops-page animate-fade-in">'
+            + '<header class="ops-page-header"><div><span class="ops-eyebrow">Receivables</span><h1>Payment collection center</h1><p>Prioritized follow-ups with customer contact details and one-tap payment completion.</p></div>'
+            + '<button class="btn btn-secondary" id="collections-refresh">Refresh</button></header>'
+            + '<div class="ops-metric-grid">'
+            + renderMetric('Outstanding', formatCurrency(summary.outstanding), 'attention')
+            + renderMetric('Overdue', formatCurrency(summary.overdue), 'warning')
+            + renderMetric('Critical balances', summary.critical, 'danger')
+            + renderMetric('Customers to contact', summary.customers, 'calm')
+            + '</div>'
+            + '<section class="ops-panel"><div class="ops-panel-heading"><div><h2>Collection queue</h2><p>Oldest balances appear first.</p></div><span class="metric-pill">' + rows.length + ' open</span></div>'
+            + '<div class="ops-work-list">' + (rows.length ? rows.map(renderCollectionRow).join('') : '<div class="ops-empty">Everything is collected. No outstanding balances need attention.</div>') + '</div></section>'
+            + '</section>';
 
-    var refreshButton = document.getElementById('collections-refresh');
-    if (refreshButton) {
-        refreshButton.addEventListener('click', function() {
-            sessionDataStore.refreshOrders({ source: 'collections-refresh', forceRefresh: true }).finally(function() {
-                renderCollections();
-            });
-        });
-    }
-    attachCollectionEvents();
+        var refreshButton = document.getElementById('collections-refresh');
+        if (refreshButton) {
+            refreshButton.addEventListener('click', withOvenLoading(async function refreshCollections() {
+                if (refreshButton.disabled || !isCurrent()) return;
+                refreshButton.disabled = true;
+                try {
+                    await sessionDataStore.refreshOrders({ source: 'collections-refresh', forceRefresh: true });
+                    if (isCurrent()) await renderCollections();
+                } catch (error) {
+                    if (isCurrent()) notificationService.error(error.message || 'Refresh failed. Previously loaded balances are still shown.');
+                    return false;
+                } finally { refreshButton.disabled = false; }
+            }, 'Refreshing collections'));
+        }
+        attachCollectionEvents(isCurrent);
+    } catch (error) {
+        loading.fail();
+        if (!isCurrent()) return;
+        notificationService.error(error.message || 'Could not load collections.');
+        if (!hadData) {
+            container.innerHTML = '<p role="alert">Collections could not be loaded. <button id="collections-retry" class="btn btn-secondary">Retry</button></p>';
+            container.querySelector('#collections-retry').addEventListener('click', function retryCollections() { if (isCurrent()) return renderCollections(); });
+        }
+    } finally { loading.finish(); }
 }

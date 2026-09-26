@@ -1,3 +1,4 @@
+import validateInventoryMutationModule from './Inventory/validateInventoryMutation.js';
 import validateRetrySyncPayloadModule from './Sync/validateRetrySyncPayload.js';
 import validateCustomerMutationModule from "./Customers/validateCustomerMutation.js";
 import validateInvoiceWorkflowPayloadModule from './Workflow/validateInvoiceWorkflowPayload.js';
@@ -89,5 +90,7 @@ var validators = {
 validators.validateCustomerMutation = validateCustomerMutationModule.validateCustomerMutation;
 
 validators.validateRetrySyncPayload = validateRetrySyncPayloadModule.validateRetrySyncPayload;
+
+validators.validateInventoryMutation = validateInventoryMutationModule.validateInventoryMutation;
 
 export default validators;

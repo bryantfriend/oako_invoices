@@ -1,3 +1,4 @@
+import addInventoryMutationContextModule from './Inventory/addInventoryMutationContext.js';
 import addRetrySyncContextModule from './Sync/addRetrySyncContext.js';
 import addCustomerMutationContextModule from "./Customers/addCustomerMutationContext.js";
 import addInvoiceWorkflowContextModule from './Workflow/addInvoiceWorkflowContext.js';
@@ -68,5 +69,7 @@ var contextProviders = {
 contextProviders.addCustomerMutationContext = addCustomerMutationContextModule.addCustomerMutationContext;
 
 contextProviders.addRetrySyncContext = addRetrySyncContextModule.addRetrySyncContext;
+
+contextProviders.addInventoryMutationContext = addInventoryMutationContextModule.addInventoryMutationContext;
 
 export default contextProviders;

@@ -59,15 +59,20 @@ export function buildCustomerIndex(customers) {
 
 function getOutstandingAmount(order) {
     var source = order || {};
-    var total = Number(source.totalAmount || source.total || 0);
-    var amountPaid = Number(source.amountPaid || source.paidAmount || 0);
-    var explicitBalance = Number(source.outstandingAmount || source.balanceDue || 0);
-
-    if (explicitBalance > 0) {
-        return explicitBalance;
+    function firstFiniteAmount(fields, fallback) {
+        for (var index = 0; index < fields.length; index += 1) {
+            var value = source[fields[index]];
+            if ((typeof value === 'number' || typeof value === 'string') && String(value).trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+        }
+        return fallback;
     }
-
-    return Math.max(0, total - amountPaid);
+    var explicitBalance = firstFiniteAmount(['outstandingAmount', 'balanceDue'], null);
+    if (explicitBalance !== null) return Math.max(0, explicitBalance);
+    var total = firstFiniteAmount(['totalAmount', 'total'], 0);
+    var returnSummary = source.returnSummary || {};
+    var adjusted = returnSummary.adjustedTotalAmount;
+    if ((typeof adjusted === 'number' || typeof adjusted === 'string') && String(adjusted).trim() !== '' && Number.isFinite(Number(adjusted))) total = Number(adjusted);
+    return Math.max(0, total - firstFiniteAmount(['amountPaid', 'paidAmount'], 0));
 }
 
 function getDueDate(order) {
@@ -102,7 +107,7 @@ function getCollectionRisk(ageDays) {
 
 export function buildCollectionRows(orders, customers, nowValue) {
     var customerIndex = buildCustomerIndex(customers);
-    var allowedStatuses = ['confirmed', 'fulfilled', 'fullfilled'];
+    var allowedStatuses = ['confirmed', 'fulfilled', 'fullfilled', 'partially_returned'];
     var sourceOrders = Array.isArray(orders) ? orders : [];
     var rows = [];
     var orderIndex = 0;

@@ -1,3 +1,4 @@
+import normalizeInventoryMutationModule from './Inventory/normalizeInventoryMutation.js';
 import normalizeRetrySyncPayloadModule from './Sync/normalizeRetrySyncPayload.js';
 import normalizeCustomerMutationModule from "./Customers/normalizeCustomerMutation.js";
 import normalizeInvoiceWorkflowPayloadModule from './Workflow/normalizeInvoiceWorkflowPayload.js';
@@ -84,5 +85,7 @@ var normalizers = {
 normalizers.normalizeCustomerMutation = normalizeCustomerMutationModule.normalizeCustomerMutation;
 
 normalizers.normalizeRetrySyncPayload = normalizeRetrySyncPayloadModule.normalizeRetrySyncPayload;
+
+normalizers.normalizeInventoryMutation = normalizeInventoryMutationModule.normalizeInventoryMutation;
 
 export default normalizers;
