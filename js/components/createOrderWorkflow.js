@@ -1,3 +1,5 @@
+import { router } from '../router.js';
+import { ROUTES } from '../core/constants.js';
 import { withOvenLoading, startOvenLoading } from './ovenLoading.js';
 import { workflowLocalStore } from '../services/workflowLocalStore.js';
 import { createWorkflowId, createEntryTimer, suggestReturnQuantities } from '../core/invoiceProductivity.js';
@@ -251,7 +253,8 @@ export function attachCreateOrderWorkflow(options) {
             orderId = result.order.id;
             persist();
             if (saveOnly) {
-                status.textContent = 'Order saved. Continue editing or print its invoice.';
+                status.textContent = 'Order saved.';
+                if (form.isConnected) await router.navigate(ROUTES.DASHBOARD);
                 return;
             }
             await showNativeInvoicePrint(popup, [result.invoice], options.settings, {

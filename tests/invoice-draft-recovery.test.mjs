@@ -199,8 +199,9 @@ async function editor(q, storage, options = {}) {
         querySelector(selector) { return ids[selector]; }, reportValidity() { return true; },
     });
     const blank = { customerName: '', orderDate: '2026-09-12', notes: '', selectedPriceMode: 'business', items: [] };
-    const state = { entries: options.repeat ? draft() : copy(blank), ids, form, popup: null, prints: [], errors: [] };
+    const state = { entries: options.repeat ? draft() : copy(blank), ids, form, popup: null, prints: [], errors: [], navigations: [] };
     const ui = await load('js/components/createOrderWorkflow.js', {
+        constants: constants, router: { router: { async navigate(route) { state.navigations.push(route); } } },
         invoiceProductivity: productivity, invoiceWorkflowService: q.service,
         orderService: { orderService: { async getOrdersByCustomerName() { return []; } } },
         notificationService: { notificationService: { error(message) { state.errors.push(message); } } },
@@ -365,4 +366,26 @@ test('clicking the active New Order navigation opens a blank editor and preserve
     ui.entries.customerName = 'Unsaved work'; storage.fail = true;
     await router.navigate('/orders/create');
     assert.equal(ui.entries.customerName, 'Unsaved work'); assert.match(ui.ids['#workflow-draft-status'].textContent, /Could not keep this draft/);
+});
+
+test('Save Order returns to Orders only after successful saving from the active editor', async function() {
+    const q = await fixture();
+    const ui = await editor(q, { value: null }, { repeat: true });
+    await ui.submit('save');
+    assert.deepEqual(ui.navigations, [constants.ROUTES.DASHBOARD]);
+    assert.equal(ui.prints.length, 0);
+    assert.equal(q.orders.length, 2);
+});
+
+test('Save Order leaves a failed or departed editor without redirecting', async function() {
+    const q = await fixture();
+    const ui = await editor(q, { value: draft() });
+    ui.resume();
+    await ui.submit('save');
+    assert.deepEqual(ui.navigations, []);
+    assert.ok(ui.errors.length > 0);
+    const departed = await editor(q, { value: null }, { repeat: true });
+    departed.form.isConnected = false;
+    await departed.submit('save');
+    assert.deepEqual(departed.navigations, []);
 });
