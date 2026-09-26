@@ -65,17 +65,19 @@ function renderMainView(container, date, categories, isCurrent) {
     });
     container.innerHTML = `
         <div class="animate-fade-in" style="display: flex; flex-direction: column; gap: var(--space-6); width: 100%;">
-            ${categories.readSource !== 'server' ? '<p role="status">Cached inventory is shown. Reconnect and refresh before editing.</p>' : ''}
+            ${categories.readSource !== 'server' ? '<p role="status">Cached inventory is shown. Saves and unlocks will be verified online; failed changes stay here to retry.</p>' : ''}
             ${usesBreadDefault ? '<div class="daily-data-notice" role="status"><span>🥖</span><div><strong>Showing bread inventory by default</strong><p>Select different Inventory categories in Settings whenever you want to track other products.</p></div></div>' : ''}
             <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4);">
                     <div style="font-size: 14px; color: var(--color-gray-500);">
                         Showing inventory for <strong>${date}</strong>
                         <div style="margin-top: 4px; font-size: 12px;">Saved orders reserve stock for this day. Left = Total Baked − Ordered + Returned.</div>
+                        <div style="margin-top: 4px; font-size: 12px;">Unlock to edit today’s baked totals. Each quantity saves when you leave its field. <a href="#/settings">Change inventory categories</a></div>
                     </div>
                     <div style="display: flex; gap: 8px;">
+                        <button id="inventory-defaults-btn" class="btn btn-secondary btn-sm">Daily starting quantities</button>
                         <button id="lock-all-btn" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;">🔒 Lock All</button>
-                        <button id="unlock-all-btn" class="btn btn-ghost btn-sm" style="font-size: 11px; padding: 4px 10px; color: var(--color-gray-500);">🔓 Unlock All</button>
+                        <button id="unlock-all-btn" class="btn btn-ghost btn-sm" style="font-size: 11px; padding: 4px 10px; color: var(--color-gray-500);">🔓 Unlock &amp; edit quantities</button>
                     </div>
                 </div>
                 <button id="refresh-inventory" class="btn btn-ghost btn-sm">🔄 Refresh Data</button>
@@ -136,7 +138,7 @@ function renderMainView(container, date, categories, isCurrent) {
                                                     </td>
                                                     <td style="text-align: center; padding: 12px 16px;">
                                                         <button class="lock-toggle btn-icon" data-id="${p.id}" data-locked="${p.locked}">
-                                                            ${p.locked ? '🔒' : '🔓'}
+                                                            ${p.locked ? '🔒 Unlock' : '🔓 Lock'}
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -153,13 +155,16 @@ function renderMainView(container, date, categories, isCurrent) {
     `;
 
     var busy = false;
-    var readOnly = categories.readSource !== 'server';
     function setBusy(value) {
         busy = value;
         var hasFailed = Boolean(container.querySelector('[data-save-failed="true"]'));
         container.querySelectorAll('button, input').forEach(function updateControl(control) {
             var locked = control.classList.contains('baked-input') && control.dataset.locked === 'true';
-            control.disabled = value || locked || (hasFailed && control.tagName === 'BUTTON' && !control.classList.contains('retry-baked-save')) || (readOnly && control.id !== 'refresh-inventory');
+            var unlock = control.id === 'unlock-all-btn' || (control.classList.contains('lock-toggle') && control.dataset.locked === 'true');
+            var blocksFailedDraft = hasFailed && control.tagName === 'BUTTON' && !control.classList.contains('retry-baked-save') && !unlock;
+            // Cached data is usable: transactions check current server state before writing.
+            // Never disable the unlock action needed to recover a locked failed draft.
+            control.disabled = value || locked || blocksFailedDraft;
         });
     }
     function applyLockResult(result, locked) {
@@ -168,8 +173,12 @@ function renderMainView(container, date, categories, isCurrent) {
             container.querySelectorAll('.lock-toggle').forEach(function matchButton(button) {
                 if (button.dataset.id !== record.productId) return;
                 button.dataset.locked = String(locked);
-                button.textContent = locked ? '🔒' : '🔓';
-                button.closest('tr').querySelector('.baked-input').dataset.locked = String(locked);
+                button.textContent = locked ? '🔒 Unlock' : '🔓 Lock';
+                var input = button.closest('tr').querySelector('.baked-input');
+                input.dataset.locked = String(locked);
+                input.style.borderColor = locked ? 'transparent' : 'var(--color-gray-200)';
+                input.style.background = locked ? 'transparent' : 'white';
+                input.style.fontWeight = locked ? '700' : '400';
             });
         });
     }
@@ -246,6 +255,9 @@ function renderMainView(container, date, categories, isCurrent) {
             });
         }, 'Updating inventory locks'));
     });
+    container.querySelector('#inventory-defaults-btn').addEventListener('click', function editStartingQuantities() {
+        if (!busy && isCurrent()) showStartingQuantitiesModal(date, categories, isCurrent);
+    });
     container.querySelector('#refresh-inventory').addEventListener('click', withOvenLoading(async function refreshInventory() {
         return perform(async function refreshData() { await renderInventory({ forceRefresh: true }); });
     }, 'Refreshing inventory'));
@@ -258,7 +270,7 @@ function showInitializationModal(date, categories, isCurrent) {
         content: `
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <p style="font-size: 14px; color: var(--color-gray-600);">
-                    Today's inventory is empty. Please enter your baked totals or import from yesterday.
+                    Today's inventory is empty. Review your saved starting quantities below, adjust them for today, or import from yesterday.
                 </p>
                 <div style="max-height: 400px; overflow: auto; border: 1px solid var(--color-gray-200); border-radius: 8px; -webkit-overflow-scrolling: touch;">
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 320px;">
@@ -282,7 +294,7 @@ function showInitializationModal(date, categories, isCurrent) {
                                             </div>
                                         </td>
                                         <td style="padding: 8px 12px; text-align: center;">
-                                            <input type="number" min="0" step="any" class="init-baked-input" data-id="${p.id}" value="0" style="width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
+                                            <input type="number" min="0" step="any" class="init-baked-input" data-id="${p.id}" value="${getStartingQuantity(categories, p.id)}" style="width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
                                         </td>
                                     </tr>
                                 `; }).join('')}
@@ -338,4 +350,75 @@ function showInitializationModal(date, categories, isCurrent) {
     }
     importButton.addEventListener('click', withOvenLoading(async function importInventory() { return initialize(true); }, 'Importing inventory'));
     confirmButton.addEventListener('click', withOvenLoading(async function confirmInventory() { return initialize(false); }, 'Initializing inventory'));
+}
+
+function getStartingQuantity(categories, productId) {
+    var defaults = categories.defaultProductionQuantities || {};
+    var quantity = Number(defaults[productId]);
+    if (!Number.isFinite(quantity) || quantity < 0) return 0;
+    return quantity;
+}
+
+function escapeInventoryText(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function showStartingQuantitiesModal(date, categories, isCurrent) {
+    var products = [];
+    var seen = new Set();
+    categories.forEach(function collectDefaultsCategory(category) {
+        category.products.forEach(function collectDefaultsProduct(product) {
+            if (!seen.has(product.id)) { products.push(product); seen.add(product.id); }
+        });
+    });
+    var modal = new Modal({
+        title: 'Daily starting quantities',
+        confirmText: 'Save starting quantities',
+        lockWhileSubmitting: true,
+        content: '<p>These quantities prefill a new day. Changing them leaves today’s saved production unchanged.</p>' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="defaults-use-today">Copy today’s saved totals into this form</button>' +
+            '<div style="display:grid;gap:12px;margin-top:16px">' + products.map(function renderDefaultInput(product) {
+                return '<label style="display:flex;justify-content:space-between;gap:16px;align-items:center">' +
+                    '<span>' + escapeInventoryText(product.displayName || product.name) + '</span>' +
+                    '<input class="starting-quantity-input" type="number" min="0" step="any" style="width:90px" data-id="' + escapeInventoryText(product.id) + '" value="' + getStartingQuantity(categories, product.id) + '"></label>';
+            }).join('') + '</div><p class="defaults-error" role="alert" style="color:var(--color-error)"></p>',
+        onConfirm: async function saveDefaults() {
+            if (!isCurrent()) return false;
+            var inputs = Array.from(modal.modalEl.querySelectorAll('.starting-quantity-input'));
+            try {
+                var entries = inputs.map(function readDefaultInput(input) {
+                    return { productId: input.dataset.id, data: { totalBaked: parseProductionQuantity(input.value) } };
+                }).filter(function changedDefault(entry) {
+                    return entry.data.totalBaked !== getStartingQuantity(categories, entry.productId);
+                });
+                inputs.forEach(function disableDuringSave(input) { input.disabled = true; });
+                if (entries.length) {
+                    await inventoryController.saveStartingQuantities(date, entries);
+                    var defaults = Object.assign({}, categories.defaultProductionQuantities || {});
+                    entries.forEach(function updateLocalDefault(entry) {
+                        Object.defineProperty(defaults, entry.productId, { value: entry.data.totalBaked, enumerable: true, configurable: true, writable: true });
+                    });
+                    categories.defaultProductionQuantities = defaults;
+                }
+                notificationService.success('Daily starting quantities saved.');
+                return true;
+            } catch (error) {
+                if (modal.modalEl) modal.modalEl.querySelector('.defaults-error').textContent = error.message || 'Could not save starting quantities. Your entries are kept for retry.';
+                return false;
+            } finally { inputs.forEach(function enableAfterSave(input) { input.disabled = false; }); }
+        }
+    });
+    modal.open();
+    modal.modalEl.querySelector('#defaults-use-today').addEventListener('click', function copyToday() {
+        if (modal.isSubmitting) return;
+        modal.modalEl.querySelectorAll('.starting-quantity-input').forEach(function fillToday(input) {
+            var product = products.find(function matchProduct(candidate) { return candidate.id === input.dataset.id; });
+            input.value = String(product.totalBaked);
+        });
+    });
+    window.addEventListener('hashchange', function closeDefaultsOnNavigation() {
+        // The write may complete, but an old dialog must not remain over another tab.
+        modal.isSubmitting = false;
+        modal.close();
+    }, { once: true });
 }

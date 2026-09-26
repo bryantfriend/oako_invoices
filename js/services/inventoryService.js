@@ -1,3 +1,4 @@
+import { createSaveInventoryDefaultsIntent } from '../ICF/Intents/SaveInventoryDefaultsIntent.js';
 import { validateInventoryEntry, parseProductionQuantity } from '../core/inventoryValidation.js';
 import icfPipeline from '../ICF/engine/pipeline.js';
 import { createSaveProductionRecordIntent } from '../ICF/Intents/SaveProductionRecordIntent.js';
@@ -177,8 +178,24 @@ async function writeProductionRecord(date, productId, data, onlyUninitialized) {
     finally { if (pendingProductWrites.get(key) === pending) pendingProductWrites.delete(key); }
 }
 
-async function runInventoryMutation(factory, date, entries, onlyUninitialized) {
-    var result = await icfPipeline.run(factory({ date: date, entries: entries, writeRecord: writeProductionRecord, onlyUninitialized: onlyUninitialized }));
+async function writeInventoryDefaults(entries) {
+    var savedSettings;
+    await runTransaction(db, async function saveDefaultsTransaction(transaction) {
+        var reference = doc(db, 'settings', SETTINGS_DOC);
+        var snapshot = await transaction.get(reference);
+        var existing = snapshot.exists() ? snapshot.data() : {};
+        var defaults = Object.assign({}, existing.defaultProductionQuantities || {});
+        entries.forEach(function applyDefault(entry) {
+            Object.defineProperty(defaults, entry.productId, { value: parseProductionQuantity(entry.data.totalBaked), enumerable: true, configurable: true, writable: true });
+        });
+        transaction.set(reference, { defaultProductionQuantities: defaults, updatedAt: serverTimestamp() }, { merge: true });
+        savedSettings = Object.assign({}, existing, { defaultProductionQuantities: defaults });
+    });
+    cacheInventorySettings(savedSettings, false);
+}
+
+async function runInventoryMutation(factory, date, entries, onlyUninitialized, writeDefaults) {
+    var result = await icfPipeline.run(factory({ date: date, entries: entries, writeRecord: writeProductionRecord, onlyUninitialized: onlyUninitialized, writeDefaults: writeDefaults }));
     if (!result || !result.ok) {
         throw new Error(result && result.errors ? result.errors.join(' ') : 'Inventory operation failed.');
     }
@@ -207,6 +224,10 @@ export const inventoryService = {
         var result = await runInventoryMutation(createSaveProductionRecordIntent, date, [{ productId: productId, data: data }], false);
         if (!result.ok) throw new Error(result.failed[0].error);
         return true;
+    },
+
+    async saveStartingQuantities(date, entries) {
+        return runInventoryMutation(createSaveInventoryDefaultsIntent, date, entries, false, writeInventoryDefaults);
     },
 
     async setLockStatus(date, entries) {

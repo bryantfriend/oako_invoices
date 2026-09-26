@@ -97,6 +97,7 @@ export const inventoryController = {
                     return category.products.length > 0;
                 });
 
+            categoriesWithProducts.defaultProductionQuantities = settings.defaultProductionQuantities || {};
             categoriesWithProducts.readSource = settings.__stale ? 'cache' : dailyRecords.__readSource || 'server';
             categoriesWithProducts.confirmedEmpty = categoriesWithProducts.readSource === 'server' && Object.keys(dailyRecords).length === 0;
             return categoriesWithProducts;
@@ -125,6 +126,10 @@ export const inventoryController = {
 
     async setLockStatus(date, productId, locked) {
         return inventoryService.setLockStatus(date, [{ productId: productId, data: { locked: locked } }]);
+    },
+
+    async saveStartingQuantities(date, entries) {
+        return inventoryService.saveStartingQuantities(date, entries);
     },
 
     async initializeDay(date, entries) {

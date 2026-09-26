@@ -1,3 +1,4 @@
+import processInventoryDefaultsModule from './Inventory/processInventoryDefaults.js';
 import processInventoryMutationModule from './Inventory/processInventoryMutation.js';
 import processRetrySyncModule from './Sync/processRetrySync.js';
 import processCustomerMutationModule from "./Customers/processCustomerMutation.js";
@@ -89,5 +90,7 @@ processors.processCustomerMutation = processCustomerMutationModule.processCustom
 processors.processRetrySync = processRetrySyncModule.processRetrySync;
 
 processors.processInventoryMutation = processInventoryMutationModule.processInventoryMutation;
+
+processors.processInventoryDefaults = processInventoryDefaultsModule.processInventoryDefaults;
 
 export default processors;

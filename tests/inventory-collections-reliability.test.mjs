@@ -44,7 +44,7 @@ async function harness() {
             if (state.readError) throw new Error('unavailable');
             options.onReadSource(state.source);
             return state.rows;
-        }, readCachedRowsAsync: async function() { return []; } },
+        }, readCachedRowsAsync: async function() { return []; }, writeCachedRows: function() {} },
         offlineStatusService: { offlineStatusService: { isOnline: function() { return false; } } }
     }, {}, true);
     return { state: state, service: module.inventoryService };
@@ -172,4 +172,27 @@ test('view requests reject both older same-route loads and navigation away', asy
     assert.equal(current(), true);
     navigationId += 1; route = 'collections';
     assert.equal(current(), false);
+});
+
+test('starting defaults update atomically and preserve other settings and today’s production', async function() {
+    var { state, service } = await harness();
+    state.records.inventory_settings = { enabledCategories: ['bread'], defaultProductionQuantities: { bread: 20, other: 40 } };
+    state.records['2026-09-26_bread'] = { totalBaked: 80, locked: true };
+    var result = await service.saveStartingQuantities('2026-09-26', [{ productId: 'bread', data: { totalBaked: 12.5 } }]);
+    assert.equal(result.ok, true);
+    assert.equal(state.records.inventory_settings.defaultProductionQuantities.bread, 12.5);
+    assert.equal(state.records.inventory_settings.defaultProductionQuantities.other, 40);
+    assert.equal(state.records.inventory_settings.enabledCategories[0], 'bread');
+    assert.equal(state.records['2026-09-26_bread'].totalBaked, 80);
+    assert.equal(state.records['2026-09-26_bread'].locked, true);
+    assert.equal(state.writes.length, 1);
+});
+
+test('starting defaults validate every quantity before any write and surface denied saves', async function() {
+    var { state, service } = await harness();
+    await assert.rejects(service.saveStartingQuantities('2026-09-26', [{ productId: 'bread', data: { totalBaked: 10 } }, { productId: 'bad', data: { totalBaked: -1 } }]), /nonnegative/);
+    assert.equal(state.writes.length, 0);
+    state.denied.add('inventory_settings');
+    await assert.rejects(service.saveStartingQuantities('2026-09-26', [{ productId: 'bread', data: { totalBaked: 10 } }]), /permission-denied/);
+    assert.equal(state.writes.length, 0);
 });

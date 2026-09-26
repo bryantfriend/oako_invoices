@@ -17,8 +17,9 @@ export function ovenMarkup(label) {
         '<div class="oven-eyebrow">FRESH FROM THE OVEN</div>' +
         '<div class="oven-art" aria-hidden="true"><div class="oven-steam"><i></i><i></i><i></i></div>' +
         '<div class="oven-chimney"></div><div class="oven-dome"><div class="oven-mouth">' +
-        '<div class="oven-fire"></div><div class="oven-loaf"><i></i><i></i><i></i></div></div></div>' +
+        '<div class="oven-fire"><b></b><b></b><b></b></div><div class="oven-heat"><i></i><i></i><i></i></div><div class="oven-loaf"><i></i><i></i><i></i></div></div></div>' +
         '<div class="oven-hearth"></div><div class="oven-sprig">❧</div></div>' +
+        '<div class="oven-baking-stage" data-oven-stage aria-hidden="true">Warming the dough</div>' +
         '<div class="oven-meter" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><strong data-oven-percent>0%</strong></div>' +
         '<h2 data-oven-label role="status" aria-live="polite">' + escapeText(label || 'Getting things ready') + '</h2>' +
         '<p data-oven-detail>Estimated progress · Working…</p>' +
@@ -30,6 +31,20 @@ export function paintOven(root, percent, label, estimated, detail) {
     if (!root) return;
     var value = Math.max(0, Math.min(100, Math.floor(percent)));
     root.style.setProperty('--bake', String(value / 100));
+    // Apply concrete frame values so every browser and print popup shows the same bake.
+    var rise = Math.min(1, value / 65);
+    var crust = Math.max(0, (value - 25) / 75);
+    root.style.setProperty('--loaf-width', String(0.72 + rise * 0.28));
+    root.style.setProperty('--loaf-height', String(0.38 + rise * 0.62));
+    root.style.setProperty('--loaf-top', 'rgb(' + Math.round(249 - crust * 51) + ',' + Math.round(236 - crust * 104) + ',' + Math.round(199 - crust * 145) + ')');
+    root.style.setProperty('--loaf-bottom', 'rgb(' + Math.round(221 - crust * 87) + ',' + Math.round(200 - crust * 137) + ',' + Math.round(157 - crust * 136) + ')');
+    var bakingStage = root.querySelector('[data-oven-stage]');
+    var stageText = 'Warming the dough';
+    if (value >= 15) stageText = 'The dough is rising';
+    if (value >= 45) stageText = 'Baking a golden crust';
+    if (value >= 80) stageText = 'Finishing the bake';
+    if (value === 100) stageText = 'Freshly baked';
+    if (bakingStage && bakingStage.textContent !== stageText) bakingStage.textContent = stageText;
     var count = root.querySelector('[data-oven-percent]');
     var heading = root.querySelector('[data-oven-label]');
     var message = root.querySelector('[data-oven-detail]');

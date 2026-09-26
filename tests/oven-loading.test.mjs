@@ -160,3 +160,25 @@ test('foreground wrapper preserves this, synchronous popup activation, results a
     assert.equal(h.timers.size, 0);
 });
 
+
+test('bread changes from flat pale dough to risen golden crust as measured work advances', function() {
+    var h = harness();
+    var task = h.api.startOvenLoading('Baking preview', { measured: true });
+    h.advance(100);
+    var root = h.panel();
+    var styles = {};
+    root.style.setProperty = function(name, value) { styles[name] = value; };
+    task.update(0);
+    assert.equal(root.querySelector('[data-oven-stage]').textContent, 'Warming the dough');
+    var doughHeight = Number(styles['--loaf-height']);
+    var doughColor = styles['--loaf-top'];
+    task.update(35);
+    assert.equal(root.querySelector('[data-oven-stage]').textContent, 'The dough is rising');
+    assert.ok(Number(styles['--loaf-height']) > doughHeight);
+    task.update(75);
+    assert.equal(root.querySelector('[data-oven-stage]').textContent, 'Baking a golden crust');
+    assert.notEqual(styles['--loaf-top'], doughColor);
+    assert.equal(Number(styles['--loaf-height']), 1);
+    task.finish();
+    assert.equal(root.querySelector('[data-oven-stage]').textContent, 'Freshly baked');
+});

@@ -1,0 +1,3 @@
+# Daily starting quantities: additive settings change
+
+Store optional defaultProductionQuantities (product ID to nonnegative quantity) on settings/inventory_settings. Missing defaults continue to mean zero. Existing inventory documents and quantities are unchanged; no backfill or deletion is required. Existing admin-only settings writes remain enforced by Firestore. Save defaults in one transaction, merging only changed products with the latest map. Prefill only the new-day initialization form, then require its existing confirmation. Rolling back the UI leaves this optional field harmlessly stored.
