@@ -1,3 +1,4 @@
+import { withOvenLoading, startOvenLoading } from './ovenLoading.js';
 import { workflowLocalStore } from '../services/workflowLocalStore.js';
 import { createWorkflowId, createEntryTimer, suggestReturnQuantities } from '../core/invoiceProductivity.js';
 import { saveAndPrepareInvoice } from '../services/invoiceWorkflowService.js';
@@ -209,7 +210,7 @@ export function attachCreateOrderWorkflow(options) {
             form.querySelector('#add-item-btn').click();
         }
     });
-    form.addEventListener('submit', async function (event) {
+    form.addEventListener('submit', withOvenLoading(async function (event) {
         event.preventDefault();
         if (busy || !form.reportValidity()) return;
         var saveOnly = event.submitter && event.submitter.dataset.mode === 'save';
@@ -290,58 +291,67 @@ export function attachCreateOrderWorkflow(options) {
                 element.disabled = false;
             });
         }
-    });
+    }, "Saving your order"));
 
     async function refreshSuggestions() {
-        var customerName = form.querySelector('#customerName').value;
-        var request = ++historyRequest;
-        var history = await orderService.getOrdersByCustomerName(customerName).catch(function () {
-            return [];
-        });
-        if (!form.isConnected || request !== historyRequest) return;
-        suggestionRows = suggestReturnQuantities(options.getDraft().items, history.slice(0, 12));
-        var mount = form.querySelector('#workflow-suggestions');
-        mount.replaceChildren();
-        suggestionRows.forEach(function (row) {
-            var line = document.createElement('div');
-            line.className = 'workflow-suggestion';
-            var description = document.createElement('span');
-            description.textContent =
-                row.name +
-                ': try ' +
-                row.suggested +
-                ' instead of ' +
-                row.current +
-                '. ' +
-                row.returned +
-                ' of ' +
-                row.ordered +
-                ' returned across ' +
-                row.samples +
-                ' completed orders.';
-            var button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'btn btn-secondary btn-sm';
-            button.textContent = 'Use suggestion';
-            button.onclick = function () {
-                var items = options.getDraft().items;
-                if (
-                    !items[row.index] ||
-                    items[row.index].productId !== row.productId ||
-                    Number(items[row.index].quantity) !== row.current
-                ) {
+        var foregroundLoading = startOvenLoading('Loading order suggestions');
+        try {
+            var customerName = form.querySelector('#customerName').value;
+            var request = ++historyRequest;
+            var history = await orderService.getOrdersByCustomerName(customerName).catch(function () {
+                return [];
+            });
+            if (!form.isConnected || request !== historyRequest) return;
+            suggestionRows = suggestReturnQuantities(options.getDraft().items, history.slice(0, 12));
+            var mount = form.querySelector('#workflow-suggestions');
+            mount.replaceChildren();
+            suggestionRows.forEach(function (row) {
+                var line = document.createElement('div');
+                line.className = 'workflow-suggestion';
+                var description = document.createElement('span');
+                description.textContent =
+                    row.name +
+                    ': try ' +
+                    row.suggested +
+                    ' instead of ' +
+                    row.current +
+                    '. ' +
+                    row.returned +
+                    ' of ' +
+                    row.ordered +
+                    ' returned across ' +
+                    row.samples +
+                    ' completed orders.';
+                var button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-secondary btn-sm';
+                button.textContent = 'Use suggestion';
+                button.onclick = function () {
+                    var items = options.getDraft().items;
+                    if (
+                        !items[row.index] ||
+                        items[row.index].productId !== row.productId ||
+                        Number(items[row.index].quantity) !== row.current
+                    ) {
+                        refreshSuggestions();
+                        return;
+                    }
+                    items[row.index].quantity = row.suggested;
+                    options.setItems(items);
+                    workflowLocalStore.event('suggestion_applied', { samples: row.samples });
+                    persist();
                     refreshSuggestions();
-                    return;
-                }
-                items[row.index].quantity = row.suggested;
-                options.setItems(items);
-                workflowLocalStore.event('suggestion_applied', { samples: row.samples });
-                persist();
-                refreshSuggestions();
-            };
-            line.append(description, button);
-            mount.append(line);
-        });
+                };
+                line.append(description, button);
+                mount.append(line);
+            });
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
+        } finally {
+            foregroundLoading.finish();
+        }
     }
     form.querySelector('#workflow-refresh-suggestions').addEventListener('click', refreshSuggestions);
     form.querySelector('#customerName').addEventListener('change', refreshSuggestions);

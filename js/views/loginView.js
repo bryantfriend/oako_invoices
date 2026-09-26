@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { authController } from "../controllers/authController.js";
 import { t, i18n } from "../core/i18n.js";
 
@@ -61,13 +62,13 @@ export const renderLogin = async () => {
         e.preventDefault();
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
-        authController.handleLogin(email, password);
+        withOvenLoading(authController.handleLogin, 'Signing in')(email, password);
     });
 
     document.getElementById('password-reset-btn').addEventListener('click', (e) => {
         e.preventDefault();
         const email = document.getElementById('email').value;
-        authController.handlePasswordReset(email);
+        withOvenLoading(authController.handlePasswordReset, 'Sending password reset')(email);
     });
 
     document.querySelectorAll('.lang-switch-btn').forEach(btn => {

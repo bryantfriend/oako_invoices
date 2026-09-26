@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { customerService } from "../services/customerService.js";
@@ -100,7 +101,7 @@ function attachCollectionEvents() {
 
     var paidButtons = document.querySelectorAll('.mark-paid-button');
     paidButtons.forEach(function(button) {
-        button.addEventListener('click', async function() {
+        button.addEventListener('click', withOvenLoading(async function() {
             var orderId = button.dataset.orderId;
             button.disabled = true;
             button.textContent = 'Saving...';
@@ -119,7 +120,7 @@ function attachCollectionEvents() {
                 button.disabled = false;
                 button.textContent = 'Mark paid';
             }
-        });
+        }, "Updating payments"));
     });
 }
 

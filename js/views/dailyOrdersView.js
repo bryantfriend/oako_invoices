@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { Modal } from "../components/modal.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
@@ -577,7 +578,7 @@ function openOrderEditor(container, state, sourceOrder) {
         });
     }
     root.querySelectorAll('[data-save-mode]').forEach(function(button) {
-        button.addEventListener('click', async function() {
+        button.addEventListener('click', withOvenLoading(async function() {
             if (editorState.saving) {
                 return;
             }
@@ -625,7 +626,7 @@ function openOrderEditor(container, state, sourceOrder) {
                 root.querySelectorAll('[data-save-mode]').forEach(function(action) { action.disabled = false; });
                 button.classList.remove('is-saving');
             }
-        });
+        }, "Preparing daily orders"));
     });
 }
 

@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { gamificationService } from "../services/gamificationService.js";
@@ -160,7 +161,7 @@ export const renderProfile = async () => {
     };
     attachPeriodHandlers();
 
-    document.getElementById('profile-form')?.addEventListener('submit', async (event) => {
+    document.getElementById('profile-form')?.addEventListener('submit', withOvenLoading(async (event) => {
         event.preventDefault();
         const status = document.getElementById('profile-save-status');
         status.textContent = "Saving...";
@@ -178,7 +179,7 @@ export const renderProfile = async () => {
         await gamificationService.awardAction('profileUpdated');
         status.textContent = "Profile saved.";
         setTimeout(() => renderProfile(), 700);
-    });
+    }, "Saving profile"));
 };
 
 function buildPeriodStats(profile, data, period) {

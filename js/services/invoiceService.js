@@ -52,6 +52,7 @@ import {
 } from "../ICF/Stages/Processors/Invoices/invoiceEditHelpers.js";
 
 const COLLECTION = 'invoices';
+var pendingInvoicePreparations = new Map();
 const WORKING_INVOICE_LIMIT = 120;
 const RECENT_HISTORY_LIMIT = 60;
 const DEFAULT_ARCHIVED_INVOICE_LIMIT = 50;
@@ -469,6 +470,11 @@ async function queueInvoiceMutation(actionType, invoiceId, firestorePatch, local
 export const invoiceService = {
     async preparePrintableInvoice(orderId, orderSnapshot, options) {
         var safeOptions = options || {};
+        var ownerId = auth.currentUser ? auth.currentUser.uid : 'anonymous';
+        var preparationKey = ownerId + ':' + orderId;
+        if (pendingInvoicePreparations.has(preparationKey)) {
+            return pendingInvoicePreparations.get(preparationKey);
+        }
         var generationOptions = Object.assign({}, safeOptions, {
             returnInvoiceSnapshot: true,
             deferNonCriticalWork: true
@@ -486,11 +492,18 @@ export const invoiceService = {
                 generationOptions: generationOptions
             }
         );
-        var result = await icfPipeline.run(intent);
-        if (!result || !result.ok) {
-            throw new Error(getIntentFailureMessage(result));
+        var preparation = icfPipeline.run(intent).then(function requirePreparedInvoice(result) {
+            if (!result || !result.ok) {
+                throw new Error(getIntentFailureMessage(result));
+            }
+            return result;
+        });
+        pendingInvoicePreparations.set(preparationKey, preparation);
+        try {
+            return await preparation;
+        } finally {
+            pendingInvoicePreparations.delete(preparationKey);
         }
-        return result;
     },
 
     async createInvoice(orderId, adjustments = {}, orderSnapshot = null, options = {}) {

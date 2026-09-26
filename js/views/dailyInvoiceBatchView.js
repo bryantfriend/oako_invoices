@@ -1,3 +1,4 @@
+import { startOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from './layoutView.js';
 import { dailyOrdersController } from '../controllers/dailyOrdersController.js';
 import { buildDailyBatchRows, normalizeWorkflowOrder } from '../core/invoiceProductivity.js';
@@ -289,112 +290,131 @@ export async function renderDailyInvoiceBatch(params, routeContext) {
         };
     }
     async function prepareSelected() {
-        if (busy) return;
-        var selection = rows.filter(function (row) {
-            return row.selected && !row.invoiceId;
-        });
-        if (!selection.length) {
-            container.querySelector('#batch-status').textContent =
-                'Select customers whose invoices need preparation.';
-            return;
-        }
-        busy = true;
-        message = 'Preparing invoices…';
-        render();
+        var foregroundLoading = startOvenLoading('Preparing daily invoices');
         try {
-            // Write the reviewed request identities before any network mutation.
-            persist();
-            var result = await prepareDailyInvoiceBatch(selection, function (current, completed) {
+            if (busy) return;
+            var selection = rows.filter(function (row) {
+                return row.selected && !row.invoiceId;
+            });
+            if (!selection.length) {
+                container.querySelector('#batch-status').textContent =
+                    'Select customers whose invoices need preparation.';
+                return;
+            }
+            busy = true;
+            message = 'Preparing invoices…';
+            render();
+            try {
+                // Write the reviewed request identities before any network mutation.
                 persist();
-                if (container.querySelector('#batch-status'))
-                    container.querySelector('#batch-status').textContent =
-                        'Prepared ' + (completed || 0) + ' of ' + selection.length + '…';
-            });
-            result.completed.forEach(function (row) {
-                if (
-                    !workspace.orders.some(function (order) {
-                        return order.id === row.orderId;
-                    })
-                )
-                    workspace.orders.push(
-                        Object.assign({}, normalizeWorkflowOrder(row), { id: row.orderId }),
-                    );
-            });
-            var readyCount = rows.filter(function (row) {
-                return row.selected && row.invoiceId;
-            }).length;
-            message =
-                readyCount +
-                ' ready · ' +
-                result.failed.length +
-                ' need attention. ' +
-                result.completed.length +
-                ' prepared in this pass.';
-        } catch (error) {
-            message = error.message;
+                var result = await prepareDailyInvoiceBatch(selection, function (current, completed) {
+                    foregroundLoading.update((completed || 0) / selection.length * 100, 'Prepared ' + (completed || 0) + ' of ' + selection.length + ' invoices');
+                    persist();
+                    if (container.querySelector('#batch-status'))
+                        container.querySelector('#batch-status').textContent =
+                            'Prepared ' + (completed || 0) + ' of ' + selection.length + '…';
+                });
+                result.completed.forEach(function (row) {
+                    if (
+                        !workspace.orders.some(function (order) {
+                            return order.id === row.orderId;
+                        })
+                    )
+                        workspace.orders.push(
+                            Object.assign({}, normalizeWorkflowOrder(row), { id: row.orderId }),
+                        );
+                });
+                var readyCount = rows.filter(function (row) {
+                    return row.selected && row.invoiceId;
+                }).length;
+                message =
+                    readyCount +
+                    ' ready · ' +
+                    result.failed.length +
+                    ' need attention. ' +
+                    result.completed.length +
+                    ' prepared in this pass.';
+            } catch (error) {
+                message = error.message;
+            } finally {
+                busy = false;
+                if (isNavigationStillCurrent(navigationId, 'daily-invoices')) render();
+            }
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
         } finally {
-            busy = false;
-            if (isNavigationStillCurrent(navigationId, 'daily-invoices')) render();
+            foregroundLoading.finish();
         }
     }
     async function printReady(pdf) {
-        if (busy) return;
-        var selection = rows.filter(function (row) {
-            return row.selected && row.invoiceId;
-        });
-        if (!selection.length) {
-            container.querySelector('#batch-status').textContent = 'Prepare the selected invoices first.';
-            return;
-        }
-        var popup;
+        var foregroundLoading = startOvenLoading('Preparing daily invoices');
         try {
-            popup = reserveInvoicePrintWindow();
-            busy = true;
-            if (pdf) {
-                await bulkInvoicePrintService.generateCombinedPdf(
-                    selection.map(function (row) {
-                        return row.orderId;
-                    }),
-                    preferences.layout,
-                    { settings: workspace.settings },
-                    { previewWindow: popup },
-                );
-            } else {
-                var invoices = await Promise.all(
-                    selection.map(function (row) {
-                        return invoiceService.getInvoice(row.invoiceId);
-                    }),
-                );
-                if (
-                    invoices.some(function (invoice) {
-                        return !invoice;
-                    })
-                )
-                    throw new Error('An invoice could not be loaded. Retry when its data is available.');
-                await showNativeInvoicePrint(popup, invoices, workspace.settings, {
-                    layout: preferences.layout,
-                    onConfirmed: function () {
-                        selection.forEach(function (row) {
-                            row.status = 'printed';
-                            var order = workspace.orders.find(function (record) {
-                                return record.id === row.orderId;
-                            });
-                            if (order) order.isPrinted = true;
-                        });
-                        persist();
-                        if (isNavigationStillCurrent(navigationId, 'daily-invoices')) {
-                            message = 'Printed invoices confirmed. Your batch is saved.';
-                            render();
-                        }
-                    },
-                });
+            if (busy) return;
+            var selection = rows.filter(function (row) {
+                return row.selected && row.invoiceId;
+            });
+            if (!selection.length) {
+                container.querySelector('#batch-status').textContent = 'Prepare the selected invoices first.';
+                return;
             }
-        } catch (error) {
-            message = error.message;
-            if (popup && !popup.closed) popup.document.body.textContent = error.message;
+            var popup;
+            try {
+                popup = reserveInvoicePrintWindow();
+                busy = true;
+                if (pdf) {
+                    await bulkInvoicePrintService.generateCombinedPdf(
+                        selection.map(function (row) {
+                            return row.orderId;
+                        }),
+                        preferences.layout,
+                        { settings: workspace.settings },
+                        { previewWindow: popup },
+                    );
+                } else {
+                    var invoices = await Promise.all(
+                        selection.map(function (row) {
+                            return invoiceService.getInvoice(row.invoiceId);
+                        }),
+                    );
+                    if (
+                        invoices.some(function (invoice) {
+                            return !invoice;
+                        })
+                    )
+                        throw new Error('An invoice could not be loaded. Retry when its data is available.');
+                    await showNativeInvoicePrint(popup, invoices, workspace.settings, {
+                        layout: preferences.layout,
+                        onConfirmed: function () {
+                            selection.forEach(function (row) {
+                                row.status = 'printed';
+                                var order = workspace.orders.find(function (record) {
+                                    return record.id === row.orderId;
+                                });
+                                if (order) order.isPrinted = true;
+                            });
+                            persist();
+                            if (isNavigationStillCurrent(navigationId, 'daily-invoices')) {
+                                message = 'Printed invoices confirmed. Your batch is saved.';
+                                render();
+                            }
+                        },
+                    });
+                }
+            } catch (error) {
+                message = error.message;
+                if (popup && !popup.closed) popup.document.body.textContent = error.message;
+            } finally {
+                busy = false;
+                if (isNavigationStillCurrent(navigationId, 'daily-invoices')) render();
+            }
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
         } finally {
-            busy = false;
-            if (isNavigationStillCurrent(navigationId, 'daily-invoices')) render();
+            foregroundLoading.finish();
         }
     }
     render();

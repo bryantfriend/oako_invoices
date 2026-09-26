@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { orderDetailController } from "../controllers/orderDetailController.js";
 import { productService } from "../services/productService.js";
@@ -177,7 +178,7 @@ export const renderOrderDetail = async ({ id }) => {
         actions: isEditable ? `<button id="edit-order-items" class="btn btn-secondary btn-sm" style="font-size: 12px;">Edit Items</button>` : '',
         content: `<div id="order-items-editor">${renderItems()}</div>`
     })}
-                
+
                 ${createCard({
         title: 'Customer Notes',
         actions: `<button id="edit-notes-btn" class="btn btn-ghost btn-sm" style="font-size: 12px; color: var(--color-primary-600);">Edit</button>`,
@@ -206,15 +207,15 @@ export const renderOrderDetail = async ({ id }) => {
                                 <span style="font-size: var(--text-sm); color: var(--color-gray-500);">Current Status</span>
                                 ${createStatusBadge(order)}
                             </div>
-                            
+
                             <hr style="border: 0; border-top: 1px solid var(--color-gray-200);">
-                            
+
                             <div style="display: flex; flex-direction: column; gap: var(--space-2);">
                                 ${renderStatusActions(order)}
                             </div>
 
                             <hr style="border: 0; border-top: 1px solid var(--color-gray-200);">
-                            
+
                             <div style="display: flex; flex-direction: column; gap: var(--space-2);">
                                 <label style="font-size: 11px; font-weight: 700; color: var(--color-gray-400); text-transform: uppercase;">Manual Override</label>
                                 <div style="display: flex; gap: var(--space-2); align-items: center;">
@@ -371,7 +372,7 @@ export const renderOrderDetail = async ({ id }) => {
             size: 'xlarge',
             confirmText: 'Save Items',
             content: renderOrderItemsModal(draftItems, productSearchTerm),
-            onConfirm: async () => {
+            onConfirm: withOvenLoading(async () => {
                 const normalizedDraft = recalculateDraftItems(draftItems);
                 if (!normalizedDraft.length || !normalizedDraft.some(item => toPositiveInteger(item.adjustedQuantity, 0) > 0)) {
                     alert('Order must have at least one product.');
@@ -382,7 +383,7 @@ export const renderOrderDetail = async ({ id }) => {
                     renderOrderDetail({ id });
                 }
                 return success;
-            }
+            }, "Updating order")
         });
 
         const refreshProductOptions = () => {
@@ -488,7 +489,7 @@ export const renderOrderDetail = async ({ id }) => {
     // Bind Status Actions
     const actionBtns = container.querySelectorAll('.status-action-btn');
     actionBtns.forEach(btn => {
-        btn.addEventListener('click', async () => {
+        btn.addEventListener('click', withOvenLoading(async () => {
             const action = btn.dataset.action;
             const newStatus = btn.dataset.status;
 
@@ -527,10 +528,10 @@ export const renderOrderDetail = async ({ id }) => {
                 content: `
                     <div style="display: flex; flex-direction: column; gap: var(--space-4);">
                         <p>${t('modal_confirm_order_msg')}</p>
-                        
+
                         <div style="background: var(--color-gray-50); padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-gray-200);">
                             <h4 style="margin-bottom: var(--space-3); color: var(--color-gray-700);">${t('modal_fin_adjust')}</h4>
-                            
+
                             <!-- Tax Section -->
                             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2);">
                                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
@@ -551,7 +552,7 @@ export const renderOrderDetail = async ({ id }) => {
                                     <input type="checkbox" id="modal-add-discount"> 
                                     <span>${t('modal_apply_discount')}</span>
                                 </label>
-                                
+
                                 <div id="discount-container" style="display: none; gap: var(--space-2); align-items: center;">
                                     <select id="modal-discount-type" class="input" style="width: auto;">
                                         <option value="percent">${t('modal_discount_pct')}</option>
@@ -570,7 +571,7 @@ export const renderOrderDetail = async ({ id }) => {
                 `,
                 confirmText: t('btn_confirm_gen'),
                 type: newStatus === ORDER_STATUS.CANCELLED ? 'destructive' : 'primary',
-                onConfirm: async () => {
+                onConfirm: withOvenLoading(async () => {
                     const addTax = document.getElementById('modal-add-tax')?.checked;
                     const taxRate = parseFloat(document.getElementById('modal-tax-rate')?.value || 0);
                     const addDiscount = document.getElementById('modal-add-discount')?.checked;
@@ -592,7 +593,7 @@ export const renderOrderDetail = async ({ id }) => {
                     } else {
                         renderOrderDetail({ id });
                     }
-                }
+                }, "Updating order")
             });
             modal.open();
 
@@ -609,7 +610,7 @@ export const renderOrderDetail = async ({ id }) => {
             discToggle?.addEventListener('change', (e) => {
                 discContainer.style.display = e.target.checked ? 'flex' : 'none';
             });
-        });
+        }, "Updating order"));
     });
 
     // Manual Status Override Logic
@@ -635,7 +636,7 @@ export const renderOrderDetail = async ({ id }) => {
             }
         });
 
-        applyBtn.addEventListener('click', async () => {
+        applyBtn.addEventListener('click', withOvenLoading(async () => {
             const newStatus = statusSelect.value;
             const returnState = getReturnState(order);
             const derivedStatus = returnState === 'partial' ? 'partially_returned' : (returnState === 'full' ? 'returned' : order.status);
@@ -659,7 +660,7 @@ export const renderOrderDetail = async ({ id }) => {
                 await orderDetailController.updateStatus(id, newStatus);
                 renderOrderDetail({ id });
             }
-        });
+        }, "Updating order"));
     }
 
     // Notes Editing Logic
@@ -685,14 +686,14 @@ export const renderOrderDetail = async ({ id }) => {
             notesTextarea.value = order.notes || '';
         });
 
-        saveNotesBtn.addEventListener('click', async () => {
+        saveNotesBtn.addEventListener('click', withOvenLoading(async () => {
             const newNotes = notesTextarea.value;
             const success = await orderDetailController.updateNotes(id, newNotes);
             if (success) {
                 order.notes = newNotes; // Update local copy
                 renderOrderDetail({ id }); // Re-render to refresh view
             }
-        });
+        }, "Updating order"));
     }
 };
 

@@ -36,15 +36,15 @@ test('Orders Quick Print selection survives rerenders and filters', () => {
     assert.match(source, /quickPrintSelectedInvoices\('two-up-portrait'\)/);
 });
 
-test('Orders Quick Print eligibility avoids eager full-invoice loading', () => {
+test('Orders Quick Print includes saved orders and avoids eager full-invoice loading', () => {
     const dashboardSource = read('js/views/dashboardView.js');
     const sessionSource = read('js/services/sessionDataStore.js');
 
     assert.match(dashboardSource, /getKnownPrintableInvoiceReferences\(\)/);
     assert.match(dashboardSource, /invoiceService\.getInvoiceByOrderId\(orderId\)/);
-    assert.match(dashboardSource, /getOrderedSelectedOrderIds\(true\)/);
-    assert.match(dashboardSource, /const printableCount = getOrderedSelectedOrderIds\(true\)\.length/);
-    assert.match(dashboardSource, /Quick Print includes only the printable count shown on its button/);
+    assert.match(dashboardSource, /getOrderedSelectedOrderIds\(false\)/);
+    assert.match(dashboardSource, /const printableCount = getOrderedSelectedOrderIds\(false\)\.length/);
+    assert.match(dashboardSource, /Missing invoices will be prepared automatically/);
     assert.match(dashboardSource, /orders-printable-check/);
     assert.doesNotMatch(dashboardSource, /getInvoicesByOrderIds\(missingOrderIds\)/);
     assert.doesNotMatch(dashboardSource, /orders-printable-map/);
@@ -85,23 +85,24 @@ test('single invoice preparation uses the full ICF pipeline and fast dependency 
     assert.match(customerServiceSource, /readCachedRowsAsync\('customers:all'\)/);
 });
 
-test('single-order print shows accessible indeterminate progress until the invoice preview renders', function() {
+test('single-order print uses shared accessible oven progress until the invoice preview renders', function() {
     const dashboardSource = read('js/views/dashboardView.js');
     const customerDetailSource = read('js/views/customerDetailView.js');
     const invoiceViewSource = read('js/views/invoiceView.js');
     const progressSource = read('js/components/invoicePreparationProgress.js');
-    const stylesSource = read('css/styles.css');
+    const stylesSource = read('css/oven-loading.css');
+    const ovenSource = read('js/components/ovenLoading.js');
 
     assert.match(dashboardSource, /startInvoicePreparationProgress\(\)/);
     assert.match(dashboardSource, /if \(!invoiceNavigationStarted\) \{\s*stopInvoicePreparationProgress\(\)/);
     assert.match(customerDetailSource, /pendingPrintOrderIds\.has\(id\)/);
     assert.match(customerDetailSource, /invoices\.find\(function\(invoice\)/);
     assert.match(invoiceViewSource, /refreshBody\(\);\s*finishInvoicePreparationProgress\(\);/);
-    assert.match(progressSource, /role=\"progressbar\"/);
-    assert.match(progressSource, /aria-valuetext=\"Working\"/);
-    assert.match(progressSource, /closeOnEsc: true/);
-    assert.match(stylesSource, /@keyframes order-print-progress-sweep/);
-    assert.match(stylesSource, /prefers-reduced-motion: reduce/);
+    assert.match(ovenSource, /role=\"progressbar\"/);
+    assert.match(ovenSource, /Estimated progress/);
+    assert.match(progressSource, /startOvenLoading/);
+    assert.match(stylesSource, /@keyframes oven-steam/);
+    assert.match(stylesSource, /prefers-reduced-motion:reduce/);
 });
 
 test('Recent Orders defaults to Active and successful archives remain in Active view', function() {

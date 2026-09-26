@@ -156,6 +156,8 @@ async function initApp() {
         }
 
     } catch (error) {
+        var failedLoader = document.querySelector('.loading-screen');
+        if (failedLoader) failedLoader.remove();
         console.error("App Init Error", error);
         notificationService.error(t('msg_load_fail'));
     }

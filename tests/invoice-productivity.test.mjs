@@ -52,6 +52,7 @@ async function loadModule(file, modules, globals = {}, keepIcf = false) {
                 clearTimeout,
                 require(specifier) {
                     var name = path.basename(specifier, '.js');
+                    if (name === 'ovenLoading') return { withOvenLoading: function(handler) { return handler; }, startOvenLoading: function() { return { finish: function() {}, fail: function() {}, update: function() {} }; }, startPrintWindowLoading: function() { return { finish: function() {}, fail: function() {}, update: function() {} }; } };
                     return modules[specifier] || modules[name] || {};
                 },
             },

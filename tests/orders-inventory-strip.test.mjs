@@ -63,6 +63,8 @@ function createHarness() {
             return button(id);
         } },
         router: { navigate: function(route) { state.navigations.push(route); } },
+        withOvenLoading: function(handler) { return handler; },
+        startOvenLoading: function() { return { finish: function() {}, fail: function() {}, update: function() {} }; },
         ROUTES: { INVENTORY: 'inventory' },
         isNavigationStillCurrent: function() { return state.currentRoute; },
         ignoreStaleRouteResult: function() {},

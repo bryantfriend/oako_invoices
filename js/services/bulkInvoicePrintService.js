@@ -16,11 +16,12 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
-function emitProgress(options, completed, total, message, invoiceNumber) {
+function emitProgress(options, completed, total, message, invoiceNumber, percent) {
     if (options && typeof options.onProgress === 'function') {
         options.onProgress({
             completed: completed,
             total: total,
+            percent: typeof percent === 'number' ? percent : completed / total * 100,
             message: message,
             invoiceNumber: invoiceNumber || ''
         });
@@ -329,7 +330,10 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
 
     try {
         var loadErrors = {};
+        emitProgress(options, 0, orderIds.length, 'Loading saved invoices', '', 0);
         var invoices = await loadPrintableInvoices(orderIds, loadErrors);
+        // One lookup step, three steps per order (prepare, QR, render), one output step.
+        var totalSteps = 2 + invoices.length * 3;
 
         var settings = context && context.settings ? context.settings : {};
         var filename = buildFilename(invoices.length, layout);
@@ -344,13 +348,32 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
             }
             var invoice = invoices[invoiceIndex];
             var previousPageCount = hasPdfPage ? pdf.getNumberOfPages() : 0;
-            emitProgress(options, invoiceIndex, invoices.length, 'Generating invoice and QR code', getInvoiceLabel(invoice));
+            emitProgress(options, invoiceIndex, invoices.length, 'Preparing invoice', getInvoiceLabel(invoice), (1 + invoiceIndex * 3) / totalSteps * 100);
             try {
                 if (loadErrors[orderIds[invoiceIndex]]) {
                     throw new Error(loadErrors[orderIds[invoiceIndex]]);
                 }
+                if (!invoice) {
+                    // Save Order does not create an invoice. Use the same authorized
+                    // preparation flow as normal Print, including offline snapshots.
+                    var orderId = orderIds[invoiceIndex];
+                    var orderRecords = options && options.orderSnapshots ? options.orderSnapshots : [];
+                    var orderSnapshot = orderRecords.find(function findSelectedOrder(record) {
+                        return record.id === orderId;
+                    }) || null;
+                    var prepared = await invoiceService.preparePrintableInvoice(orderId, orderSnapshot, {
+                        source: 'orders-quick-print', preferCachedDependencies: true
+                    });
+                    invoice = prepared && prepared.data ? prepared.data.invoice : null;
+                    if (invoice && invoice.id) {
+                        sessionDataStore.updateInvoiceRecord(invoice.id, invoice, 'quick-print-prepare');
+                        sessionDataStore.updateOrderRecord(orderId, { invoiceGenerated: true, invoiceId: invoice.id }, 'quick-print-prepare');
+                    }
+                }
                 validateInvoice(invoice, orderIds[invoiceIndex]);
+                emitProgress(options, invoiceIndex, invoices.length, 'Generating QR code', getInvoiceLabel(invoice), (2 + invoiceIndex * 3) / totalSteps * 100);
                 invoice = await prepareInvoiceQr(invoice);
+                emitProgress(options, invoiceIndex, invoices.length, 'Rendering printable pages', getInvoiceLabel(invoice), (3 + invoiceIndex * 3) / totalSteps * 100);
                 var pages = buildInvoicePrintPages({
                     invoice: invoice,
                     settings: settings,
@@ -379,13 +402,17 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 completedInvoices = completedInvoices + 1;
             } catch (invoiceError) {
                 failedInvoices.push((invoice ? getInvoiceLabel(invoice) : 'Order ' + orderIds[invoiceIndex]) + ': ' + invoiceError.message);
-                await syncSupportService.recordIssue({
+                try {
+                    await syncSupportService.recordIssue({
                     source: 'print', id: invoice ? invoice.id : orderIds[invoiceIndex],
                     entityId: invoice ? invoice.id : orderIds[invoiceIndex],
                     entityType: invoice ? 'invoice' : 'order', action: 'quick-print',
                     status: 'needs_review', errorCode: invoiceError.code || 'print_preparation_failed',
                     message: invoiceError.message
-                }, context && context.currentUser ? context.currentUser.uid : '');
+                    }, context && context.currentUser ? context.currentUser.uid : '');
+                } catch (supportError) {
+                    console.warn('Could not save Quick Print diagnostics.', supportError);
+                }
                 // Remove every page of a failed invoice, including partially rendered ones.
                 while (pdf.getNumberOfPages() > previousPageCount) {
                     pdf.deletePage(pdf.getNumberOfPages());
@@ -396,7 +423,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 }
             }
             invoiceIndex = invoiceIndex + 1;
-            emitProgress(options, invoiceIndex, invoices.length, String(completedInvoices) + ' ready, ' + failedInvoices.length + ' skipped', getInvoiceLabel(invoice));
+            emitProgress(options, invoiceIndex, invoices.length, String(completedInvoices) + ' ready, ' + failedInvoices.length + ' skipped', getInvoiceLabel(invoice), (1 + invoiceIndex * 3) / totalSteps * 100);
         }
 
         if (!hasPdfPage) {

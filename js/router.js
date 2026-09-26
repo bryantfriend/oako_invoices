@@ -1,3 +1,5 @@
+import { stopInvoicePreparationProgress } from './components/invoicePreparationProgress.js';
+import { startOvenLoading } from "./components/ovenLoading.js";
 import { ROUTES } from "./core/constants.js";
 import { guardService } from "./core/guardService.js";
 import { authService } from "./core/authService.js";
@@ -199,6 +201,7 @@ class Router {
             var requestedRouteName = getRouteName(path);
             var mountedRouteName = getRouteName(matchedRoute);
             var navigationId = beginNavigation(requestedRouteName, path);
+            var loadingProgress = startOvenLoading('Loading ' + requestedRouteName.replace(/-/g, ' '));
             try {
                 await this.routes[matchedRoute](params, {
                     navigationId: navigationId,
@@ -212,6 +215,7 @@ class Router {
                 logAppliedRouteRender(requestedRouteName, navigationId);
                 logRouteDiagnostics({ requested: requestedRouteName, mounted: mountedRouteName, redirected: false, fallbackUsed: false, source: 'real-view' });
             } catch (err) {
+                loadingProgress.fail();
                 console.error("View Render Error:", err);
                 if (!isNavigationStillCurrent(navigationId, requestedRouteName)) {
                     ignoreStaleRouteResult('route-error-after-navigation', requestedRouteName, navigationId);
@@ -219,6 +223,9 @@ class Router {
                 }
                 renderRouteError(path, 'This page could not finish loading. Cached data stays visible when available; retry when the connection improves.');
                 logRouteDiagnostics({ requested: requestedRouteName, mounted: 'error', redirected: false, fallbackUsed: false, source: 'route-error', reason: err && err.message ? err.message : 'render failed' });
+            } finally {
+                loadingProgress.finish();
+                stopInvoicePreparationProgress();
             }
         } else {
             console.warn("No route found for", path);

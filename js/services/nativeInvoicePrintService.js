@@ -1,3 +1,4 @@
+import { startPrintWindowLoading, buildOvenWaitingDocument } from '../components/ovenLoading.js';
 import { buildInvoicePrintPages } from './invoicePrintTemplate.js';
 import { qrService } from './qrService.js';
 import { invoiceController } from '../controllers/invoiceController.js';
@@ -19,7 +20,7 @@ export function reserveInvoicePrintWindow() {
             'Allow pop-ups for this site, then try printing again. Your saved order will be reused.',
         );
     popup.document.write(
-        '<!doctype html><title>Preparing invoices</title><body style="font:18px system-ui;padding:40px">Preparing your invoices…</body>',
+        buildOvenWaitingDocument('Preparing printable invoices'),
     );
     popup.document.close();
     return popup;
@@ -110,6 +111,7 @@ async function waitForPrintAssets(popup) {
 }
 
 export async function showNativeInvoicePrint(popup, invoices, settings, options) {
+    var ovenProgress = startPrintWindowLoading(popup, 'Preparing printable invoices');
     var safeOptions = options || {};
     var started = Date.now();
     var pages = [];
@@ -120,6 +122,7 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
             if (!invoice.secureToken) invoice = await qrService.ensureInvoiceToken(invoice);
             invoice.invoiceQrDataUrl = await qrService.generateQrDataUrl(invoice, 300);
             records.push(invoice);
+            ovenProgress.update((index + 1) / invoices.length * 80, 'Preparing invoice ' + (index + 1) + ' of ' + invoices.length);
             pages = pages.concat(
                 buildInvoicePrintPages({
                     invoice: invoice,
@@ -142,6 +145,7 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
         );
         popup.document.close();
         await waitForPrintAssets(popup);
+        ovenProgress.finish();
         var printButton = popup.document.getElementById('job-print');
         var confirmButton = popup.document.getElementById('job-confirm');
         var status = popup.document.getElementById('job-status');
@@ -164,7 +168,8 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
         }
         printButton.disabled = false;
         printButton.onclick = printJob;
-        confirmButton.onclick = async function () {
+        confirmButton.onclick = async function confirmPrintedInvoices() {
+            var confirmationProgress = startPrintWindowLoading(popup, 'Recording printed invoices');
             confirmButton.disabled = true;
             printButton.disabled = true;
             try {
@@ -172,6 +177,7 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
                     var record = records[recordIndex];
                     if (confirmedIds.has(record.id)) continue;
                     status.textContent = 'Recording ' + (recordIndex + 1) + ' of ' + records.length + '…';
+                    confirmationProgress.update(recordIndex / records.length * 100, status.textContent);
                     var result = await invoiceController.markPrinted(record.id, record.orderId, {
                         invoice: record,
                     });
@@ -188,6 +194,9 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
                 status.textContent = error.message;
                 confirmButton.textContent = 'Retry saving print status';
                 confirmButton.disabled = false;
+                confirmationProgress.fail();
+            } finally {
+                confirmationProgress.finish();
             }
         };
         status.textContent = records.length + ' invoice(s) ready. Check your layout before printing.';
@@ -198,6 +207,7 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
         if (safeOptions.autoPrint !== false) printJob();
         return { pageCount: pages.length, durationMs: Date.now() - started };
     } catch (error) {
+        ovenProgress.fail();
         if (popup && !popup.closed)
             popup.document.body.innerHTML =
                 '<main style="font:18px system-ui;padding:40px"><h1>Preview needs attention</h1><p>' +

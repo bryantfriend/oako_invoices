@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { invoiceApprovalController } from "../controllers/invoiceApprovalController.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { formatCurrency, formatDate } from "../core/formatters.js";
@@ -239,7 +240,7 @@ function renderReview(review, token) {
         </form>
     `);
 
-    document.getElementById('accept-order').addEventListener('click', async function() {
+    document.getElementById('accept-order').addEventListener('click', withOvenLoading(async function() {
         const button = document.getElementById('accept-order');
         button.disabled = true;
         button.textContent = 'Submitting...';
@@ -256,14 +257,14 @@ function renderReview(review, token) {
             button.disabled = false;
             button.textContent = 'Accept Order';
         }
-    });
+    }, "Submitting invoice review"));
 
     document.getElementById('show-modify-form').addEventListener('click', function() {
         document.getElementById('modify-order-form').style.display = 'block';
         document.getElementById('modify-order-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
-    document.getElementById('modify-order-form').addEventListener('submit', async function(event) {
+    document.getElementById('modify-order-form').addEventListener('submit', withOvenLoading(async function(event) {
         event.preventDefault();
         const notes = document.getElementById('customer-notes').value.trim();
         const modifiedItems = collectModifiedItems(items);
@@ -291,7 +292,7 @@ function renderReview(review, token) {
             button.disabled = false;
             button.textContent = 'Submit Changes';
         }
-    });
+    }, "Submitting invoice review"));
 }
 
 async function init() {

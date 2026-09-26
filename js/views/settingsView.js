@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { settingsController } from "../controllers/settingsController.js";
 import { createCard } from "../components/card.js";
@@ -298,7 +299,7 @@ export const renderSettings = async () => {
     const paymentQrUrlInput = document.getElementById('payment-qr-url-input');
     const paymentQrPreview = document.getElementById('payment-qr-preview-container');
 
-    logoInput?.addEventListener('change', async (e) => {
+    logoInput?.addEventListener('change', withOvenLoading(async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
@@ -337,9 +338,9 @@ export const renderSettings = async () => {
             previewContainer.innerHTML = '<span style="color: var(--color-danger-500); font-size: 12px;">Failed</span>';
             saveStatus.textContent = "Upload failed";
         }
-    });
+    }, "Updating settings"));
 
-    paymentQrInput?.addEventListener('change', async (e) => {
+    paymentQrInput?.addEventListener('change', withOvenLoading(async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
@@ -375,9 +376,9 @@ export const renderSettings = async () => {
             paymentQrPreview.innerHTML = '<span style="color: var(--color-danger-500); font-size: 12px;">Failed</span>';
             saveStatus.textContent = "Upload failed";
         }
-    });
+    }, "Updating settings"));
 
-    document.getElementById('settings-form').addEventListener('submit', async (e) => {
+    document.getElementById('settings-form').addEventListener('submit', withOvenLoading(async (e) => {
         e.preventDefault();
         const saveStatus = document.getElementById('save-status');
         saveStatus.textContent = "Saving...";
@@ -412,5 +413,5 @@ export const renderSettings = async () => {
             ? (pendingSync ? "Saved on this device. Will sync when online." : "Saved Successfully")
             : "Error Saving";
         setTimeout(() => { if (saveStatus) saveStatus.textContent = ""; }, 3000);
-    });
+    }, "Updating settings"));
 };

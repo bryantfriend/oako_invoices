@@ -77,6 +77,8 @@ function viewHarness() {
     element.querySelector = function() { return element; };
     const source = fs.readFileSync('js/views/customerView.js', 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export const renderCustomers', 'var renderCustomers');
     const context = {
+        withOvenLoading: function(handler) { return handler; },
+        startOvenLoading: function() { return { finish: function() {}, fail: function() {}, update: function() {} }; },
         window: {}, document: { getElementById: function() { return element; }, createElement: function() { return element; } },
         layoutView: { render: function() {}, updateTitle: function() {} },
         customerController: { loadAllCustomers: async function() { return [{ id: 'customer-1', name: 'A "quoted" customer', pinCode: '123456' }]; }, getCustomerById: function() { assert.fail('Visible customer should not require another cloud read'); }, archiveCustomer: async function() { return false; } },
@@ -128,6 +130,8 @@ test('modal prevents duplicate submissions and restores retry after a failed sav
     const cancel = { addEventListener: function() {} };
     const backdrop = { style: {}, querySelector: function(selector) { return selector === '.confirm-btn' ? button : cancel; }, addEventListener: function() {}, remove: function() {} };
     const context = vm.createContext({
+        withOvenLoading: function(handler) { return handler; },
+        startOvenLoading: function() { return { finish: function() {}, fail: function() {}, update: function() {} }; },
         t: function(key) { return key; },
         document: { getElementById: function() { return { appendChild: function() {} }; }, createElement: function() { return backdrop; }, addEventListener: function() {}, removeEventListener: function() {} }
     });

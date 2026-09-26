@@ -1,3 +1,4 @@
+import { withOvenLoading } from './ovenLoading.js';
 import { ROUTES } from "../core/constants.js";
 import { authService } from "../core/authService.js";
 import { router } from "../router.js";
@@ -93,10 +94,10 @@ export class Sidebar {
     attachEvents() {
         const logoutBtn = this.element.querySelector('#logout-btn');
         if (logoutBtn) {
-            logoutBtn.addEventListener('click', async () => {
+            logoutBtn.addEventListener('click', withOvenLoading(async () => {
                 await authService.logout();
                 router.navigate(ROUTES.LOGIN);
-            });
+            }, "Signing out"));
         }
     }
 

@@ -1,3 +1,4 @@
+import { withOvenLoading, startOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { invoiceController } from "../controllers/invoiceController.js";
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
@@ -423,7 +424,7 @@ export const renderInvoices = async (params, routeContext) => {
 
     function attachInvoiceTabListeners() {
         document.querySelectorAll('.invoice-tab-btn').forEach(function(button) {
-            button.addEventListener('click', async function() {
+            button.addEventListener('click', withOvenLoading(async function() {
                 activeInvoiceTab = button.dataset.tab || 'active';
                 if (activeInvoiceTab === 'archived') {
                     container.innerHTML = LoadingSkeleton();
@@ -432,7 +433,7 @@ export const renderInvoices = async (params, routeContext) => {
                     return;
                 }
                 applyInvoicesFilters();
-            });
+            }, "Updating invoice"));
         });
     }
 
@@ -545,27 +546,27 @@ export const renderInvoices = async (params, routeContext) => {
 
         const refreshArchivedButton = document.getElementById('refresh-archived-invoices');
         if (refreshArchivedButton) {
-            refreshArchivedButton.addEventListener('click', async function() {
+            refreshArchivedButton.addEventListener('click', withOvenLoading(async function() {
                 refreshArchivedButton.disabled = true;
                 refreshArchivedButton.textContent = 'Loading...';
                 await loadArchivedInvoices(true);
                 renderArchivedTable();
-            });
+            }, "Updating invoice"));
         }
 
         const loadMoreArchivedButton = document.getElementById('load-more-archived-invoices');
         if (loadMoreArchivedButton) {
-            loadMoreArchivedButton.addEventListener('click', async function() {
+            loadMoreArchivedButton.addEventListener('click', withOvenLoading(async function() {
                 archivedInvoiceLimit += 50;
                 loadMoreArchivedButton.disabled = true;
                 await loadArchivedInvoices(true);
                 renderArchivedTable();
-            });
+            }, "Updating invoice"));
         }
 
         const restoreSelectedButton = document.getElementById('restore-selected-invoices');
         if (restoreSelectedButton) {
-            restoreSelectedButton.addEventListener('click', async function() {
+            restoreSelectedButton.addEventListener('click', withOvenLoading(async function() {
                 const ids = visibleArchivedInvoices.map(invoice => invoice.id).filter(id => selectedArchivedInvoiceIds.has(id));
                 if (!ids.length || !confirm('Restore ' + ids.length + ' selected invoice' + (ids.length === 1 ? '' : 's') + '?')) return;
                 restoreSelectedButton.disabled = true;
@@ -582,12 +583,12 @@ export const renderInvoices = async (params, routeContext) => {
                     await loadArchivedInvoices(true);
                 }
                 renderArchivedTable();
-            });
+            }, "Updating invoice"));
         }
 
         const migrationCheckButton = document.getElementById('archive-migration-check');
         if (migrationCheckButton) {
-            migrationCheckButton.addEventListener('click', async function() {
+            migrationCheckButton.addEventListener('click', withOvenLoading(async function() {
                 migrationCheckButton.disabled = true;
                 migrationCheckButton.textContent = 'Scanning…';
                 try {
@@ -606,7 +607,7 @@ export const renderInvoices = async (params, routeContext) => {
                     notificationService.error(error.message || 'Archive migration failed.');
                 }
                 renderArchivedTable();
-            });
+            }, "Updating invoice"));
         }
     }
 
@@ -789,7 +790,7 @@ export const renderInvoices = async (params, routeContext) => {
 
         const loadMoreHistoryButton = document.getElementById('load-more-invoice-history');
         if (loadMoreHistoryButton) {
-            loadMoreHistoryButton.addEventListener('click', async function() {
+            loadMoreHistoryButton.addEventListener('click', withOvenLoading(async function() {
                 loadMoreHistoryButton.disabled = true;
                 loadMoreHistoryButton.textContent = 'Loading...';
                 historyLimit += 50;
@@ -798,7 +799,7 @@ export const renderInvoices = async (params, routeContext) => {
                     return invoiceRow.customerName;
                 }).filter(Boolean))].sort();
                 applyInvoicesFilters();
-            });
+            }, "Updating invoice"));
         }
     };
 
@@ -839,13 +840,13 @@ export const renderInvoices = async (params, routeContext) => {
         });
     };
 
-    window.toggleInvoicePrinted = async (orderId, isPrintedState) => {
+    window.toggleInvoicePrinted = withOvenLoading(async (orderId, isPrintedState) => {
         const { orderService } = await import("../services/orderService.js");
         if (orderId) {
             await orderService.updateOrder(orderId, { isPrinted: isPrintedState });
             renderInvoices();
         }
-    };
+    }, "Updating invoice");
 
     window.archiveInvoice = function(id) {
         import("../components/modal.js").then(function(module) {
@@ -1494,251 +1495,278 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 
     async function openEditInvoiceItemsModal() {
-        if (!isInvoiceItemsEditable()) {
-            const { notificationService } = await import("../core/notificationService.js");
-            notificationService.error(getInvoiceWorkflowLockMessage(invoice));
-            return;
-        }
-
-        await ensureProductsLoaded();
-
-        const { Modal } = await import("../components/modal.js");
-        let productSearchTerm = '';
-        let invoiceDraft = recalculateInvoiceDraftTotals({
-            items: getEditableItems().map(item => Object.assign({}, item))
-        });
-
-        const modal = new Modal({
-            title: 'Edit Invoice Items',
-            size: 'xlarge',
-            confirmText: 'Save',
-            content: renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm),
-            onConfirm: async () => {
+        var foregroundLoading = startOvenLoading('Updating invoice');
+        try {
+            if (!isInvoiceItemsEditable()) {
                 const { notificationService } = await import("../core/notificationService.js");
-                const validationMessage = validateInvoiceItemDraft(invoiceDraft);
-                if (validationMessage) {
-                    notificationService.error(validationMessage);
-                    return false;
-                }
-
-                const saveButton = modal.modalEl?.querySelector('.confirm-btn');
-                const originalText = saveButton?.textContent || 'Save';
-                if (saveButton) {
-                    saveButton.disabled = true;
-                    saveButton.textContent = 'Saving...';
-                }
-
-                const success = await invoiceController.saveInvoiceItems(invoice.id, invoiceDraft.items);
-                if (!success) {
-                    if (saveButton) {
-                        saveButton.disabled = false;
-                        saveButton.textContent = originalText;
-                    }
-                    return false;
-                }
-
-                invoice = recalculateInvoiceDraftTotals({
-                    items: invoiceDraft.items
-                });
-                refreshBody();
-                return true;
+                notificationService.error(getInvoiceWorkflowLockMessage(invoice));
+                return;
             }
-        });
 
-        const refreshModal = () => {
-            const body = modal.modalEl?.querySelector('.modal-body');
-            if (!body) return;
-            invoiceDraft = recalculateInvoiceDraftTotals({
-                items: invoiceDraft.items || []
-            });
-            body.innerHTML = renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm);
-            attachModalListeners();
-        };
+            await ensureProductsLoaded();
 
-        const refreshProductOptions = () => {
-            const search = document.getElementById('edit-product-search');
-            const select = document.getElementById('edit-product-select');
-            if (!search || !select) return;
-            productSearchTerm = search.value || '';
-            const term = productSearchTerm.trim().toLowerCase();
-            const filteredProducts = allProducts.filter(product => {
-                if (!term) return true;
-                return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
-                    .some(value => String(value || '').toLowerCase().includes(term));
-            });
-            select.disabled = filteredProducts.length === 0;
-            select.innerHTML = filteredProducts.length
-                ? filteredProducts.map(product => `<option value="${escapeAttribute(product.id)}">${escapeHtml(product.displayName || product.name || 'Product')} - ${escapeHtml(formatCurrency(product.price || 0))}</option>`).join('')
-                : '<option value="">No products found</option>';
-        };
-
-        const attachModalListeners = () => {
-            document.getElementById('edit-product-search')?.addEventListener('input', refreshProductOptions);
-
-            document.getElementById('btn-edit-add-product')?.addEventListener('click', async () => {
-                const { notificationService } = await import("../core/notificationService.js");
-                const select = document.getElementById('edit-product-select');
-                const quantityInput = document.getElementById('edit-product-quantity');
-                const product = allProducts.find(entry => entry.id === select?.value);
-                const quantity = safeNumber(quantityInput?.value, 1);
-                if (!product) {
-                    notificationService.error('Select a product to add.');
-                    return;
-                }
-                if (quantity <= 0) {
-                    notificationService.error('Quantity must be a positive number.');
-                    return;
-                }
-                invoiceDraft = addProductToInvoiceDraft(invoiceDraft, product, quantity);
-                refreshModal();
+            const { Modal } = await import("../components/modal.js");
+            let productSearchTerm = '';
+            let invoiceDraft = recalculateInvoiceDraftTotals({
+                items: getEditableItems().map(item => Object.assign({}, item))
             });
 
-            document.querySelectorAll('.edit-item-qty').forEach(input => {
-                input.addEventListener('change', async () => {
+            const modal = new Modal({
+                title: 'Edit Invoice Items',
+                size: 'xlarge',
+                confirmText: 'Save',
+                content: renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm),
+                onConfirm: withOvenLoading(async () => {
                     const { notificationService } = await import("../core/notificationService.js");
-                    const item = (invoiceDraft.items || []).find(entry => entry.lineItemId === input.dataset.lineItemId);
-                    const quantity = safeNumber(input.value, 0);
-                    const minQuantity = Math.max(1, getItemReturnedQuantity(item));
+                    const validationMessage = validateInvoiceItemDraft(invoiceDraft);
+                    if (validationMessage) {
+                        notificationService.error(validationMessage);
+                        return false;
+                    }
+
+                    const saveButton = modal.modalEl?.querySelector('.confirm-btn');
+                    const originalText = saveButton?.textContent || 'Save';
+                    if (saveButton) {
+                        saveButton.disabled = true;
+                        saveButton.textContent = 'Saving...';
+                    }
+
+                    const success = await invoiceController.saveInvoiceItems(invoice.id, invoiceDraft.items);
+                    if (!success) {
+                        if (saveButton) {
+                            saveButton.disabled = false;
+                            saveButton.textContent = originalText;
+                        }
+                        return false;
+                    }
+
+                    invoice = recalculateInvoiceDraftTotals({
+                        items: invoiceDraft.items
+                    });
+                    refreshBody();
+                    return true;
+                }, "Updating invoice")
+            });
+
+            const refreshModal = () => {
+                const body = modal.modalEl?.querySelector('.modal-body');
+                if (!body) return;
+                invoiceDraft = recalculateInvoiceDraftTotals({
+                    items: invoiceDraft.items || []
+                });
+                body.innerHTML = renderEditInvoiceItemsModal(invoiceDraft, productSearchTerm);
+                attachModalListeners();
+            };
+
+            const refreshProductOptions = () => {
+                const search = document.getElementById('edit-product-search');
+                const select = document.getElementById('edit-product-select');
+                if (!search || !select) return;
+                productSearchTerm = search.value || '';
+                const term = productSearchTerm.trim().toLowerCase();
+                const filteredProducts = allProducts.filter(product => {
+                    if (!term) return true;
+                    return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
+                        .some(value => String(value || '').toLowerCase().includes(term));
+                });
+                select.disabled = filteredProducts.length === 0;
+                select.innerHTML = filteredProducts.length
+                    ? filteredProducts.map(product => `<option value="${escapeAttribute(product.id)}">${escapeHtml(product.displayName || product.name || 'Product')} - ${escapeHtml(formatCurrency(product.price || 0))}</option>`).join('')
+                    : '<option value="">No products found</option>';
+            };
+
+            const attachModalListeners = () => {
+                document.getElementById('edit-product-search')?.addEventListener('input', refreshProductOptions);
+
+                document.getElementById('btn-edit-add-product')?.addEventListener('click', withOvenLoading(async () => {
+                    const { notificationService } = await import("../core/notificationService.js");
+                    const select = document.getElementById('edit-product-select');
+                    const quantityInput = document.getElementById('edit-product-quantity');
+                    const product = allProducts.find(entry => entry.id === select?.value);
+                    const quantity = safeNumber(quantityInput?.value, 1);
+                    if (!product) {
+                        notificationService.error('Select a product to add.');
+                        return;
+                    }
                     if (quantity <= 0) {
                         notificationService.error('Quantity must be a positive number.');
-                        input.value = String(minQuantity);
                         return;
                     }
-                    if (quantity < minQuantity) {
-                        notificationService.error('Quantity cannot be less than the returned quantity.');
-                        input.value = String(minQuantity);
-                        return;
-                    }
-                    invoiceDraft = updateInvoiceDraftItemQuantity(invoiceDraft, input.dataset.lineItemId, quantity);
+                    invoiceDraft = addProductToInvoiceDraft(invoiceDraft, product, quantity);
                     refreshModal();
-                });
-            });
+                }, "Updating invoice"));
 
-            document.querySelectorAll('.edit-remove-item').forEach(button => {
-                button.addEventListener('click', async () => {
-                    const { notificationService } = await import("../core/notificationService.js");
-                    const item = (invoiceDraft.items || []).find(entry => entry.lineItemId === button.dataset.lineItemId);
-                    if (getItemReturnedQuantity(item) > 0) {
-                        notificationService.error('Returned items cannot be removed from the invoice.');
-                        return;
-                    }
-                    if (!confirm('Remove this product from this invoice? Inventory will not be changed.')) {
-                        return;
-                    }
-                    invoiceDraft = removeProductFromInvoiceDraft(invoiceDraft, button.dataset.lineItemId);
-                    refreshModal();
+                document.querySelectorAll('.edit-item-qty').forEach(input => {
+                    input.addEventListener('change', withOvenLoading(async () => {
+                        const { notificationService } = await import("../core/notificationService.js");
+                        const item = (invoiceDraft.items || []).find(entry => entry.lineItemId === input.dataset.lineItemId);
+                        const quantity = safeNumber(input.value, 0);
+                        const minQuantity = Math.max(1, getItemReturnedQuantity(item));
+                        if (quantity <= 0) {
+                            notificationService.error('Quantity must be a positive number.');
+                            input.value = String(minQuantity);
+                            return;
+                        }
+                        if (quantity < minQuantity) {
+                            notificationService.error('Quantity cannot be less than the returned quantity.');
+                            input.value = String(minQuantity);
+                            return;
+                        }
+                        invoiceDraft = updateInvoiceDraftItemQuantity(invoiceDraft, input.dataset.lineItemId, quantity);
+                        refreshModal();
+                    }, "Updating invoice"));
                 });
-            });
-        };
 
-        modal.open();
-        attachModalListeners();
+                document.querySelectorAll('.edit-remove-item').forEach(button => {
+                    button.addEventListener('click', withOvenLoading(async () => {
+                        const { notificationService } = await import("../core/notificationService.js");
+                        const item = (invoiceDraft.items || []).find(entry => entry.lineItemId === button.dataset.lineItemId);
+                        if (getItemReturnedQuantity(item) > 0) {
+                            notificationService.error('Returned items cannot be removed from the invoice.');
+                            return;
+                        }
+                        if (!confirm('Remove this product from this invoice? Inventory will not be changed.')) {
+                            return;
+                        }
+                        invoiceDraft = removeProductFromInvoiceDraft(invoiceDraft, button.dataset.lineItemId);
+                        refreshModal();
+                    }, "Updating invoice"));
+                });
+            };
+
+            modal.open();
+            attachModalListeners();
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
+        } finally {
+            foregroundLoading.finish();
+        }
     }
 
     async function openAddProductModal() {
-        await ensureProductsLoaded();
+        var foregroundLoading = startOvenLoading('Updating invoice');
+        try {
+            await ensureProductsLoaded();
 
-        const { Modal } = await import("../components/modal.js");
-        const modal = new Modal({
-            title: 'Add Product',
-            size: 'large',
-            footer: false,
-            content: renderProductSelectorContent(allProducts)
-        });
-        modal.open();
+            const { Modal } = await import("../components/modal.js");
+            const modal = new Modal({
+                title: 'Add Product',
+                size: 'large',
+                footer: false,
+                content: renderProductSelectorContent(allProducts)
+            });
+            modal.open();
 
-        const search = document.getElementById('draft-product-search');
-        const list = document.getElementById('draft-product-list');
-        const attachProductListeners = () => {
-            document.querySelectorAll('.draft-product-option').forEach(button => {
-                button.addEventListener('click', async () => {
-                    const product = allProducts.find(entry => entry.id === button.dataset.productId);
-                    if (!product) return;
-                    const success = await invoiceController.addInvoiceItem(invoice.id, product, 1);
-                    if (success) {
-                        modal.close();
-                        renderInvoiceDetail({ id });
-                    }
+            const search = document.getElementById('draft-product-search');
+            const list = document.getElementById('draft-product-list');
+            const attachProductListeners = () => {
+                document.querySelectorAll('.draft-product-option').forEach(button => {
+                    button.addEventListener('click', withOvenLoading(async () => {
+                        const product = allProducts.find(entry => entry.id === button.dataset.productId);
+                        if (!product) return;
+                        const success = await invoiceController.addInvoiceItem(invoice.id, product, 1);
+                        if (success) {
+                            modal.close();
+                            renderInvoiceDetail({ id });
+                        }
+                    }, "Updating invoice"));
                 });
-            });
-        };
+            };
 
-        search?.addEventListener('input', () => {
-            const term = search.value.trim().toLowerCase();
-            const filteredProducts = allProducts.filter(product => {
-                return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
-                    .some(value => String(value || '').toLowerCase().includes(term));
+            search?.addEventListener('input', () => {
+                const term = search.value.trim().toLowerCase();
+                const filteredProducts = allProducts.filter(product => {
+                    return [product.displayName, product.name, product.name_en, product.name_ru, product.name_kg]
+                        .some(value => String(value || '').toLowerCase().includes(term));
+                });
+                list.innerHTML = renderProductOptions(filteredProducts);
+                attachProductListeners();
             });
-            list.innerHTML = renderProductOptions(filteredProducts);
             attachProductListeners();
-        });
-        attachProductListeners();
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
+        } finally {
+            foregroundLoading.finish();
+        }
     }
 
     async function openRecordReturnModal() {
-        if (!canRecordInvoiceReturn(invoice)) {
-            const { notificationService } = await import("../core/notificationService.js");
-            notificationService.error(getInvoiceWorkflowLockMessage(invoice));
-            return;
-        }
-
-        const { Modal } = await import("../components/modal.js");
-        const items = getEditableItems();
-        const modal = new Modal({
-            title: 'Record Returned Items',
-            size: 'large',
-            confirmText: 'Save Return',
-            content: `
-                <div style="display: grid; gap: 12px;">
-                    ${items.length ? items.map(item => {
-                        const soldQuantity = Number(item.quantity) || 0;
-                        const alreadyReturned = Number(item.returnedQuantity) || 0;
-                        const remaining = Math.max(0, soldQuantity - alreadyReturned);
-                        return `
-                            <label style="display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(90px, auto)); gap: 10px; align-items: center; border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 10px;">
-                                <span style="font-weight: 800;">${escapeHtml(getItemDisplayName(item))}</span>
-                                <span style="font-size: 12px; color: var(--color-gray-500);">Sold: <strong>${soldQuantity}</strong></span>
-                                <span style="font-size: 12px; color: var(--color-gray-500);">Returned: <strong>${alreadyReturned}</strong></span>
-                                <span style="font-size: 12px; color: var(--color-gray-500);">Remaining: <strong>${remaining}</strong></span>
-                                <input class="record-return-qty input" type="number" min="0" max="${remaining}" step="1" value="0" data-line-item-id="${escapeAttribute(item.lineItemId)}" data-product-id="${escapeAttribute(item.productId || '')}" style="width: 90px; height: 32px; text-align: center;">
-                            </label>
-                        `;
-                    }).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returned items yet.</div>'}
-                    <label style="display: grid; gap: 6px;">
-                        <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Note</span>
-                        <textarea id="return-note-input" class="input" rows="3" style="resize: vertical;" placeholder="Optional note"></textarea>
-                    </label>
-                </div>
-            `,
-            onConfirm: async () => {
-                const selectedItems = [...document.querySelectorAll('.record-return-qty')].map(input => ({
-                    lineItemId: input.dataset.lineItemId,
-                    productId: input.dataset.productId,
-                    returnedQuantity: Number(input.value) || 0,
-                    max: Number(input.max) || 0
-                }));
-                const invalid = selectedItems.find(item => item.returnedQuantity < 0 || item.returnedQuantity > item.max);
-                if (invalid) {
-                    const { notificationService } = await import("../core/notificationService.js");
-                    notificationService.error('Return quantity cannot exceed remaining returnable quantity.');
-                    return false;
-                }
-                if (!selectedItems.some(item => item.returnedQuantity > 0)) {
-                    const { notificationService } = await import("../core/notificationService.js");
-                    notificationService.error('At least one item must have a return quantity greater than 0.');
-                    return false;
-                }
-                const success = await invoiceController.recordInvoiceReturn(invoice.id, {
-                    note: document.getElementById('return-note-input')?.value || '',
-                    items: selectedItems
-                });
-                if (success) {
-                    renderInvoiceDetail({ id });
-                }
-                return success;
+        var foregroundLoading = startOvenLoading('Updating invoice');
+        try {
+            if (!canRecordInvoiceReturn(invoice)) {
+                const { notificationService } = await import("../core/notificationService.js");
+                notificationService.error(getInvoiceWorkflowLockMessage(invoice));
+                return;
             }
-        });
-        modal.open();
+
+            const { Modal } = await import("../components/modal.js");
+            const items = getEditableItems();
+            const modal = new Modal({
+                title: 'Record Returned Items',
+                size: 'large',
+                confirmText: 'Save Return',
+                content: `
+                    <div style="display: grid; gap: 12px;">
+                        ${items.length ? items.map(item => {
+                            const soldQuantity = Number(item.quantity) || 0;
+                            const alreadyReturned = Number(item.returnedQuantity) || 0;
+                            const remaining = Math.max(0, soldQuantity - alreadyReturned);
+                            return `
+                                <label style="display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, minmax(90px, auto)); gap: 10px; align-items: center; border: 1px solid var(--color-gray-200); border-radius: 8px; padding: 10px;">
+                                    <span style="font-weight: 800;">${escapeHtml(getItemDisplayName(item))}</span>
+                                    <span style="font-size: 12px; color: var(--color-gray-500);">Sold: <strong>${soldQuantity}</strong></span>
+                                    <span style="font-size: 12px; color: var(--color-gray-500);">Returned: <strong>${alreadyReturned}</strong></span>
+                                    <span style="font-size: 12px; color: var(--color-gray-500);">Remaining: <strong>${remaining}</strong></span>
+                                    <input class="record-return-qty input" type="number" min="0" max="${remaining}" step="1" value="0" data-line-item-id="${escapeAttribute(item.lineItemId)}" data-product-id="${escapeAttribute(item.productId || '')}" style="width: 90px; height: 32px; text-align: center;">
+                                </label>
+                            `;
+                        }).join('') : '<div style="padding: 18px; color: var(--color-gray-500); font-size: 13px; background: var(--color-gray-50); border-radius: 8px;">No returned items yet.</div>'}
+                        <label style="display: grid; gap: 6px;">
+                            <span style="font-size: 12px; font-weight: 900; color: var(--color-gray-600);">Note</span>
+                            <textarea id="return-note-input" class="input" rows="3" style="resize: vertical;" placeholder="Optional note"></textarea>
+                        </label>
+                    </div>
+                `,
+                onConfirm: withOvenLoading(async () => {
+                    const selectedItems = [...document.querySelectorAll('.record-return-qty')].map(input => ({
+                        lineItemId: input.dataset.lineItemId,
+                        productId: input.dataset.productId,
+                        returnedQuantity: Number(input.value) || 0,
+                        max: Number(input.max) || 0
+                    }));
+                    const invalid = selectedItems.find(item => item.returnedQuantity < 0 || item.returnedQuantity > item.max);
+                    if (invalid) {
+                        const { notificationService } = await import("../core/notificationService.js");
+                        notificationService.error('Return quantity cannot exceed remaining returnable quantity.');
+                        return false;
+                    }
+                    if (!selectedItems.some(item => item.returnedQuantity > 0)) {
+                        const { notificationService } = await import("../core/notificationService.js");
+                        notificationService.error('At least one item must have a return quantity greater than 0.');
+                        return false;
+                    }
+                    const success = await invoiceController.recordInvoiceReturn(invoice.id, {
+                        note: document.getElementById('return-note-input')?.value || '',
+                        items: selectedItems
+                    });
+                    if (success) {
+                        renderInvoiceDetail({ id });
+                    }
+                    return success;
+                }, "Updating invoice")
+            });
+            modal.open();
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
+        } finally {
+            foregroundLoading.finish();
+        }
     }
 
     const renderDocument = (lang, isCopy = false) => {
@@ -1792,7 +1820,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             <div class="invoice-toolbar invoice-preview-controls no-print" style="display: flex; gap: 15px; justify-content: center; padding: 15px; border-bottom: 1px solid var(--color-gray-200); background: #f7fafc; position: sticky; top: 0; z-index: 100;">
                 <button id="lang-en" class="btn ${currentLang === 'en' ? 'btn-primary' : 'btn-secondary'} btn-sm">🇬🇧 EN</button>
                 <button id="lang-ru" class="btn ${currentLang === 'ru' ? 'btn-primary' : 'btn-secondary'} btn-sm">🇷🇺 RU</button>
-                
+
                 <div style="display: flex; align-items: center; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     <span style="font-size: 12px; font-weight: 600;">Date:</span>
                     <input type="date" id="invoice-date-picker" class="input" style="padding: 2px 8px; height: 32px; font-size: 13px; width: 140px;"
@@ -1815,7 +1843,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
                 <div style="display: flex; gap: 8px; border-left: 1px solid var(--color-gray-200); padding-left: 15px;">
                     ${isInvoiceItemsEditable() ? '<button id="btn-edit-invoice-items" class="btn btn-secondary btn-sm">Edit Items</button>' : ''}
-                    <button id="btn-copy-qr" class="btn btn-secondary btn-sm" ${invoice.secureToken ? '' : 'disabled'}>${invoice.secureToken ? 'QR Link' : 'QR Loading'}</button>
+                    <button id="btn-copy-qr" class="btn btn-secondary btn-sm" ${invoice.secureToken ? '' : 'disabled'}>${invoice.secureToken ? 'QR Link' : 'QR unavailable'}</button>
                     ${canRecordInvoiceReturn(invoice) ? '<button id="btn-record-return-items" class="btn btn-secondary btn-sm">Record Return</button>' : ''}
                     ${canFulfillInvoice(invoice) ? '<button id="btn-complete-invoice" class="btn btn-primary btn-sm">Complete</button>' : ''}
                     <button id="btn-print-portrait" class="btn btn-primary btn-sm">🖨️ Portrait</button>
@@ -1838,7 +1866,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
             <style>
                 #invoice-doc-container::-webkit-scrollbar { display: none; }
-                
+
                 @media screen {
                     .invoice-page {
                         display: none;
@@ -1866,7 +1894,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         padding: 30px 40px !important;
                         overflow: hidden !important;
                     }
-                    
+
                     #invoice-doc-container.printing-2up-portrait .print-sheet {
                         display: block !important;
                         width: 210mm;
@@ -1894,14 +1922,14 @@ export const renderInvoiceDetail = async ({ id }) => {
                         margin: 0; 
                         size: A4 portrait; 
                     }
-                    
+
                     /* Force background colors and images */
                     * { 
                         -webkit-print-color-adjust: exact !important; 
                         print-color-adjust: exact !important; 
                         color-adjust: exact !important;
                     }
-                    
+
                     /* Reset global layout constraints */
                     html, body { 
                         margin: 0 !important; 
@@ -1910,7 +1938,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         overflow: visible !important; 
                         background: white !important;
                     }
-                    
+
                     #app, 
                     .main-content, 
                     .page-container,
@@ -1947,7 +1975,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                     #invoice-doc-container > .print-wrapper {
                         display: block !important;
                     }
-                    
+
                     ::-webkit-scrollbar { display: none !important; }
 
                     /* Portrait standard page */
@@ -2044,7 +2072,7 @@ export const renderInvoiceDetail = async ({ id }) => {
 
         try {
             document.querySelectorAll('.conflict-action').forEach(function(button) {
-                button.addEventListener('click', async function() {
+                button.addEventListener('click', withOvenLoading(async function() {
                     const resolution = button.dataset.resolution;
                     let manualVersion = null;
 
@@ -2064,14 +2092,14 @@ export const renderInvoiceDetail = async ({ id }) => {
                     const module = await import("../services/syncService.js");
                     await module.syncService.resolveConflict(openConflict.id, resolution, manualVersion);
                     renderInvoiceDetail({ id });
-                });
+                }, "Updating invoice"));
             });
 
             // Event Listeners
             document.getElementById('lang-en')?.addEventListener('click', () => { currentLang = 'en'; refreshBody(); });
             document.getElementById('lang-ru')?.addEventListener('click', () => { currentLang = 'ru'; refreshBody(); });
 
-            document.getElementById('invoice-date-picker')?.addEventListener('change', async (e) => {
+            document.getElementById('invoice-date-picker')?.addEventListener('change', withOvenLoading(async (e) => {
                 if (!canEditInvoiceDate(invoice)) {
                     const { notificationService } = await import("../core/notificationService.js");
                     notificationService.error(getInvoiceWorkflowLockMessage(invoice));
@@ -2087,9 +2115,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                     invoice.dueDate = d;
                     refreshBody();
                 }
-            });
+            }, "Updating invoice"));
 
-            document.getElementById('btn-generate-approval-link')?.addEventListener('click', async () => {
+            document.getElementById('btn-generate-approval-link')?.addEventListener('click', withOvenLoading(async () => {
                 const button = document.getElementById('btn-generate-approval-link');
                 button.disabled = true;
                 button.textContent = 'Generating...';
@@ -2101,9 +2129,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                     button.disabled = false;
                     button.textContent = 'Generate Approval Link';
                 }
-            });
+            }, "Updating invoice"));
 
-            document.getElementById('btn-copy-approval-link')?.addEventListener('click', async () => {
+            document.getElementById('btn-copy-approval-link')?.addEventListener('click', withOvenLoading(async () => {
                 if (!approvalLink) {
                     return;
                 }
@@ -2115,7 +2143,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }
                 const { notificationService } = await import("../core/notificationService.js");
                 notificationService.success('Approval link copied.');
-            });
+            }, "Updating invoice"));
 
             document.getElementById('prev-page')?.addEventListener('click', () => { if (currentPage > 1) { currentPage--; refreshBody(); } });
             document.getElementById('next-page')?.addEventListener('click', () => { if (currentPage < realTotalPages) { currentPage++; refreshBody(); } });
@@ -2129,7 +2157,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }
             });
 
-            document.getElementById('btn-copy-qr')?.addEventListener('click', async () => {
+            document.getElementById('btn-copy-qr')?.addEventListener('click', withOvenLoading(async () => {
                 const { Modal } = await import("../components/modal.js");
                 const links = [
                     { id: 'customer', label: 'Customer link', url: qrService.buildMobileUrl(invoice, 'customer') },
@@ -2155,7 +2183,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 });
                 modal.open();
                 document.querySelectorAll('.qr-copy-link').forEach(button => {
-                    button.addEventListener('click', async () => {
+                    button.addEventListener('click', withOvenLoading(async () => {
                         const link = links.find(entry => entry.id === button.dataset.linkId);
                         if (navigator.clipboard) {
                             await navigator.clipboard.writeText(link.url);
@@ -2164,9 +2192,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                         }
                         const { notificationService } = await import("../core/notificationService.js");
                         notificationService.success(`${link.label} copied.`);
-                    });
+                    }, "Updating invoice"));
                 });
-            });
+            }, "Updating invoice"));
 
             document.getElementById('btn-edit-invoice-items')?.addEventListener('click', openEditInvoiceItemsModal);
 
@@ -2175,7 +2203,7 @@ export const renderInvoiceDetail = async ({ id }) => {
             document.getElementById('btn-add-draft-product')?.addEventListener('click', openAddProductModal);
 
             document.querySelectorAll('.draft-item-qty').forEach(input => {
-                input.addEventListener('change', async () => {
+                input.addEventListener('change', withOvenLoading(async () => {
                     const item = getEditableItems().find(entry => entry.lineItemId === input.dataset.lineItemId);
                     const minQuantity = Math.max(1, getItemReturnedQuantity(item));
                     const quantity = Number(input.value);
@@ -2196,11 +2224,11 @@ export const renderInvoiceDetail = async ({ id }) => {
                     if (success) {
                         renderInvoiceDetail({ id });
                     }
-                });
+                }, "Updating invoice"));
             });
 
             document.querySelectorAll('.draft-remove-item').forEach(button => {
-                button.addEventListener('click', async () => {
+                button.addEventListener('click', withOvenLoading(async () => {
                     const item = getEditableItems().find(entry => entry.lineItemId === button.dataset.lineItemId);
                     if (getItemReturnedQuantity(item) > 0) {
                         const { notificationService } = await import("../core/notificationService.js");
@@ -2214,10 +2242,10 @@ export const renderInvoiceDetail = async ({ id }) => {
                     if (success) {
                         renderInvoiceDetail({ id });
                     }
-                });
+                }, "Updating invoice"));
             });
 
-            document.getElementById('invoice-status-selector')?.addEventListener('change', async event => {
+            document.getElementById('invoice-status-selector')?.addEventListener('change', withOvenLoading(async event => {
                 const nextStatus = event.target.value;
                 const previousStatus = getCanonicalInvoiceStatus(invoice.status || 'draft');
                 const previousDisplayStatus = getReturnState(invoice) === 'partial'
@@ -2252,9 +2280,9 @@ export const renderInvoiceDetail = async ({ id }) => {
                 }
 
                 event.target.value = previousDisplayStatus;
-            });
+            }, "Updating invoice"));
 
-            document.getElementById('btn-complete-invoice')?.addEventListener('click', async () => {
+            document.getElementById('btn-complete-invoice')?.addEventListener('click', withOvenLoading(async () => {
                 if (!canFulfillInvoice(invoice)) {
                     const { notificationService } = await import("../core/notificationService.js");
                     notificationService.error('Only approved invoices can be fulfilled.');
@@ -2270,7 +2298,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                 await returnsService.markCompleted(invoice.id);
                 notificationService.success('Invoice fulfilled.');
                 renderInvoiceDetail({ id });
-            });
+            }, "Updating invoice"));
 
             const handlePrintSuccess = async () => {
                 // Slight delay so the UI can settle back to normal before the modal pops
@@ -2282,7 +2310,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                         confirmText: t('btn_mark_printed'),
                         cancelText: t('btn_skip'),
                         type: 'primary',
-                        onConfirm: async () => {
+                        onConfirm: withOvenLoading(async () => {
                             try {
                                 var printResult = await invoiceController.markPrinted(invoice.id, invoice.orderId, { invoice: invoice });
                                 if (!printResult) {
@@ -2300,7 +2328,7 @@ export const renderInvoiceDetail = async ({ id }) => {
                                 console.error("Failed post-print routine", error);
                                 notificationService.error(error.message || 'Failed to mark invoice as printed.');
                             }
-                        }
+                        }, "Updating invoice")
                     });
                     modal.open();
                 }, 500);

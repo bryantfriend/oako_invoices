@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import sessionDataStore from "../services/sessionDataStore.js";
 import { customerService } from "../services/customerService.js";
@@ -85,7 +86,7 @@ function attachDeliveryEvents(dateKey) {
     });
 
     document.querySelectorAll('.mark-delivered-button').forEach(function(button) {
-        button.addEventListener('click', async function() {
+        button.addEventListener('click', withOvenLoading(async function() {
             var orderId = button.dataset.orderId;
             button.disabled = true;
             button.textContent = 'Saving...';
@@ -104,7 +105,7 @@ function attachDeliveryEvents(dateKey) {
                 button.disabled = false;
                 button.textContent = 'Mark delivered';
             }
-        });
+        }, "Updating deliveries"));
     });
 }
 

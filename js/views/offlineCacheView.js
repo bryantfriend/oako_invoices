@@ -1,3 +1,4 @@
+import { withOvenLoading, startOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { offlineCacheService } from "../services/offlineCacheService.js";
 import { notificationService } from "../core/notificationService.js";
@@ -61,27 +62,36 @@ export async function renderOfflineCache() {
     layoutView.render();
     layoutView.updateTitle('Offline Data');
     var container = document.getElementById('page-container');
-    container.innerHTML = '<div style="padding: 32px; color: var(--color-gray-500);">Loading offline data status...</div>';
+    container.innerHTML = '<div data-oven-wait="Loading offline data" style="padding: 32px; color: var(--color-gray-500);">Loading offline data status...</div>';
 
     async function loadStatus() {
-        var status = await offlineCacheService.getStatus();
-        container.innerHTML = renderStatus(status);
-        var refreshButton = document.getElementById('refresh-offline-data-btn');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', async function(event) {
-                var button = event.currentTarget;
-                button.disabled = true;
-                button.textContent = 'Refreshing...';
-                var result = await offlineCacheService.refreshOfflineData();
-                if (!result.ok && result.reason) {
-                    notificationService.error(result.reason);
-                } else if (!result.ok) {
-                    notificationService.error('Offline data refreshed with ' + result.failedCount + ' problem(s).');
-                } else {
-                    notificationService.success('Offline data refreshed.');
-                }
-                await loadStatus();
-            });
+        var foregroundLoading = startOvenLoading('Loading offline data');
+        try {
+            var status = await offlineCacheService.getStatus();
+            container.innerHTML = renderStatus(status);
+            var refreshButton = document.getElementById('refresh-offline-data-btn');
+            if (refreshButton) {
+                refreshButton.addEventListener('click', withOvenLoading(async function(event) {
+                    var button = event.currentTarget;
+                    button.disabled = true;
+                    button.textContent = 'Refreshing...';
+                    var result = await offlineCacheService.refreshOfflineData();
+                    if (!result.ok && result.reason) {
+                        notificationService.error(result.reason);
+                    } else if (!result.ok) {
+                        notificationService.error('Offline data refreshed with ' + result.failedCount + ' problem(s).');
+                    } else {
+                        notificationService.success('Offline data refreshed.');
+                    }
+                    await loadStatus();
+                }, "Loading offline data"));
+            }
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
+        } finally {
+            foregroundLoading.finish();
         }
     }
 

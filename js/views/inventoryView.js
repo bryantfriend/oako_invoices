@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { inventoryController } from "../controllers/inventoryController.js";
 import { createCard } from "../components/card.js";
@@ -133,16 +134,16 @@ const renderMainView = (container, date, categories) => {
 
     // Attach Events
     container.querySelectorAll('.baked-input').forEach(input => {
-        input.addEventListener('change', async (e) => {
+        input.addEventListener('change', withOvenLoading(async (e) => {
             const id = e.target.dataset.id;
             const val = parseInt(e.target.value) || 0;
             await inventoryController.saveProduction(date, id, val, false);
             renderInventory(); // Refresh
-        });
+        }, "Updating inventory"));
     });
 
     container.querySelectorAll('.lock-toggle').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', withOvenLoading(async (e) => {
             const id = btn.dataset.id;
             const isLocked = btn.dataset.locked === 'true';
             const input = container.querySelector(`.baked-input[data-id="${id}"]`);
@@ -150,7 +151,7 @@ const renderMainView = (container, date, categories) => {
 
             await inventoryController.saveProduction(date, id, val, !isLocked);
             renderInventory(); // Refresh
-        });
+        }, "Updating inventory"));
     });
 
     var refreshButton = document.getElementById('refresh-inventory');
@@ -160,15 +161,15 @@ const renderMainView = (container, date, categories) => {
         });
     }
 
-    document.getElementById('lock-all-btn')?.addEventListener('click', async () => {
+    document.getElementById('lock-all-btn')?.addEventListener('click', withOvenLoading(async () => {
         await inventoryController.bulkUpdateLockStatus(date, categories, true);
         renderInventory();
-    });
+    }, "Updating inventory"));
 
-    document.getElementById('unlock-all-btn')?.addEventListener('click', async () => {
+    document.getElementById('unlock-all-btn')?.addEventListener('click', withOvenLoading(async () => {
         await inventoryController.bulkUpdateLockStatus(date, categories, false);
         renderInventory();
-    });
+    }, "Updating inventory"));
 };
 
 const showInitializationModal = (date, categories) => {
@@ -220,15 +221,15 @@ const showInitializationModal = (date, categories) => {
 
     modal.open();
 
-    document.getElementById('import-yesterday-btn').addEventListener('click', async () => {
+    document.getElementById('import-yesterday-btn').addEventListener('click', withOvenLoading(async () => {
         const success = await inventoryController.importYesterday(date);
         if (success) {
             modal.close();
             renderInventory();
         }
-    });
+    }, "Updating inventory"));
 
-    document.getElementById('confirm-init-btn').addEventListener('click', async () => {
+    document.getElementById('confirm-init-btn').addEventListener('click', withOvenLoading(async () => {
         const inputs = document.querySelectorAll('.init-baked-input');
         const promises = Array.from(inputs).map(input => {
             const val = parseInt(input.value) || 0;
@@ -241,5 +242,5 @@ const showInitializationModal = (date, categories) => {
         await Promise.all(promises);
         modal.close();
         renderInventory();
-    });
+    }, "Updating inventory"));
 };

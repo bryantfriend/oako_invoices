@@ -28,7 +28,10 @@ async function load(file, modules, globals = {}, keepIcf = false) {
     vm.runInNewContext(bundles.get(file), Object.assign({
         module, exports: module.exports, Date, setTimeout, clearTimeout,
         console: { info() {}, warn() {}, error() {} },
-        require(specifier) { return modules[path.basename(specifier, '.js')] || {}; },
+        require(specifier) {
+            if (path.basename(specifier, '.js') === 'ovenLoading') return { withOvenLoading: function(handler) { return handler; }, startOvenLoading: function() { return { finish: function() {}, fail: function() {}, update: function() {} }; } };
+            return modules[path.basename(specifier, '.js')] || {};
+        },
     }, globals));
     return module.exports;
 }

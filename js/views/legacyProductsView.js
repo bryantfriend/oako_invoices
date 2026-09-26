@@ -1,3 +1,4 @@
+import { startOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from './layoutView.js';
 import sessionDataStore from '../services/sessionDataStore.js';
 import { productReconciliationService } from '../services/productReconciliationService.js';
@@ -57,7 +58,7 @@ async function renderLegacyProducts() {
         + '<button class="btn btn-primary" type="button" data-review-tab="pending" aria-pressed="true">Awaiting review</button>'
         + '<button class="btn btn-secondary" type="button" data-review-tab="deleted" aria-pressed="false">Deleted</button></div>'
         + '<label>Search legacy products<input type="search" class="input" id="legacy-review-search" placeholder="Name, category or reference"></label></div>'
-        + '<div id="legacy-review-list"><p>Loading legacy products…</p></div></fieldset></section>';
+        + '<div id="legacy-review-list"><p data-oven-wait="Loading legacy products">Loading legacy products…</p></div></fieldset></section>';
     var list = container.querySelector('#legacy-review-list');
     var controls = container.querySelector('#legacy-review-controls');
     var refresh = container.querySelector('#legacy-review-refresh');
@@ -99,51 +100,69 @@ async function renderLegacyProducts() {
     }
 
     async function loadReview(forceRefresh) {
-        if (busy) { return; }
-        setBusy(true);
-        error.textContent = '';
+        var foregroundLoading = startOvenLoading('Updating product catalog');
         try {
-            var groups = await Promise.all([
-                productReconciliationService.loadContext(null, null, true),
-                sessionDataStore.loadOrders({ source: 'legacy-products', forceRefresh: forceRefresh })
-            ]);
-            if (!isCurrent()) { return; }
-            var snapshot = groups[1];
-            records = (snapshot.records || []).concat(snapshot.extras && snapshot.extras.returnInvoices ? snapshot.extras.returnInvoices : []);
-            renderList();
-        } catch (loadError) {
-            if (!isCurrent()) { return; }
-            error.textContent = loadError.message || 'Could not load legacy products. Use Refresh to try again.';
+            if (busy) { return; }
+            setBusy(true);
+            error.textContent = '';
+            try {
+                var groups = await Promise.all([
+                    productReconciliationService.loadContext(null, null, true),
+                    sessionDataStore.loadOrders({ source: 'legacy-products', forceRefresh: forceRefresh })
+                ]);
+                if (!isCurrent()) { return; }
+                var snapshot = groups[1];
+                records = (snapshot.records || []).concat(snapshot.extras && snapshot.extras.returnInvoices ? snapshot.extras.returnInvoices : []);
+                renderList();
+            } catch (loadError) {
+                if (!isCurrent()) { return; }
+                error.textContent = loadError.message || 'Could not load legacy products. Use Refresh to try again.';
+            } finally {
+                if (isCurrent()) { setBusy(false); }
+            }
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
         } finally {
-            if (isCurrent()) { setBusy(false); }
+            foregroundLoading.finish();
         }
     }
 
     async function saveReview(row, action, form) {
-        if (busy || !isCurrent()) { return; }
-        var entry = displayedEntries.find(function findEntry(item) { return item.key === row.dataset.reviewKey; });
-        if (!entry) { return; }
-        var selected = form ? form.querySelector('input[name="current-product-match"]:checked') : null;
-        if (action === 'match' && !selected) { return; }
-        setBusy(true);
-        error.textContent = '';
-        message.textContent = 'Saving review…';
+        var foregroundLoading = startOvenLoading('Updating product catalog');
         try {
-            if (action === 'match') {
-                await productReconciliationService.confirmMatch(entry, selected.value, form.elements.categoryId.value);
-            } else {
-                await productReconciliationService.setReviewState(entry, action === 'delete' ? 'unavailable' : 'pending');
+            if (busy || !isCurrent()) { return; }
+            var entry = displayedEntries.find(function findEntry(item) { return item.key === row.dataset.reviewKey; });
+            if (!entry) { return; }
+            var selected = form ? form.querySelector('input[name="current-product-match"]:checked') : null;
+            if (action === 'match' && !selected) { return; }
+            setBusy(true);
+            error.textContent = '';
+            message.textContent = 'Saving review…';
+            try {
+                if (action === 'match') {
+                    await productReconciliationService.confirmMatch(entry, selected.value, form.elements.categoryId.value);
+                } else {
+                    await productReconciliationService.setReviewState(entry, action === 'delete' ? 'unavailable' : 'pending');
+                }
+                if (!isCurrent()) { return; }
+                message.textContent = action === 'delete' ? 'Deleted from review. You can restore it from the Deleted tab.'
+                    : action === 'restore' ? 'Restored to the review queue.' : 'Product match saved.';
+                renderList();
+            } catch (saveError) {
+                if (!isCurrent()) { return; }
+                message.textContent = '';
+                error.textContent = saveError.message || 'Could not save this review. Please try again.';
+            } finally {
+                if (isCurrent()) { setBusy(false); }
             }
-            if (!isCurrent()) { return; }
-            message.textContent = action === 'delete' ? 'Deleted from review. You can restore it from the Deleted tab.'
-                : action === 'restore' ? 'Restored to the review queue.' : 'Product match saved.';
-            renderList();
-        } catch (saveError) {
-            if (!isCurrent()) { return; }
-            message.textContent = '';
-            error.textContent = saveError.message || 'Could not save this review. Please try again.';
+
+        } catch (foregroundError) {
+            foregroundLoading.fail();
+            throw foregroundError;
         } finally {
-            if (isCurrent()) { setBusy(false); }
+            foregroundLoading.finish();
         }
     }
 

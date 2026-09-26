@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { LoadingSkeleton } from "../components/loadingSkeleton.js";
 import { formatCurrency, formatDate } from "../core/formatters.js";
 import { pinService } from "../services/pinService.js";
@@ -419,7 +420,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
             </form>
         `);
 
-        document.getElementById('qr-pin-form').addEventListener('submit', async (event) => {
+        document.getElementById('qr-pin-form').addEventListener('submit', withOvenLoading(async (event) => {
             event.preventDefault();
             const result = pinService.authenticateInvoice(document.getElementById('qr-pin-input').value, invoice, settings, preferredMode);
             await qrActivityService.log('pin_attempt', {
@@ -436,7 +437,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
             session = result;
             await logAction('qr_access_granted', { details: { role: session.role } });
             renderMenu();
-        });
+        }, "Mobile Updating invoice"));
     };
 
     const renderMenu = () => {
@@ -600,7 +601,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
 
         attachSteppers('qr-return-form');
         document.getElementById('qr-return-form-back').addEventListener('click', renderMenu);
-        document.getElementById('qr-return-form').addEventListener('submit', async (event) => {
+        document.getElementById('qr-return-form').addEventListener('submit', withOvenLoading(async (event) => {
             event.preventDefault();
             const selectedItems = getSelectedItems(event.currentTarget);
             if (selectedItems.length === 0) {
@@ -680,7 +681,7 @@ export const renderMobileInvoice = async ({ payload, mode = '' }) => {
                 }),
                 actionName: 'customer_return_whatsapp_opened'
             });
-        });
+        }, "Mobile Updating invoice"));
     };
 
     const renderReorderForm = () => {

@@ -1,3 +1,4 @@
+import { withOvenLoading, startOvenLoading } from '../components/ovenLoading.js';
 import { attachCreateOrderWorkflow } from '../components/createOrderWorkflow.js';
 import { getLocalDateKey } from '../services/operationsPlanningService.js';
 import { layoutView } from "./layoutView.js";
@@ -907,6 +908,7 @@ export const renderCreateOrder = async (params, routeContext) => {
             if (products.length) return;
             if (status) status.textContent = 'Loading product catalog...';
             grid.innerHTML = renderProductPickerEmptyState('Loading product catalog...');
+            var catalogProgress = startOvenLoading('Loading product catalog');
             refreshProductCatalog().then(function() {
                 if (!document.body.contains(grid)) return;
                 filterAndRender({ resetLimit: true });
@@ -915,7 +917,8 @@ export const renderCreateOrder = async (params, routeContext) => {
                 if (!document.body.contains(grid)) return;
                 if (status) status.textContent = 'Product catalog is not available yet.';
                 grid.innerHTML = renderProductPickerEmptyState('Product catalog is not available yet. Check the connection and try again.');
-            });
+                catalogProgress.fail();
+            }).finally(function finishCatalogLoading() { catalogProgress.finish(); });
         };
 
         const filterProducts = () => {
@@ -1110,7 +1113,7 @@ export const renderCreateOrder = async (params, routeContext) => {
 
     // Auto-Fill Logic
     const customerInput = document.getElementById('customerName');
-    customerInput.addEventListener('change', async (e) => {
+    customerInput.addEventListener('change', withOvenLoading(async (e) => {
         const val = e.target.value;
         if (!val) return;
 
@@ -1129,10 +1132,10 @@ export const renderCreateOrder = async (params, routeContext) => {
 
         renderSmartBasketPanel(val, []);
         if (hint) hint.textContent = historyOrders.length ? 'Customer price history is ready.' : 'No previous basket found. Build this order from the catalog.';
-    });
+    }, "Preparing order details"));
 
     // Customer Picker Modal
-    document.getElementById('select-customer-btn').addEventListener('click', async () => {
+    document.getElementById('select-customer-btn').addEventListener('click', withOvenLoading(async () => {
         let selectedCategory = 'all';
         let searchQuery = '';
 
@@ -1237,12 +1240,12 @@ export const renderCreateOrder = async (params, routeContext) => {
         });
 
         if (!customers.length) {
-            tableContainer.innerHTML = '<div style="padding: 36px; text-align: center; color: var(--color-gray-500);">Loading saved customers...</div>';
+            tableContainer.innerHTML = '<div data-oven-wait="Loading customers" style="padding: 36px; text-align: center; color: var(--color-gray-500);">Loading saved customers...</div>';
             customers = await customerController.loadAllCustomers();
         }
 
         renderTable();
-    });
+    }, "Preparing order details"));
 
     // Quick Add Customer Logic
     document.getElementById('quick-add-customer-btn').addEventListener('click', () => {
@@ -1265,7 +1268,7 @@ export const renderCreateOrder = async (params, routeContext) => {
                     </div>
                 </form>
             `,
-            onConfirm: async () => {
+            onConfirm: withOvenLoading(async () => {
                 const form = document.getElementById('quick-add-customer-form');
                 if (!form.reportValidity()) return false;
 
@@ -1285,7 +1288,7 @@ export const renderCreateOrder = async (params, routeContext) => {
                     notificationService.success(t('msg_selected') + newName);
                 }
                 return success;
-            }
+            }, "Preparing order details")
         });
         modal.open();
     });

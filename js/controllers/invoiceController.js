@@ -159,7 +159,7 @@ export const invoiceController = {
             return invoiceId;
         } catch (error) {
             console.error('Could not prepare invoice for printing.', error);
-            notificationService.error(t('msg_save_fail'));
+            notificationService.error(error && error.message ? error.message : 'Could not prepare the invoice. Please retry.');
             return null;
         }
     },

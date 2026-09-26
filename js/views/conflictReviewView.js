@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { conflictService } from "../services/conflictService.js";
 import { syncService } from "../services/syncService.js";
@@ -79,14 +80,14 @@ export async function renderConflictReview() {
 
     await mountSyncSupportPanel(document.getElementById('sync-support-panel'));
 
-    document.getElementById('conflicts-sync-now')?.addEventListener('click', async function() {
+    document.getElementById('conflicts-sync-now')?.addEventListener('click', withOvenLoading(async function() {
         const result = await syncService.processQueue({ manual: true });
         notificationService.info('Sync complete: ' + result.synced + ' synced, ' + result.failed + ' failed.');
         renderConflictReview();
-    });
+    }, "Updating sync conflicts"));
 
     container.querySelectorAll('.conflict-resolve').forEach(button => {
-        button.addEventListener('click', async function() {
+        button.addEventListener('click', withOvenLoading(async function() {
             const id = button.dataset.id;
             const resolution = button.dataset.resolution;
             const conflict = await conflictService.getConflict(id);
@@ -99,6 +100,6 @@ export async function renderConflictReview() {
             await syncService.resolveConflict(id, resolution, manualVersion);
             notificationService.success('Conflict resolved.');
             renderConflictReview();
-        });
+        }, "Updating sync conflicts"));
     });
 }

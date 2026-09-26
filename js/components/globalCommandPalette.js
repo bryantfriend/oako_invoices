@@ -1,3 +1,4 @@
+import { startOvenLoading } from './ovenLoading.js';
 import sessionDataStore from "../services/sessionDataStore.js";
 import { customerService } from "../services/customerService.js";
 import { productService } from "../services/productService.js";
@@ -82,27 +83,36 @@ function addProductRecords(records, products) {
 }
 
 async function loadSearchRecords() {
-    var results = await Promise.all([
-        sessionDataStore.loadOrders({ source: 'global-search' }).catch(function() {
-            return { records: [] };
-        }),
-        sessionDataStore.loadInvoices({ source: 'global-search' }).catch(function() {
-            return { records: [] };
-        }),
-        customerService.getAllCustomers().catch(function() {
-            return [];
-        }),
-        productService.getAllProducts().catch(function() {
-            return [];
-        })
-    ]);
-    var records = createCommandRecords();
-    addOrderRecords(records, results[0].records || []);
-    addInvoiceRecords(records, results[1].records || []);
-    addCustomerRecords(records, results[2] || []);
-    addProductRecords(records, results[3] || []);
-    searchRecords = records;
-    return records;
+    var foregroundLoading = startOvenLoading('Searching orders and customers');
+    try {
+        var results = await Promise.all([
+            sessionDataStore.loadOrders({ source: 'global-search' }).catch(function() {
+                return { records: [] };
+            }),
+            sessionDataStore.loadInvoices({ source: 'global-search' }).catch(function() {
+                return { records: [] };
+            }),
+            customerService.getAllCustomers().catch(function() {
+                return [];
+            }),
+            productService.getAllProducts().catch(function() {
+                return [];
+            })
+        ]);
+        var records = createCommandRecords();
+        addOrderRecords(records, results[0].records || []);
+        addInvoiceRecords(records, results[1].records || []);
+        addCustomerRecords(records, results[2] || []);
+        addProductRecords(records, results[3] || []);
+        searchRecords = records;
+        return records;
+
+    } catch (foregroundError) {
+        foregroundLoading.fail();
+        throw foregroundError;
+    } finally {
+        foregroundLoading.finish();
+    }
 }
 
 function getMatches(query) {

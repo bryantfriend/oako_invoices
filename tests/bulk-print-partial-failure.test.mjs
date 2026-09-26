@@ -74,3 +74,46 @@ test('Quick Print fails clearly without opening an empty PDF when every invoice 
     assert.equal(h.context.isGenerationActive(), false);
 });
 
+for (const layout of ['full', 'two-up-portrait']) {
+    test('Quick Print prepares a new saved order and preserves cached invoices: ' + layout, async function() {
+        var h = harness([invoice('cached')]);
+        var prepared = [];
+        var linked = [];
+        h.context.invoiceService.getInvoicesByOrderIds = async function() { return []; };
+        h.context.invoiceService.preparePrintableInvoice = async function(id, snapshot, options) {
+            prepared.push(id);
+            assert.equal(snapshot.id, 'new-order');
+            assert.equal(options.source, 'orders-quick-print');
+            return { ok: true, data: { invoice: invoice(id, { syncState: 'offline_created' }) } };
+        };
+        h.context.sessionDataStore.updateOrderRecord = function(id, patch) { linked.push([id, patch.invoiceGenerated]); };
+        var result = await h.context.generateCombinedPdf(['new-order', 'cached'], layout, {}, {
+            orderSnapshots: [{ id: 'new-order', invoiceGenerated: false, items: [] }]
+        });
+        assert.equal(result.invoiceCount, 2);
+        assert.equal(result.failedInvoices.length, 0);
+        assert.deepEqual(prepared, ['new-order']);
+        assert.deepEqual(linked, [['new-order', true]]);
+        assert.equal(h.opened(), 1);
+    });
+}
+
+test('a missing invoice preparation failure and unavailable diagnostics cannot stop other invoices', async function() {
+    var h = harness([invoice('cached')]);
+    h.context.console.warn = function() {};
+    h.context.invoiceService.getInvoicesByOrderIds = async function() { return []; };
+    h.context.invoiceService.preparePrintableInvoice = async function() { throw new Error('Order still needs correction'); };
+    h.context.syncSupportService.recordIssue = async function() { throw new Error('Storage unavailable'); };
+    var result = await h.context.generateCombinedPdf(['new-order', 'cached'], 'full', {}, {});
+    assert.equal(result.invoiceCount, 1);
+    assert.match(result.failedInvoices[0], /Order still needs correction/);
+    assert.deepEqual(h.sheets, [['cached']]);
+});
+
+test('failed invoice lookups are reported rather than treated as permission to create another invoice', async function() {
+    var h = harness([invoice('cached')]);
+    h.context.invoiceService.preparePrintableInvoice = async function() { assert.fail('Uncertain lookup must not create an invoice'); };
+    var result = await h.context.generateCombinedPdf(['unavailable', 'cached'], 'full', {}, {});
+    assert.equal(result.invoiceCount, 1);
+    assert.match(result.failedInvoices[0], /sync unavailable/);
+});

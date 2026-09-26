@@ -1,3 +1,4 @@
+import { withOvenLoading } from './ovenLoading.js';
 import { t } from "../core/i18n.js";
 import { notificationService } from "../core/notificationService.js";
 
@@ -119,7 +120,7 @@ export class Modal {
         const confirmButton = backdrop.querySelector('.confirm-btn');
         const modal = this;
         if (confirmButton) {
-            confirmButton.addEventListener('click', async function confirmModal() {
+            confirmButton.addEventListener('click', withOvenLoading(async function confirmModal() {
                 if (modal.isSubmitting) return;
                 modal.isSubmitting = true;
                 confirmButton.disabled = true;
@@ -128,7 +129,7 @@ export class Modal {
                 try {
                     if (modal.onConfirm) {
                         const result = await modal.onConfirm();
-                        if (result === false) return;
+                        if (result === false) return false;
                     }
                     modal.isSubmitting = false;
                     modal.close();
@@ -141,7 +142,7 @@ export class Modal {
                     confirmButton.removeAttribute('aria-busy');
                     confirmButton.textContent = modal.confirmText;
                 }
-            });
+            }, "Saving changes"));
         }
 
         if (this.closeOnBackdrop) {

@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { customerController } from "../controllers/customerController.js";
 import { router } from "../router.js";
@@ -44,7 +45,7 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
                     <option value="B" ${categoryFilter === 'B' ? 'selected' : ''}>Category B (Standard)</option>
                     <option value="C" ${categoryFilter === 'C' ? 'selected' : ''}>Category C (Basic)</option>
                 </select>
-                
+
                 <button id="toggle-lock-btn" class="btn ${isEditingLocked ? 'btn-secondary' : 'btn-primary'}" style="display: flex; align-items: center; gap: 8px;">
                     ${isEditingLocked ? '🔒 Locked' : '🔓 Editing Enabled'}
                 </button>
@@ -158,7 +159,7 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
         if (!isEditingLocked) {
             // Category Listener
             tableContainer.querySelectorAll('.inline-edit-category').forEach(select => {
-                select.addEventListener('change', async (e) => {
+                select.addEventListener('change', withOvenLoading(async (e) => {
                     const id = e.target.dataset.id;
                     const newCat = e.target.value;
                     const success = await customerController.handleUpdateCustomer(id, { category: newCat });
@@ -166,12 +167,12 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
                         const cust = customers.find(c => c.id === id);
                         if (cust) cust.category = newCat;
                     }
-                });
+                }, "Updating customers"));
             });
 
             // Generic Field Listeners (on blur to avoid too many updates)
             tableContainer.querySelectorAll('.inline-edit').forEach(input => {
-                input.addEventListener('blur', async (e) => {
+                input.addEventListener('blur', withOvenLoading(async (e) => {
                     const id = e.target.dataset.id;
                     const field = e.target.dataset.field;
                     const newVal = e.target.value;
@@ -191,7 +192,7 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
                     if (success && cust) {
                         cust[field] = newVal;
                     }
-                });
+                }, "Updating customers"));
 
                 // Also save on Enter
                 input.addEventListener('keydown', (e) => {
@@ -212,7 +213,7 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
     refreshTable();
 
     // Event Delegation for Header
-    container.querySelector('#header-wrapper').addEventListener('click', async (e) => {
+    container.querySelector('#header-wrapper').addEventListener('click', withOvenLoading(async (e) => {
         if (e.target.id === 'toggle-lock-btn' || e.target.closest('#toggle-lock-btn')) {
             isEditingLocked = !isEditingLocked;
             const headerWrapper = container.querySelector('#header-wrapper');
@@ -224,7 +225,7 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
         if (e.target.id === 'add-customer-btn') {
             window.showAddCustomerModal();
         }
-    });
+    }, "Updating customers"));
 
     container.querySelector('#header-wrapper').addEventListener('change', (e) => {
         if (e.target.id === 'category-filter') {
@@ -276,7 +277,7 @@ window.showAddCustomerModal = () => {
                 </div>
             </form>
         `,
-        onConfirm: async () => {
+        onConfirm: withOvenLoading(async () => {
             const form = document.getElementById('add-customer-form');
             if (!form.reportValidity()) return false;
 
@@ -288,12 +289,12 @@ window.showAddCustomerModal = () => {
             const success = await customerController.handleCreateCustomer(data);
             if (success) renderCustomers();
             return success;
-        }
+        }, "Updating customers")
     });
     modal.open();
 };
 
-window.editCustomer = async function editCustomer(id) {
+window.editCustomer = withOvenLoading(async function editCustomer(id) {
     // The visible row is enough to open the editor; saving still requires cloud authorization.
     const customer = displayedCustomers.find(function(row) { return row.id === id; }) || await customerController.getCustomerById(id);
     if (!customer) return;
@@ -371,7 +372,7 @@ window.editCustomer = async function editCustomer(id) {
             </form>
         `,
         confirmText: 'Save Changes',
-        onConfirm: async function saveCustomer() {
+        onConfirm: withOvenLoading(async function saveCustomer() {
             const form = document.getElementById('edit-customer-form');
             if (!form.reportValidity()) return false;
 
@@ -392,11 +393,11 @@ window.editCustomer = async function editCustomer(id) {
             Object.assign(customer, changes);
             renderCustomers(displayedCustomers);
             return true;
-        }
+        }, "Updating customers")
     });
 
     modal.open();
-};
+}, "Updating customers");
 
 window.archiveCustomer = function archiveCustomer(id) {
     const customer = displayedCustomers.find(function(row) { return row.id === id; });
@@ -407,13 +408,13 @@ window.archiveCustomer = function archiveCustomer(id) {
         busyText: 'Archiving…',
         content: '<p>Archive <strong>' + name + '</strong>?</p><p>The customer will leave the active list. Their record and invoice history will be kept.</p>',
         confirmText: 'Archive Customer',
-        onConfirm: async function confirmArchiveCustomer() {
+        onConfirm: withOvenLoading(async function confirmArchiveCustomer() {
             const success = await customerController.archiveCustomer(id);
             if (!success) return false;
             displayedCustomers = displayedCustomers.filter(function(row) { return row.id !== id; });
             renderCustomers(displayedCustomers);
             return true;
-        }
+        }, "Updating customers")
     });
     modal.open();
 };

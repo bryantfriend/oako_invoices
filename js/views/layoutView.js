@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { Sidebar } from "../components/sidebar.js";
 import { authService } from "../core/authService.js";
 import { i18n } from "../core/i18n.js";
@@ -247,7 +248,7 @@ class LayoutView {
 
         const button = document.getElementById('sync-now-btn');
         if (button) {
-            button.addEventListener('click', async function() {
+            button.addEventListener('click', withOvenLoading(async function() {
                 console.info('[SYNC_NOW] clicked');
                 const originalText = button.textContent;
                 button.disabled = true;
@@ -274,12 +275,12 @@ class LayoutView {
                     button.disabled = false;
                     button.textContent = originalText || 'Sync Now';
                 }
-            });
+            }, "Updating sync status"));
         }
 
         const detailsButton = document.getElementById('sync-details-btn');
         if (detailsButton) {
-            detailsButton.addEventListener('click', async function() {
+            detailsButton.addEventListener('click', withOvenLoading(async function() {
                 const diagnostics = await syncDiagnosticsService.getDiagnostics();
                 const modal = new Modal({
                     title: 'Synchronization Details',
@@ -315,7 +316,7 @@ class LayoutView {
                     `
                 });
                 modal.open();
-            });
+            }, "Updating sync status"));
         }
     }
 }

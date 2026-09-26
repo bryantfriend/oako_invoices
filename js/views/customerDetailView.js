@@ -1,3 +1,4 @@
+import { withOvenLoading } from '../components/ovenLoading.js';
 import { layoutView } from "./layoutView.js";
 import { customerController } from "../controllers/customerController.js";
 import { DataTable } from "../components/dataTable.js";
@@ -126,7 +127,7 @@ export const renderCustomerDetail = async ({ id }) => {
                     <div id="customer-returns-table"></div>
                 </div>
             </div>
-            
+
             <!-- Orders List -->
             <div class="card" style="display: flex; flex-direction: column;">
                 <h3 style="padding: 16px; font-size: 16px; font-weight: 700; border-bottom: 1px solid var(--color-gray-100);">${t('order_history')}</h3>
@@ -247,7 +248,7 @@ export const renderCustomerDetail = async ({ id }) => {
     }
 
     // Helper for Invoice Navigation (Same as Dashboard)
-    window.printOrder = async (id) => {
+    window.printOrder = withOvenLoading(async (id) => {
         if (pendingPrintOrderIds.has(id)) {
             return;
         }
@@ -279,9 +280,9 @@ export const renderCustomerDetail = async ({ id }) => {
                 stopInvoicePreparationProgress();
             }
         }
-    };
+    }, "Updating customer orders");
 
-    window.repeatCustomerOrder = async (orderId) => {
+    window.repeatCustomerOrder = withOvenLoading(async (orderId) => {
         const sourceOrder = orders.find(order => order.id === orderId);
         if (!sourceOrder) return;
 
@@ -305,13 +306,13 @@ export const renderCustomerDetail = async ({ id }) => {
 
         sessionStorage.setItem('repeatOrderDraft', JSON.stringify(repeatDraft));
         router.navigate(ROUTES.CREATE_ORDER);
-    };
+    }, "Updating customer orders");
 
-    window.togglePrinted = async (id, isPrintedState) => {
+    window.togglePrinted = withOvenLoading(async (id, isPrintedState) => {
         const { orderService } = await import("../services/orderService.js");
         await orderService.updateOrder(id, { isPrinted: isPrintedState });
         renderCustomerDetail({ id: customer.id });
-    };
+    }, "Updating customer orders");
 
     // Import edit logic if needed, or rely on global scope if customerView loaded it (safest to re-import or use shared)
     // For now, simple edit button might just link back to main customer list or modal if we want complexity.

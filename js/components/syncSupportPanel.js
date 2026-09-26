@@ -1,3 +1,4 @@
+import { withOvenLoading } from './ovenLoading.js';
 import { syncSupportService } from '../services/syncSupportService.js';
 import { collectSyncSupport } from '../services/syncSupportCollector.js';
 import { syncRecoveryService } from '../services/syncRecoveryService.js';
@@ -65,7 +66,7 @@ export async function mountSyncSupportPanel(container) {
     }
     container.innerHTML = renderSyncSupportReport(report);
     container.querySelectorAll('[data-support]').forEach(function(button) {
-        button.addEventListener('click', async function() {
+        button.addEventListener('click', withOvenLoading(async function() {
             var status = container.querySelector('[data-support-status]');
             button.disabled = true;
             try {
@@ -92,10 +93,10 @@ export async function mountSyncSupportPanel(container) {
             } finally {
                 button.disabled = false;
             }
-        });
+        }, "Preparing sync details"));
     });
     container.querySelectorAll('[data-retry-sync]').forEach(function(button) {
-        button.addEventListener('click', async function() {
+        button.addEventListener('click', withOvenLoading(async function() {
             var status = container.querySelector('[data-support-status]');
             button.disabled = true;
             try {
@@ -108,6 +109,6 @@ export async function mountSyncSupportPanel(container) {
             } finally {
                 button.disabled = false;
             }
-        });
+        }, "Preparing sync details"));
     });
 }
