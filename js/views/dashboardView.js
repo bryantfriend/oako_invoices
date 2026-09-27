@@ -371,7 +371,14 @@ export const renderDashboard = async (params, routeContext) => {
         }
         // Stock depends on the refreshed orders. Loading both in parallel can keep old reservations.
         var refreshedInventoryDate = getLocalDateKey(new Date());
-        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId });
+        var refreshedInventoryData = inventoryCategories;
+        var inventoryError = null;
+        try {
+            refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId, forceRefresh: true, ordersAlreadyRefreshed: true });
+        } catch (error) {
+            // Inventory availability must not block newly loaded orders from appearing.
+            inventoryError = error;
+        }
         console.info('[DASHBOARD_REFRESH] cache updated');
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             console.info('[DASHBOARD_REFRESH] render skipped stale route');
@@ -386,7 +393,7 @@ export const renderDashboard = async (params, routeContext) => {
         returnInvoices = refreshedReturnInvoices;
         intelligenceSettings = refreshedIntelligenceSettings;
         inventoryCategories = refreshedInventoryData;
-        inventoryDate = refreshedInventoryDate;
+        if (!inventoryError) inventoryDate = refreshedInventoryDate;
         pendingCheckmarkUpdates.clear();
         updatedCheckmarkUpdates.clear();
         renderUI();
@@ -395,12 +402,15 @@ export const renderDashboard = async (params, routeContext) => {
         });
         console.info('[DASHBOARD_REFRESH] rendered current route');
         restoreScrollPosition(scrollTop);
+        if (inventoryError) {
+            notificationService.error('Orders updated, but stock could not be refreshed. Use Refresh Stock to retry.');
+        }
     };
 
 
     const refreshInventoryStrip = async function refreshInventoryStrip() {
         var refreshedInventoryDate = getLocalDateKey(new Date());
-        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId });
+        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId, forceRefresh: true });
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             ignoreStaleRouteResult('dashboard-inventory-strip', expectedRoute, navigationId);
             return;
@@ -1081,7 +1091,7 @@ export const renderDashboard = async (params, routeContext) => {
             .sort((a, b) => (a.left ?? 0) - (b.left ?? 0));
 
         if (products.length === 0) {
-            return '';
+            return '<div class="dashboard-card inventory-strip"><h3>Inventory Left Today</h3><p>Stock has not loaded, or no inventory products are configured.</p><button id="refresh-stock-btn" class="btn btn-secondary btn-sm">Refresh Stock</button> <button id="open-inventory-btn" class="btn btn-secondary btn-sm">Open Inventory</button></div>';
         }
 
         return `
@@ -2319,6 +2329,7 @@ export const renderDashboard = async (params, routeContext) => {
         window.setTimeout(function refreshInitialInventory() {
             refreshInventoryStrip().catch(function(error) {
                 console.warn('Inventory strip refresh failed.', error);
+                notificationService.error('Stock could not be loaded. Use Refresh Stock to retry.');
             });
         }, 0);
     }

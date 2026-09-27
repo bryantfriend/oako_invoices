@@ -84,7 +84,8 @@ export const dashboardController = {
             return buildDashboardResult(result, reconciliationError);
         } catch (error) {
             console.error("Dashboard Refresh Error:", error);
-            return { orders: [], returnOrders: [], returnInvoices: [], metrics: {}, meta: { error: true } };
+            // A failed read is not an empty collection. Let the view retain its last result.
+            throw error;
         }
     },
 

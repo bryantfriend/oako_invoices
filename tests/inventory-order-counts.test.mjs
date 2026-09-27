@@ -206,3 +206,11 @@ test('Production Planner does not subtract reservations for the same orders agai
         assert.equal(row.surplus, 2);
     });
 });
+
+test('Orders can refresh production while reusing the orders it just loaded', async function() {
+    var harness = createHarness();
+    harness.state.orders = [Object.assign(makeDraft(harness.products, 4), { status: 'confirmed', isPrinted: true })];
+    var rows = await loadRows(harness, { forceRefresh: true, ordersAlreadyRefreshed: true });
+    assert.equal(harness.state.loads.length, 0);
+    rows.forEach(function(row) { assert.equal(row.left, 6); });
+});

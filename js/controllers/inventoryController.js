@@ -54,7 +54,7 @@ export const inventoryController = {
 
             // 5. Count saved orders for their scheduled date, including drafts.
             var orderSnapshot = sessionDataStore.getOrdersSnapshot();
-            var shouldRefreshOrders = safeOptions.forceRefresh === true || Boolean(orderSnapshot && orderSnapshot.shouldRefresh);
+            var shouldRefreshOrders = (safeOptions.forceRefresh === true && safeOptions.ordersAlreadyRefreshed !== true) || Boolean(orderSnapshot && orderSnapshot.shouldRefresh);
             var allOrders = orderSnapshot && Array.isArray(orderSnapshot.records) ? orderSnapshot.records : null;
             if (!allOrders || shouldRefreshOrders) {
                 var loadedOrders = await sessionDataStore.loadOrders({

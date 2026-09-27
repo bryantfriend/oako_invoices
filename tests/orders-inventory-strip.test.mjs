@@ -19,7 +19,7 @@ function createHarness() {
     var state = {
         now: Date.parse('2026-09-05T19:30:00Z'),
         orders: [], calls: [], rendered: [], timers: [], currentRoute: true,
-        navigations: [], listeners: {}, refreshBarrier: null
+        navigations: [], listeners: {}, refreshBarrier: null, inventoryError: null, errors: [], options: []
     };
     class BishkekDate extends Date {
         constructor(value) { super(value === undefined ? state.now : value); }
@@ -50,7 +50,9 @@ function createHarness() {
             }
         },
         inventoryController: {
-            loadInventoryData: async function(date) {
+            loadInventoryData: async function(date, options) {
+                state.options.push(options);
+                if (state.inventoryError) throw state.inventoryError;
                 state.calls.push(date);
                 var totals = buildInventoryOrderTotals(state.orders, date);
                 return [{ name: 'Products', products: products.map(function(product) {
@@ -72,7 +74,7 @@ function createHarness() {
         restoreScrollPosition: function() {},
         getActiveOrders: function(orders) { return orders; },
         refreshPrintableInvoiceMap: async function() {},
-        notificationService: { error: function(message) { throw new Error(message); } },
+        notificationService: { error: function(message) { state.errors.push(message); } },
         escapeHtml: function(value) { return String(value); },
         window: { setTimeout: function(callback) { state.timers.push(callback); } },
         recordRender: function(categories) { state.rendered.push(categories); }
@@ -91,6 +93,7 @@ function createHarness() {
         globalThis.workflow = {
             refresh: refreshDashboardDataPreservingState,
             strip: refreshInventoryStrip,
+            empty: function() { return renderInventoryStrip([]); },
             initial: function(shouldRunBackgroundRefresh) {
                 ${source.slice(source.includes('    // Initial stock refresh') ? source.indexOf('    // Initial stock refresh') : source.lastIndexOf('    window.setTimeout(function() {'), source.lastIndexOf('\n};'))}
             }
@@ -167,4 +170,30 @@ test('Refresh Stock updates orders before showing the remaining quantities', asy
         assert.equal(product.left, 17);
     });
     assert.match(harness.mount.innerHTML, /2026-09-06/);
+});
+
+test('Stock refresh requests fresh production without duplicating the Orders refresh', async function() {
+    var harness = createHarness();
+    await harness.workflow.refresh();
+    assert.equal(harness.state.options[0].forceRefresh, true);
+    assert.equal(harness.state.options[0].ordersAlreadyRefreshed, true);
+    await harness.workflow.strip();
+    assert.equal(harness.state.options[1].forceRefresh, true);
+});
+
+test('Inventory failure still renders refreshed orders and retains previous stock', async function() {
+    var harness = createHarness();
+    await harness.workflow.refresh();
+    var previous = harness.state.rendered[0];
+    harness.state.inventoryError = new Error('Inventory unavailable');
+    await harness.workflow.refresh();
+    assert.equal(harness.state.rendered.length, 2);
+    assert.equal(harness.state.rendered[1], previous);
+    assert.match(harness.state.errors[0], /Orders updated/);
+});
+
+test('Empty inventory retains recovery controls', function() {
+    var harness = createHarness();
+    assert.match(harness.workflow.empty(), /refresh-stock-btn/);
+    assert.match(harness.workflow.empty(), /open-inventory-btn/);
 });

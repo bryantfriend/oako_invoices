@@ -13,13 +13,13 @@ var bundle = await build({
     } }]
 });
 
-function harness(emptyCatalog) {
+function harness(emptyCatalog, refreshError) {
     var orders = [{ id: 'sale', status: 'confirmed', totalAmount: 120 }];
     var module = { exports: {} };
     var dependencies = {
         sessionDataStore: {
             loadOrders: async function() { return { records: orders, extras: { returnInvoices: [{ id: 'return' }] } }; },
-            refreshOrders: async function() { return { records: orders }; }
+            refreshOrders: async function() { if (refreshError) throw refreshError; return { records: orders }; }
         },
         productReconciliationService: { productReconciliationService: {
             loadContext: async function() { if (emptyCatalog) return { products: [] }; throw new Error('unavailable'); },
@@ -53,4 +53,9 @@ test('an unavailable product catalog does not erase historical Orders statistics
     var result = await harness(true).loadDashboard();
     assert.equal(result.orders.length, 1);
     assert.equal(result.metrics.totalConfirmedAmount, 120);
+});
+
+test('A failed refresh rejects instead of returning an empty Orders collection', async function() {
+    var api = harness(false, new Error('Network unavailable'));
+    await assert.rejects(api.refreshDashboard(), /Network unavailable/);
 });
