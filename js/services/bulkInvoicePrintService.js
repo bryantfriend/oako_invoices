@@ -340,6 +340,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
         var pdf = createPdf(settings, filename);
         var hasPdfPage = false;
         var completedInvoices = 0;
+        var includedInvoices = [];
         var invoiceIndex = 0;
 
         while (invoiceIndex < invoices.length) {
@@ -400,6 +401,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                     await yieldToBrowser();
                 }
                 completedInvoices = completedInvoices + 1;
+                includedInvoices.push(invoice);
             } catch (invoiceError) {
                 failedInvoices.push((invoice ? getInvoiceLabel(invoice) : 'Order ' + orderIds[invoiceIndex]) + ': ' + invoiceError.message);
                 try {
@@ -442,6 +444,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
         return Object.assign({}, opened, {
             invoiceCount: completedInvoices,
             failedInvoices: failedInvoices,
+            includedInvoices: includedInvoices,
             layout: layout,
             durationMs: Date.now() - startedAt
         });

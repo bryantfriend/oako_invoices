@@ -202,9 +202,16 @@ async function writeInvoiceSettingsToServer(normalized) {
 }
 
 export const settingsService = {
-    async getInvoiceSettings() {
+    async getInvoiceSettings(options) {
         if (invoiceSettingsCache) {
             return applyPendingSettings(invoiceSettingsCache);
+        }
+
+        if (options && options.preferCachedDependencies) {
+            var savedSettings = (await readCachedRowsAsync(SETTINGS_CACHE_KEY))[0];
+            if (savedSettings) {
+                return applyPendingSettings({ ...DEFAULT_INVOICE_SETTINGS, ...savedSettings, __fromFallback: false, __fromCache: true });
+            }
         }
 
         if (!offlineStatusService.isOnline()) {

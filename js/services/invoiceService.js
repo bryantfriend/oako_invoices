@@ -761,10 +761,22 @@ export const invoiceService = {
             return orderId && allIds.indexOf(orderId) === index;
         });
         const invoicesByOrderId = {};
+        // Offline-created invoices already have everything needed for printing.
+        // Do not wait for a cloud query before looking in the durable local queue.
+        const localInvoices = await offlineQueueService.getLocalInvoiceSnapshots();
+        Object.keys(localInvoices).forEach(function collectLocalInvoice(id) {
+            var invoice = localInvoices[id];
+            if (invoice && uniqueIds.indexOf(invoice.orderId) !== -1) {
+                invoicesByOrderId[invoice.orderId] = invoice;
+            }
+        });
+        const missingIds = uniqueIds.filter(function needsInvoiceLookup(orderId) {
+            return !invoicesByOrderId[orderId];
+        });
         let startIndex = 0;
 
-        while (startIndex < uniqueIds.length) {
-            const chunk = uniqueIds.slice(startIndex, startIndex + 30);
+        while (startIndex < missingIds.length) {
+            const chunk = missingIds.slice(startIndex, startIndex + 30);
             const invoiceQuery = query(
                 collection(db, COLLECTION),
                 where('orderId', 'in', chunk)
@@ -1303,6 +1315,13 @@ export const invoiceService = {
 
     async getInvoiceByOrderId(orderId) {
         try {
+            var savedInvoices = await offlineQueueService.getLocalInvoiceSnapshots();
+            var savedInvoice = Object.values(savedInvoices).find(function matchesOrder(invoice) {
+                return invoice.orderId === orderId;
+            });
+            if (savedInvoice) {
+                return normalizeArchivedRecord(savedInvoice, 'open');
+            }
             const q = query(collection(db, COLLECTION), where('orderId', '==', orderId));
             const rows = await getDocsWithCache(q, {
                 collectionName: COLLECTION,

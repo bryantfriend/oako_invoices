@@ -11,6 +11,7 @@ import { createStatusBadge } from "../components/statusBadge.js";
 import { renderInvoiceSyncPill } from "../components/syncStatusBadge.js";
 import { createCard } from "../components/card.js";
 import { Modal } from "../components/modal.js";
+import { showQuickPrintConfirmation } from '../components/quickPrintConfirmation.js';
 import { renderLoadingQuotePanel, startLoadingQuoteRotation, stopLoadingQuoteRotation } from "../components/loadingQuotes.js";
 import { router } from "../router.js";
 import { ROUTES } from "../core/constants.js";
@@ -1788,17 +1789,17 @@ export const renderDashboard = async (params, routeContext) => {
                 var printResult = result.data;
                 var printedCount = printResult.invoiceCount;
                 notificationService.success(String(printedCount) + ' selected printable invoice' + (printedCount === 1 ? ' is' : 's are') + ' ready in one preview tab.');
-                if (printResult.failedInvoices && printResult.failedInvoices.length > 0) {
-                    var skippedModal = new Modal({
-                        title: 'Quick Print: ' + printedCount + ' ready, ' + printResult.failedInvoices.length + ' skipped',
-                        content: '<p>The available invoices are ready in the preview tab. These invoices could not be printed:</p><ul>' + printResult.failedInvoices.map(function(message) {
-                            return '<li>' + escapeHtml(message) + '</li>';
-                        }).join('') + '</ul><p>Your selection has been kept so you can retry after resolving these issues.</p>',
-                        confirmText: 'Close',
-                        cancelText: 'Close'
+                showQuickPrintConfirmation(printResult, function refreshPrintedOrder(invoice, result) {
+                    var order = allOrders.find(function matchesPrintedOrder(record) {
+                        return record.id === invoice.orderId;
                     });
-                    skippedModal.open();
-                }
+                    if (order) {
+                        Object.assign(order, result.orderPatch || {}, { isPrinted: true });
+                    }
+                    if (isNavigationStillCurrent(navigationId, expectedRoute)) {
+                        renderUI();
+                    }
+                });
             } catch (error) {
                 ovenProgress.fail();
                 if (previewWindow && !previewWindow.closed && previewWindow.location.href === 'about:blank') {

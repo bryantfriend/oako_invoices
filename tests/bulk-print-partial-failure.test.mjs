@@ -59,6 +59,7 @@ for (const layout of ['full', 'two-up-portrait']) {
         var result = await h.context.generateCombinedPdf(['token-failure', 'good', 'partial', 'invalid', 'missing', 'last'], layout, {}, {});
         assert.equal(result.invoiceCount, 2);
         assert.equal(result.failedInvoices.length, 4);
+        assert.deepEqual(Array.from(result.includedInvoices, function(record) { return record.id; }), ['good', 'last']);
         assert.match(result.failedInvoices.join(';'), /token sync failed/);
         assert.match(result.failedInvoices.join(';'), /Order missing: sync unavailable/);
         assert.deepEqual(h.sheets, layout === 'full' ? [['good'], ['last']] : [['good', 'good'], ['last', 'last']]);

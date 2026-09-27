@@ -4,7 +4,7 @@ import { settingsService } from "../../../../services/settingsService.js";
 import resultHelpers from "../../../engine/resultHelpers.js";
 
 async function addQuickPrintSelectedInvoicesContext(intent) {
-  var settings = await settingsService.getInvoiceSettings();
+  var settings = await settingsService.getInvoiceSettings({ preferCachedDependencies: true });
   var context = Object.assign({}, intent.context || {}, {
     currentUser: auth.currentUser,
     settings: settings || {},
