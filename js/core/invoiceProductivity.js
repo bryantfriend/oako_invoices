@@ -4,6 +4,7 @@ import {
     buildPricedOrderItemFromProduct,
 } from './pricing.js';
 import { getLocalDateKey } from '../services/operationsPlanningService.js';
+import { getOrderDateKey } from './dailyOrders.js';
 
 export function createWorkflowId() {
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
@@ -235,8 +236,8 @@ export function buildBakeryProgress(orders, date) {
         if (
             order.id &&
             !order.archived &&
-            ['cancelled', 'archived'].indexOf(order.status) === -1 &&
-            getLocalDateKey(order.orderDate) === date
+            ['cancelled', 'canceled', 'archived'].indexOf(order.status) === -1 &&
+            (!date || getOrderDateKey(order) === date)
         )
             unique[order.id] = order;
     });

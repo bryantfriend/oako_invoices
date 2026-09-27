@@ -16,10 +16,13 @@ export function mountInvoiceProductivityPanel(mount, orders, selectedDate) {
         return event.at >= cutoff;
     });
     var stats = summarizeWorkflowEvents(recentEvents);
-    var today = selectedDate || getLocalDateKey(new Date());
+    var today = getLocalDateKey(new Date());
     var dateLabel =
-        today === getLocalDateKey(new Date()) ? 'Today’s shared bakery' : 'Shared bakery · ' + today;
-    var bakery = buildBakeryProgress(orders || [], today);
+        selectedDate ? (selectedDate === today ? 'Today’s shared bakery' : 'Shared bakery · ' + selectedDate) : 'Shared bakery · All active orders';
+    var bakery = buildBakeryProgress(orders || [], selectedDate);
+    var readyMessage = selectedDate ? 'The day’s tray is ready!' : 'All active orders are confirmed printed!';
+    var emptyMessage = selectedDate ? 'No active orders for ' + selectedDate + '. Orders from other dates are not counted here.' : 'No active orders to print. Archived and cancelled orders are not counted here.';
+    var celebrationKey = selectedDate || 'active-orders-' + today;
     var effects = workflowLocalStore.list('effects');
     var loaves = '';
     for (var index = 0; index < Math.min(12, bakery.total); index += 1) {
@@ -72,10 +75,10 @@ export function mountInvoiceProductivityPanel(mount, orders, selectedDate) {
               bakery.total +
               ' orders confirmed printed</strong><p>' +
               (bakery.complete
-                  ? 'The day’s tray is ready! 🥳'
+                  ? readyMessage + ' 🥳'
                   : bakery.total
                     ? 'Every completed invoice adds a loaf to the tray.'
-                    : 'Your first order starts the tray.') +
+                    : emptyMessage) +
               '</p></div><div class="bakery-tray">' +
               loaves +
               '</div><label><input type="checkbox" data-preference="sound" ' +
@@ -102,12 +105,12 @@ export function mountInvoiceProductivityPanel(mount, orders, selectedDate) {
         wakeWorkflowEffects();
         this.textContent = 'Retry scheduled';
     };
-    if (preferences.fun && bakery.complete && !workflowLocalStore.read('celebrated', today, false)) {
-        workflowLocalStore.write('celebrated', today, true);
+    if (preferences.fun && bakery.complete && !workflowLocalStore.read('celebrated', celebrationKey, false)) {
+        workflowLocalStore.write('celebrated', celebrationKey, true);
         gamificationService.celebrateBadge({
             icon: '🥖',
-            name: 'The day’s tray is ready!',
-            description: 'All ' + bakery.total + ' orders for today are confirmed printed.',
+            name: readyMessage,
+            description: 'All ' + bakery.total + (selectedDate ? ' orders for ' + selectedDate : ' active orders') + ' are confirmed printed.',
         });
     }
 }
