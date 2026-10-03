@@ -2,20 +2,24 @@
   "name": "Kyrgyz Organics",
   "short_name": "KyrgyzOrg",
   "description": "Automated Invoice Program for Kyrgyz Organics",
+  "id": "./index.html",
+  "scope": "./",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#16a34a",
   "icons": [
     {
-      "src": "https://placehold.co/192x192?text=KO",
+      "src": "./assets/icons/app-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "https://placehold.co/512x512?text=KO",
+      "src": "./assets/icons/app-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

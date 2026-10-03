@@ -1,9 +1,12 @@
 {
   "name": "oako-invoices",
-  "version": "2.5.19",
+  "version": "2.77.0",
   "description": "A premium, production-ready admin tool for managing orders and invoices, replacing spreadsheet workflows with a modern web interface.",
   "scripts": {
     "build": "node scripts/build.cjs",
+    "desktop:build": "npm --prefix desktop run build",
+    "desktop:start": "npm --prefix desktop start",
+    "desktop:dist": "npm --prefix desktop run dist",
     "test": "node --test tests/*.test.mjs",
     "test:rules": "node scripts/test-firebase-rules.cjs",
     "check": "npm test && npm run build"

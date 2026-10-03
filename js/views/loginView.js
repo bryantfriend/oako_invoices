@@ -54,6 +54,7 @@ export const renderLogin = async () => {
                         ${t('login_btn')}
                     </button>
                 </form>
+                <div style="text-align: center; margin-top: 16px;"><app-install-control></app-install-control></div>
             </div>
         </div>
     `;

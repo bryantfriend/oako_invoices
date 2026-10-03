@@ -1,0 +1,15 @@
+app-install-control { display: inline-block; }
+app-install-control button { white-space: nowrap; }
+.app-install-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; border: 1px solid #d1d5db; border-radius: 16px; color: #1f2937; background: white; overflow-y: auto; box-shadow: 0 24px 80px #0003; }
+.app-install-dialog::backdrop { background: #0f172a80; }
+.app-install-dialog p, .app-install-dialog li { font-size: 14px; line-height: 1.6; margin: 10px 0; }
+.app-install-dialog ul { padding-left: 20px; }
+.app-install-heading { display: flex; gap: 14px; align-items: center; }
+.app-install-heading h2 { font-size: 21px; }
+.app-install-heading p { color: #6b7280; margin: 4px 0; }
+.app-install-offline { margin: 18px 0; padding: 14px; background: #f0fdf4; border-radius: 10px; }
+.app-install-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.app-install-dialog [hidden] { display: none !important; }
+@media (max-width: 600px) { .app-install-dialog { padding: 18px; } app-install-control .btn { padding: 6px 8px; font-size: 11px; } }
+@media (max-width: 900px) { #top-bar app-install-control { display: none; } }
+@media print { app-install-control, .app-install-dialog { display: none !important; } }

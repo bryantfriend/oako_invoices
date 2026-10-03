@@ -53,6 +53,11 @@ export const renderSettings = async () => {
 
     container.innerHTML = `
         <div class="animate-slide-up" style="max-width: 800px; margin: 0 auto;">
+            <section class="card" data-app-install-section style="margin-bottom: 20px;">
+                <h2 style="font-size: 18px; margin-bottom: 8px;">Install Kyrgyz Organics</h2>
+                <p style="margin-bottom: 12px;">Open your orders and invoices from your device’s apps. Use your existing account.</p>
+                <app-install-control></app-install-control>
+            </section>
             <form id="settings-form">
                 ${createCard({
         title: 'Business Information',

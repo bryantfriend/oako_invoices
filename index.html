@@ -23,8 +23,11 @@
     <!-- Web App Manifest -->
     <link rel="manifest" href="./manifest.json">
 
-    <!-- Favicon placeholder -->
-    <link rel="icon" href="data:,">
+    <link rel="icon" type="image/png" href="./assets/icons/app-192.png">
+    <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+    <meta name="theme-color" content="#16a34a">
+    <link rel="stylesheet" href="./css/app-install.css">
+    <script type="module" src="./js/components/appInstallControl.js"></script>
 
     <script>
         var indexedDbWarningShown = false;
@@ -173,7 +176,7 @@
     <script src="./vendor/jspdf.umd.min.js"></script>
 
     <!-- Application Logic -->
-    <script type="module" src="./js/main.js?v=2.75"></script>
+    <script type="module" src="./js/main.js?v=2.77"></script>
 </body>
 
 </html>

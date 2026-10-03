@@ -1,4 +1,7 @@
 node_modules/
+desktop/node_modules/
+desktop/app/
+output/windows/
 .workbox/
 ko-server.*.txt
 

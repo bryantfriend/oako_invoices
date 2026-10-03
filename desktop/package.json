@@ -1,0 +1,58 @@
+{
+  "name": "kyrgyz-organics-desktop",
+  "version": "2.77.0",
+  "private": true,
+  "type": "module",
+  "description": "Kyrgyz Organics Windows order and invoice application",
+  "author": "Kyrgyz Organics",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "node build.cjs",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && node node_modules/electron/install.js && electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "chart.js": "4.5.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "electronDist": "node_modules/electron/dist",
+    "artifactName": "Kyrgyz-Organics-Setup-${version}.${ext}",
+    "appId": "kg.kyrgyzorganics.invoices",
+    "productName": "Kyrgyz Organics",
+    "directories": {
+      "output": "../output/windows"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "windowPolicy.cjs",
+      "updateManager.cjs",
+      "app/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "app/assets/icons/app.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bryantfriend",
+        "repo": "oako_invoices",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

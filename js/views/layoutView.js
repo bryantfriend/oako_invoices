@@ -113,6 +113,7 @@ class LayoutView {
                     <span class="global-search-label">Search</span>
                     <kbd>Ctrl K</kbd>
                 </button>
+                <app-install-control></app-install-control>
                 <div id="sync-status-mount" class="sync-status-mount"></div>
                 <!-- Language Selector -->
                 <div class="language-selector">

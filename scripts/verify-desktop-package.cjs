@@ -1,0 +1,28 @@
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert/strict');
+const crypto = require('node:crypto');
+const asar = require('../desktop/node_modules/@electron/asar');
+const yaml = require('../desktop/node_modules/js-yaml');
+const output = path.resolve(__dirname, '../output/windows');
+const archive = path.join(output, 'win-unpacked/resources/app.asar');
+const entries = asar.listPackage(archive);
+const manifest = yaml.load(fs.readFileSync(path.join(output, 'latest.yml'), 'utf8'));
+const installer = fs.readFileSync(path.join(output, manifest.path));
+assert.equal(crypto.createHash('sha512').update(installer).digest('base64'), manifest.sha512);
+assert.equal(installer.length, manifest.files[0].size);
+for (const name of ['main.cjs', 'preload.cjs', 'updateManager.cjs', 'windowPolicy.cjs']) {
+    assert.equal(asar.extractFile(archive, name).toString(), fs.readFileSync(path.resolve(__dirname, '../desktop', name), 'utf8'));
+}
+assert.equal(entries.some(function(entry) { return /node_modules[\\/](?:electron-builder|app-builder-lib|oako-invoices)(?:[\\/]|$)/.test(entry); }), false);
+assert.equal(entries.some(function(entry) { return /[\\/](?:\.git|\.aws|output)[\\/]/.test(entry); }), false);
+const html = asar.extractFile(archive, path.join('app', 'index.html')).toString();
+assert.equal(asar.extractFile(archive, path.join('app', 'desktop.css')).toString(), fs.readFileSync(path.resolve(__dirname, '../desktop/renderer/desktop.css'), 'utf8'));
+assert.doesNotMatch(html, /<script[^>]+src="https:/);
+assert.doesNotMatch(html, /fonts\.googleapis/);
+assert.match(html, /\.\/renderer\.js/);
+assert.ok(asar.extractFile(archive, path.join('app', 'vendor', 'chart.umd.js')).length > 0);
+const renderer = asar.extractFile(archive, path.join('app', 'renderer.js')).toString();
+assert.match(renderer, /https:\/\/bryantfriend\.github\.io\/oako_invoices\/index\.html/);
+assert.doesNotMatch(renderer, /(?:from|import\()\s*["']https:/);
+console.log('Desktop package verified: matching source, local dependencies, installer checksum and update metadata.');
