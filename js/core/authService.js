@@ -6,10 +6,10 @@ import {
     onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
-    doc,
-    getDoc
+    doc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { store } from "./store.js";
+import { readStaffProfileFromServer } from './staffProfileRead.js';
 import sessionDataStore from "../services/sessionDataStore.js";
 
 // Keep this in sync with firebase/firestore.rules. These legacy staff roles
@@ -193,7 +193,7 @@ class AuthService {
 
         try {
             const profileRef = doc(db, 'users', user.uid);
-            const snapshot = await withTimeout(getDoc(profileRef), ADMIN_PROFILE_TIMEOUT_MS, 'Admin profile fetch');
+            const snapshot = await withTimeout(readStaffProfileFromServer(profileRef), ADMIN_PROFILE_TIMEOUT_MS, 'Admin profile fetch');
             const profile = snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
             const role = profile ? profile.role || null : null;
 

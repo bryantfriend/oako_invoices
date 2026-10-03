@@ -118,3 +118,25 @@ test('failed invoice lookups are reported rather than treated as permission to c
     assert.equal(result.invoiceCount, 1);
     assert.match(result.failedInvoices[0], /sync unavailable/);
 });
+
+test('Windows Quick Print skips raster capture and keeps incomplete invoices visible without confirming paper', async function() {
+    var h = harness([invoice('cached'), invoice('invalid', { secureToken: '' })]);
+    var nativeRecords;
+    var nativeOptions;
+    h.context.window = { desktopApp: {} };
+    h.context.createPdf = function() { assert.fail('Windows printing must not construct a raster PDF'); };
+    h.context.capturePage = function() { assert.fail('Windows printing must not capture canvases'); };
+    h.context.showNativeInvoicePrint = async function(popup, records, settings, options) {
+        nativeRecords = records;
+        nativeOptions = options;
+        return { pageCount: 1 };
+    };
+    var result = await h.context.generateCombinedPdf(['cached', 'invalid'], 'two-up-portrait', {}, { previewWindow: {} });
+    assert.equal(result.nativePrint, true);
+    assert.equal(result.invoiceCount, 1);
+    assert.equal(nativeRecords[0].id, 'cached');
+    assert.equal(nativeOptions.autoPrint, false);
+    assert.equal(nativeOptions.layout, 'two-up-portrait');
+    assert.equal(nativeOptions.skippedInvoices.length, 1);
+    assert.equal(h.opened(), 0);
+});

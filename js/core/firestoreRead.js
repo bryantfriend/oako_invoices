@@ -1,4 +1,4 @@
-import { getDocs, getDocsFromCache } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getDocsFromServer, getDocsFromCache } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { createCollectionTimeoutError, logCollectionError } from "./firestoreDiagnostics.js";
 import { openOfflineDexieDatabase } from "../services/offlineDexieDb.js";
 import { connectionStateService } from "../services/connectionStateService.js";
@@ -319,7 +319,7 @@ function shouldSkipServerRead(options = {}) {
         return false;
     }
     const connection = getConnectionSnapshot();
-    return connection.browserOnline === false || connection.mode === 'offline';
+    return connection.browserOnline === false || (connection.checkedAt && connection.mode === 'offline');
 }
 
 async function readRowsFromAnyCache(queryRef, collectionName, cacheKey, reason) {
@@ -364,7 +364,9 @@ export async function getDocsWithCache(queryRef, options = {}) {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
         try {
-            const snapshot = await withTimeout(enqueueFirestoreRead(function() { return getDocs(queryRef); }, options), collectionName, timeoutMs);
+            // An offline SDK can resolve getDocs() with an empty memory snapshot.
+            // Require a server answer here; durable cache fallback is handled below.
+            const snapshot = await withTimeout(enqueueFirestoreRead(function() { return getDocsFromServer(queryRef); }, options), collectionName, timeoutMs);
             const rows = mapSnapshotRows(snapshot);
             writeCachedRows(cacheKey, rows);
             if (typeof options.onReadSource === 'function') {
@@ -383,6 +385,11 @@ export async function getDocsWithCache(queryRef, options = {}) {
     try {
         const cachedSnapshot = await getDocsFromCache(queryRef);
         const rows = mapSnapshotRows(cachedSnapshot);
+        if (rows.length === 0) {
+            const durableRows = await readCachedRowsAsync(cacheKey);
+            if (durableRows.length > 0) return durableRows;
+            throw lastError || createCollectionTimeoutError(collectionName, timeoutMs);
+        }
         writeCachedRows(cacheKey, rows);
         console.warn('[firestore-read] Using Firestore local cache after server read failed.', {
             collection: collectionName,

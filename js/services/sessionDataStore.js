@@ -349,7 +349,9 @@ function assignCollectionData(state, records, extras, readCount, reason) {
         state.revision = state.revision + 1;
     }
 
-    writeDexieCache(state.name, state.records, state.extras);
+    if (reason !== 'dexie-cache') {
+        writeDexieCache(state.name, state.records, state.extras);
+    }
 
     return {
         changed: changed,
@@ -776,6 +778,8 @@ async function loadCollection(collectionName, options) {
     var dexieRecord = safeOptions.skipDexie === true ? null : await readDexieCache(collectionName);
     if (dexieRecord && Array.isArray(dexieRecord.records) && dexieRecord.records.length > 0 && safeOptions.forceRefresh !== true) {
         assignCollectionData(state, dexieRecord.records, dexieRecord.extras || {}, 0, 'dexie-cache');
+        // Reading yesterday's snapshot does not make it fresh or rewrite its cache age.
+        state.loadedAt = new Date(dexieRecord.loadedAt || 0).getTime() || 0;
         logPerf(label + ' cache lookup', startedAt);
         logCache(label, 'cache hit', {
             source: 'dexie',

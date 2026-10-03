@@ -13,16 +13,17 @@ var bundle = await build({
     } }]
 });
 
-function harness(emptyCatalog, refreshError) {
+function harness(emptyCatalog, refreshError, cached) {
     var orders = [{ id: 'sale', status: 'confirmed', totalAmount: 120 }];
     var module = { exports: {} };
     var dependencies = {
         sessionDataStore: {
-            loadOrders: async function() { return { records: orders, extras: { returnInvoices: [{ id: 'return' }] } }; },
+            loadOrders: async function() { return { records: orders, extras: { returnInvoices: [{ id: 'return' }] }, meta: { cacheHit: cached === true, shouldRefresh: cached === true } }; },
             refreshOrders: async function() { if (refreshError) throw refreshError; return { records: orders }; }
         },
         productReconciliationService: { productReconciliationService: {
-            loadContext: async function() { if (emptyCatalog) return { products: [] }; throw new Error('unavailable'); },
+            getContext: function() { return { products: [] }; },
+            loadContext: async function() { if (cached) assert.fail('Cached Orders must render before a catalog cloud request'); if (emptyCatalog) return { products: [] }; throw new Error('unavailable'); },
             projectRecords: function() { throw new Error('Do not reconcile against an unavailable catalog'); }
         } },
         orderRecordHelpers: { getAnalyticsStatus: function(order) { return order.status; } },
@@ -47,6 +48,13 @@ test('Orders and monetary statistics survive failed historical match reads on lo
     var refreshed = await api.refreshDashboard();
     assert.equal(refreshed.orders.length, 1);
     assert.equal(refreshed.metrics.totalConfirmedAmount, 120);
+});
+
+test('cached Orders render without waiting for cloud product matching', async function() {
+    var result = await harness(true, null, true).loadDashboard();
+    assert.equal(result.orders.length, 1);
+    assert.equal(result.metrics.totalConfirmedAmount, 120);
+    assert.equal(result.meta.shouldRefresh, true);
 });
 
 test('an unavailable product catalog does not erase historical Orders statistics', async function() {

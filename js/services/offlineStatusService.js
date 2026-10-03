@@ -99,7 +99,9 @@ export const offlineStatusService = {
 
     canAttemptCloudRead() {
         const connection = connectionStateService.getSnapshot();
-        return connection.browserOnline !== false && connection.mode !== 'offline';
+        // A fresh installation has no cache and starts before the health probe finishes.
+        // An unchecked connection must not turn its first cloud read into an empty cache hit.
+        return connection.browserOnline !== false && (!connection.checkedAt || connection.mode !== 'offline');
     },
 
     setSyncing(value) {

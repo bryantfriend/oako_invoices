@@ -58,6 +58,9 @@ async function getSessionCacheInfo(collectionName) {
 }
 
 async function getServiceWorkerInfo() {
+    if (typeof window !== 'undefined' && window.desktopApp) {
+        return { ready: true, controlled: false, cacheCount: 0, installed: true };
+    }
     if (typeof navigator === 'undefined' || !navigator.serviceWorker) {
         return { ready: false, controlled: false, cacheCount: 0 };
     }

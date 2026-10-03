@@ -1,4 +1,6 @@
 import '../../js/main.js';
+import './printing/settingsElement.js';
+import { runDesktopPrintAction } from './printing/actions.js';
 import { auth } from '../../js/core/firebase.js';
 import { offlineQueueService } from '../../js/services/offlineQueueService.js';
 import { syncService } from '../../js/services/syncService.js';
@@ -8,6 +10,7 @@ import { createRestartDesktopUpdateIntent } from './update/RestartDesktopUpdateI
 
 var banner;
 var restartInProgress = false;
+window.runDesktopPrintAction = runDesktopPrintAction;
 registry.registerIntent('RestartDesktopUpdateIntent', createRestartDesktopUpdateIntent);
 
 async function restartToUpdate() {

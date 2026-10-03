@@ -58,6 +58,7 @@ export const renderSettings = async () => {
                 <p style="margin-bottom: 12px;">Open your orders and invoices from your device’s apps. Use your existing account.</p>
                 <app-install-control></app-install-control>
             </section>
+            ${window.desktopApp ? '<desktop-print-settings></desktop-print-settings>' : ''}
             <form id="settings-form">
                 ${createCard({
         title: 'Business Information',

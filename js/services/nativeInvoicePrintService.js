@@ -5,6 +5,8 @@ import { invoiceController } from '../controllers/invoiceController.js';
 import { workflowLocalStore } from './workflowLocalStore.js';
 import { i18n } from '../core/i18n.js';
 
+var desktopPrintSequence = 0;
+
 function escapeHtml(value) {
     return String(value || '')
         .replace(/&/g, '&amp;')
@@ -14,7 +16,9 @@ function escapeHtml(value) {
 }
 
 export function reserveInvoicePrintWindow() {
-    var popup = window.open('', '_blank', 'width=980,height=850');
+    desktopPrintSequence += 1;
+    var popupName = window.desktopApp ? 'ko-invoice-print-' + Date.now() + '-' + desktopPrintSequence : '_blank';
+    var popup = window.open('', popupName, 'width=980,height=850');
     if (!popup)
         throw new Error(
             'Allow pop-ups for this site, then try printing again. Your saved order will be reused.',
@@ -117,10 +121,11 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
     var pages = [];
     var records = [];
     try {
+        var desktopProfile = window.desktopApp ? await window.desktopApp.getPrintSettings() : null;
         for (var index = 0; index < invoices.length; index += 1) {
             var invoice = Object.assign({}, invoices[index]);
             if (!invoice.secureToken) invoice = await qrService.ensureInvoiceToken(invoice);
-            invoice.invoiceQrDataUrl = await qrService.generateQrDataUrl(invoice, 300);
+            if (!invoice.invoiceQrDataUrl) invoice.invoiceQrDataUrl = await qrService.generateQrDataUrl(invoice, 300);
             records.push(invoice);
             ovenProgress.update((index + 1) / invoices.length * 80, 'Preparing invoice ' + (index + 1) + ' of ' + invoices.length);
             pages = pages.concat(
@@ -140,7 +145,7 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
                 pages,
                 safeOptions.layout || 'full',
                 new URL('.', document.baseURI).href,
-                settings.printPaperSize || settings.paperSize,
+                desktopProfile ? desktopProfile.paperSize : settings.printPaperSize || settings.paperSize,
             ),
         );
         popup.document.close();
@@ -149,22 +154,61 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
         var printButton = popup.document.getElementById('job-print');
         var confirmButton = popup.document.getElementById('job-confirm');
         var status = popup.document.getElementById('job-status');
+        if (safeOptions.skippedInvoices && safeOptions.skippedInvoices.length) {
+            var skipped = popup.document.createElement('span');
+            skipped.textContent = 'Skipped invoices: ' + safeOptions.skippedInvoices.join('; ');
+            status.parentNode.appendChild(skipped);
+        }
         var confirmedIds = new Set();
         var printedAttempts = 0;
-        function printJob() {
-            printedAttempts += 1;
-            if (
-                printedAttempts > 1 ||
-                records.some(function (record) {
-                    return record.isPrinted;
-                })
-            )
-                workflowLocalStore.event('reprint', { count: records.length });
-            confirmButton.disabled = false;
-            status.textContent =
-                'Confirm only after checking the paper. Cancelled printing stays unconfirmed.';
-            popup.focus();
-            popup.print();
+        var nativePayload = {
+            windowName: popup.name,
+            label: records.length === 1 ? String(records[0].customerName || 'customer') + '-' + String(records[0].invoiceNumber || records[0].id || 'invoice') : 'invoice-batch-' + records.length
+        };
+        nativePayload.label = nativePayload.label.slice(0, 250);
+        async function printJob() {
+            printButton.disabled = true;
+            try {
+                var submitted = null;
+                if (window.desktopApp) {
+                    status.textContent = 'Sending invoices to Windows…';
+                    submitted = await window.runDesktopPrintAction('print', nativePayload);
+                } else {
+                    popup.focus();
+                    popup.print();
+                }
+                printedAttempts += 1;
+                if (
+                    printedAttempts > 1 ||
+                    records.some(function (record) {
+                        return record.isPrinted;
+                    })
+                )
+                    workflowLocalStore.event('reprint', { count: records.length });
+                confirmButton.disabled = false;
+                status.textContent =
+                    'Confirm only after checking the paper. Cancelled printing stays unconfirmed.';
+                if (submitted && submitted.filedPath) status.textContent += ' PDF saved: ' + submitted.filedPath;
+                if (submitted && submitted.filingError) status.textContent += ' ' + submitted.filingError + ' Use Save PDF to retry.';
+            } catch (error) {
+                status.textContent = error.message + ' No new paper confirmation was recorded.';
+            } finally {
+                printButton.disabled = false;
+            }
+        }
+        if (window.desktopApp) {
+            var fileButton = popup.document.createElement('button');
+            fileButton.textContent = 'Save PDF';
+            status.parentNode.insertBefore(fileButton, status);
+            fileButton.onclick = async function fileInvoices() {
+                fileButton.disabled = true;
+                printButton.disabled = true;
+                try {
+                    var filed = await window.runDesktopPrintAction('file', nativePayload);
+                    status.textContent = 'PDF saved: ' + filed.filedPath + '. Paper confirmation is still required after printing.';
+                } catch (error) { status.textContent = error.message; }
+                finally { fileButton.disabled = false; printButton.disabled = false; }
+            };
         }
         printButton.disabled = false;
         printButton.onclick = printJob;
@@ -204,7 +248,7 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
             durationMs: Date.now() - started,
             count: records.length,
         });
-        if (safeOptions.autoPrint !== false) printJob();
+        if (safeOptions.autoPrint !== false) await printJob();
         return { pageCount: pages.length, durationMs: Date.now() - started };
     } catch (error) {
         ovenProgress.fail();

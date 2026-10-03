@@ -1732,6 +1732,7 @@ export const renderDashboard = async (params, routeContext) => {
     }
 
     function openPreparingPreview() {
+        if (window.desktopApp) return reserveInvoicePrintWindow();
         const previewWindow = window.open('', '_blank');
         if (!previewWindow) {
             throw new Error('The print-preview tab was blocked. Allow pop-ups for this site and try again.');
@@ -1766,6 +1767,7 @@ export const renderDashboard = async (params, routeContext) => {
                     {
                         source: 'orders-tab',
                         printOptions: {
+                            onDesktopConfirmed: refreshDashboardDataPreservingState,
                             previewWindow: previewWindow,
                             orderSnapshots: allOrders.filter(function selectedSnapshot(order) { return orderedOrderIds.includes(order.id); }),
                             onProgress: function(progress) {
@@ -1789,7 +1791,7 @@ export const renderDashboard = async (params, routeContext) => {
                 var printResult = result.data;
                 var printedCount = printResult.invoiceCount;
                 notificationService.success(String(printedCount) + ' selected printable invoice' + (printedCount === 1 ? ' is' : 's are') + ' ready in one preview tab.');
-                showQuickPrintConfirmation(printResult, function refreshPrintedOrder(invoice, result) {
+                if (!printResult.nativePrint) showQuickPrintConfirmation(printResult, function refreshPrintedOrder(invoice, result) {
                     var order = allOrders.find(function matchesPrintedOrder(record) {
                         return record.id === invoice.orderId;
                     });
@@ -2335,3 +2337,4 @@ export const renderDashboard = async (params, routeContext) => {
         }, 0);
     }
 };
+import { reserveInvoicePrintWindow } from '../services/nativeInvoicePrintService.js';

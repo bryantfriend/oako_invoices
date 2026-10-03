@@ -67,8 +67,17 @@ export const dashboardController = {
 
     async loadDashboard(options) {
         try {
-            var reconciliationError = await loadDashboardReconciliation(false);
             var result = await sessionDataStore.loadOrders(options || {});
+            // Show account-scoped disk data before waiting for catalog/cloud reconciliation.
+            // The view's existing background refresh restores matching controls afterward.
+            var reconciliationError = null;
+            if (result.meta && result.meta.cacheHit === true) {
+                if (!productReconciliationService.getContext().products.length) {
+                    reconciliationError = new Error('Product matches are loading in the background.');
+                }
+            } else {
+                reconciliationError = await loadDashboardReconciliation(false);
+            }
             return buildDashboardResult(result, reconciliationError);
         } catch (error) {
             console.error("Dashboard Load Error:", error);

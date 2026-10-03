@@ -26,7 +26,7 @@ function renderOfflineReadinessPanel(readiness) {
         <section style="display: grid; gap: 12px; margin-bottom: 16px;">
             <div style="border: 1px solid ${status.ready ? '#bbf7d0' : '#fde68a'}; background: ${toneBg}; color: ${toneColor}; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
                 <strong>${escapeHtml(status.label || 'Offline readiness')}</strong>
-                <span style="font-size: 12px; font-weight: 800;">Service worker: ${serviceWorker.ready ? 'ready' : 'not ready'} · caches: ${escapeHtml(serviceWorker.cacheCount || 0)}</span>
+                <span style="font-size: 12px; font-weight: 800;">${serviceWorker.installed ? 'Windows app files: installed locally' : 'Service worker: ' + (serviceWorker.ready ? 'ready' : 'not ready') + ' · caches: ' + escapeHtml(serviceWorker.cacheCount || 0)}</span>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;">
                 ${(status.datasets || []).map(item => `

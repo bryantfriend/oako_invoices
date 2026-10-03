@@ -11,7 +11,7 @@ const manifest = yaml.load(fs.readFileSync(path.join(output, 'latest.yml'), 'utf
 const installer = fs.readFileSync(path.join(output, manifest.path));
 assert.equal(crypto.createHash('sha512').update(installer).digest('base64'), manifest.sha512);
 assert.equal(installer.length, manifest.files[0].size);
-for (const name of ['main.cjs', 'preload.cjs', 'updateManager.cjs', 'windowPolicy.cjs']) {
+for (const name of ['main.cjs', 'preload.cjs', 'updateManager.cjs', 'windowPolicy.cjs', 'printManager.cjs']) {
     assert.equal(asar.extractFile(archive, name).toString(), fs.readFileSync(path.resolve(__dirname, '../desktop', name), 'utf8'));
 }
 assert.equal(entries.some(function(entry) { return /node_modules[\\/](?:electron-builder|app-builder-lib|oako-invoices)(?:[\\/]|$)/.test(entry); }), false);
@@ -25,4 +25,8 @@ assert.ok(asar.extractFile(archive, path.join('app', 'vendor', 'chart.umd.js')).
 const renderer = asar.extractFile(archive, path.join('app', 'renderer.js')).toString();
 assert.match(renderer, /https:\/\/bryantfriend\.github\.io\/oako_invoices\/index\.html/);
 assert.doesNotMatch(renderer, /(?:from|import\()\s*["']https:/);
+assert.doesNotMatch(renderer, /demo-desktop-invoices|desktopIntegration|127\.0\.0\.1:9096/);
+const meta = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../.workbox/desktop-bundle-meta.json'), 'utf8'));
+assert.ok(Object.keys(meta.inputs).some(function(input) { return input.endsWith('@firebase/firestore/dist/index.esm2017.js'); }));
+assert.equal(Object.keys(meta.inputs).some(function(input) { return /@firebase\/(?:auth|app|firestore)\/.*(?:cjs|\/node\/)/.test(input); }), false);
 console.log('Desktop package verified: matching source, local dependencies, installer checksum and update metadata.');

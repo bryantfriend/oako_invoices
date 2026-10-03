@@ -134,7 +134,7 @@ test('bulk archive UI tracks confirmed completion and keeps failed selections re
 
 test('Bulk PDF service uses one PDF and duplicates every invoice page into two halves', () => {
     const source = read('js/services/bulkInvoicePrintService.js');
-    assert.match(source, /var pdf = createPdf/);
+    assert.match(source, /var pdf = desktopPrinting \? null : createPdf/);
     assert.match(source, /while \(invoiceIndex < invoices\.length\)/);
     assert.match(source, /addTwoUpSheet\(pdf, canvas, canvas, hasPdfPage\)/);
     assert.doesNotMatch(source, /pendingHalf/);

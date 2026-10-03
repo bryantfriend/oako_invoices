@@ -3,6 +3,7 @@ import { invoiceService } from "./invoiceService.js";
 import { qrService } from "./qrService.js";
 import { buildInvoicePrintPages } from "./invoicePrintTemplate.js";
 import { syncSupportService } from './syncSupportService.js';
+import { showNativeInvoicePrint } from './nativeInvoicePrintService.js';
 
 var generationActive = false;
 var activeOperationId = 0;
@@ -337,7 +338,8 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
 
         var settings = context && context.settings ? context.settings : {};
         var filename = buildFilename(invoices.length, layout);
-        var pdf = createPdf(settings, filename);
+        var desktopPrinting = typeof window !== 'undefined' && window.desktopApp && options && options.previewWindow;
+        var pdf = desktopPrinting ? null : createPdf(settings, filename);
         var hasPdfPage = false;
         var completedInvoices = 0;
         var includedInvoices = [];
@@ -348,7 +350,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 throw new Error('This combined print operation is stale.');
             }
             var invoice = invoices[invoiceIndex];
-            var previousPageCount = hasPdfPage ? pdf.getNumberOfPages() : 0;
+            var previousPageCount = hasPdfPage && pdf ? pdf.getNumberOfPages() : 0;
             emitProgress(options, invoiceIndex, invoices.length, 'Preparing invoice', getInvoiceLabel(invoice), (1 + invoiceIndex * 3) / totalSteps * 100);
             try {
                 if (loadErrors[orderIds[invoiceIndex]]) {
@@ -387,7 +389,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                     throw new Error('No printable invoice pages were generated.');
                 }
                 var pageIndex = 0;
-                while (pageIndex < pages.length) {
+                while (!desktopPrinting && pageIndex < pages.length) {
                     var canvas = await capturePage(pages[pageIndex]);
                     if (layout === 'two-up-portrait') {
                         // Each invoice page needs an office and customer copy on the same sheet.
@@ -402,6 +404,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                 }
                 completedInvoices = completedInvoices + 1;
                 includedInvoices.push(invoice);
+                if (desktopPrinting) hasPdfPage = true;
             } catch (invoiceError) {
                 failedInvoices.push((invoice ? getInvoiceLabel(invoice) : 'Order ' + orderIds[invoiceIndex]) + ': ' + invoiceError.message);
                 try {
@@ -416,11 +419,11 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
                     console.warn('Could not save Quick Print diagnostics.', supportError);
                 }
                 // Remove every page of a failed invoice, including partially rendered ones.
-                while (pdf.getNumberOfPages() > previousPageCount) {
+                while (pdf && pdf.getNumberOfPages() > previousPageCount) {
                     pdf.deletePage(pdf.getNumberOfPages());
                 }
-                hasPdfPage = previousPageCount > 0;
-                if (!hasPdfPage) {
+                hasPdfPage = desktopPrinting ? includedInvoices.length > 0 : previousPageCount > 0;
+                if (pdf && !hasPdfPage) {
                     pdf.addPage();
                 }
             }
@@ -433,6 +436,17 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
         }
 
         filename = buildFilename(completedInvoices, layout);
+        if (desktopPrinting) {
+            var nativeResult = await showNativeInvoicePrint(options.previewWindow, includedInvoices, settings, {
+                layout: layout, autoPrint: false, onConfirmed: options.onDesktopConfirmed,
+                skippedInvoices: failedInvoices
+            });
+            return Object.assign({}, nativeResult, {
+                nativePrint: true, invoiceCount: completedInvoices,
+                failedInvoices: failedInvoices, includedInvoices: includedInvoices,
+                layout: layout, durationMs: Date.now() - startedAt
+            });
+        }
         pdf.setProperties({ title: filename });
         var opened = openPdfBlob(pdf, filename, options ? options.previewWindow : null);
         console.info('[BULK_PRINT] completed', {

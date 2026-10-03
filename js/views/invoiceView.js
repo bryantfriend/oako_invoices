@@ -2336,6 +2336,28 @@ export const renderInvoiceDetail = async ({ id }) => {
 
             const printWithAfterprint = async (afterPrint) => {
                 if (printInProgress) return;
+                if (window.desktopApp) {
+                    printInProgress = true;
+                    try {
+                        var desktopPopup = reserveInvoicePrintWindow();
+                        await showNativeInvoicePrint(desktopPopup, [invoice], liveSettings || {}, {
+                            layout: is2UpMode ? 'two-up-portrait' : 'full',
+                            onConfirmed: function desktopPaperConfirmed() {
+                                window.highlightOrderId = invoice.orderId;
+                                router.navigate(ROUTES.DASHBOARD);
+                                notificationService.success(t('msg_invoice_printed'));
+                            }
+                        });
+                    } catch (error) {
+                        notificationService.error(error.message || 'Could not prepare Windows printing.');
+                    } finally {
+                        printInProgress = false;
+                        is2UpMode = false;
+                        document.body.classList.remove('printing-2up-portrait');
+                        refreshBody();
+                    }
+                    return;
+                }
                 printInProgress = true;
                 let handled = false;
                 const finish = () => {
@@ -2432,3 +2454,4 @@ export const renderInvoiceDetail = async ({ id }) => {
     }
 };
 
+import { reserveInvoicePrintWindow, showNativeInvoicePrint } from '../services/nativeInvoicePrintService.js';

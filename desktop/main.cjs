@@ -4,11 +4,14 @@ const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 const { createUpdateManager } = require('./updateManager.cjs');
 const policy = require('./windowPolicy.cjs');
+const { createPrintManager } = require('./printManager.cjs');
 var mainWindow;
 var updates;
 var updateTimer;
-var smokeMode = !app.isPackaged && process.argv.indexOf('--desktop-smoke') !== -1;
-if (smokeMode) app.setPath('userData', path.resolve(__dirname, '../.workbox/desktop-smoke-profile'));
+var printManager;
+var integrationMode = !app.isPackaged && process.argv.indexOf('--desktop-integration') !== -1;
+var smokeMode = !app.isPackaged && (process.argv.indexOf('--desktop-smoke') !== -1 || integrationMode);
+if (smokeMode) app.setPath('userData', path.resolve(__dirname, integrationMode ? '../.workbox/desktop-integration/profile' : '../.workbox/desktop-smoke-profile'));
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'korganics', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 app.setAppUserModelId('kg.kyrgyzorganics.invoices');
@@ -22,7 +25,7 @@ function protectWindow(window) {
     window.webContents.setWindowOpenHandler(function(details) {
         // Existing invoice printing writes into same-origin blank child windows.
         if (details.url === 'about:blank') {
-            return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } } };
+            return { action: 'allow', overrideBrowserWindowOptions: { show: !smokeMode, webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, offscreen: smokeMode } } };
         }
         if (policy.isExternalUrl(details.url)) shell.openExternal(details.url);
         return { action: 'deny' };
@@ -43,6 +46,7 @@ function createWindow() {
         webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, offscreen: smokeMode, backgroundThrottling: !smokeMode }
     });
     mainWindow.once('ready-to-show', function() { if (!smokeMode) mainWindow.show(); });
+    mainWindow.webContents.on('did-create-window', function registerPrintWindow(window, details) { printManager.registerWindow(window, details); });
     mainWindow.webContents.on('did-fail-load', function(event, code, description, url, isMainFrame) {
         if (isMainFrame) dialog.showErrorBox('Kyrgyz Organics could not open', description);
     });
@@ -60,7 +64,7 @@ if (!app.requestSingleInstanceLock()) {
         if (window !== mainWindow) protectWindow(window);
     });
     app.whenReady().then(function() {
-        var appRoot = path.join(__dirname, 'app');
+        var appRoot = integrationMode ? path.resolve(__dirname, '../.workbox/desktop-integration/app') : path.join(__dirname, 'app');
         protocol.handle('korganics', function(request) {
             var file = policy.resolveAppPath(appRoot, request.url);
             if (!file) return new Response('Not found', { status: 404 });
@@ -76,6 +80,17 @@ if (!app.requestSingleInstanceLock()) {
             return updates.getState();
         });
         ipcMain.handle('desktop:install-update', function(event) { authorizeBridge(event); return updates.install(); });
+        printManager = createPrintManager({
+            userData: app.getPath('userData'),
+            getPrinters: function getPrinters() { return mainWindow.webContents.getPrintersAsync(); },
+            chooseFolder: function chooseFolder() { return dialog.showOpenDialog(mainWindow, { title: 'Choose invoice PDF folder', properties: ['openDirectory', 'createDirectory'] }); }
+        });
+        ipcMain.handle('desktop:print-settings', function getPrintSettings(event) { authorizeBridge(event); return printManager.getSettings(); });
+        ipcMain.handle('desktop:printers', function getPrinters(event) { authorizeBridge(event); return mainWindow.webContents.getPrintersAsync(); });
+        ipcMain.handle('desktop:save-print-settings', function savePrintSettings(event, payload) { authorizeBridge(event); return printManager.saveSettings(payload); });
+        ipcMain.handle('desktop:choose-pdf-folder', function choosePdfFolder(event) { authorizeBridge(event); return printManager.chooseFolder(); });
+        ipcMain.handle('desktop:print-invoices', function printInvoices(event, payload) { authorizeBridge(event); return printManager.printJob(payload); });
+        ipcMain.handle('desktop:file-invoices', function fileInvoices(event, payload) { authorizeBridge(event); return printManager.savePdf(payload); });
         Menu.setApplicationMenu(Menu.buildFromTemplate([
             { label: 'File', submenu: [{ role: 'quit', label: 'Exit' }] },
             { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
@@ -83,7 +98,8 @@ if (!app.requestSingleInstanceLock()) {
             { label: 'Help', submenu: [{ label: 'Check for updates', click: function() { if (app.isPackaged) updates.check(); } }] }
         ]));
         createWindow();
-        if (smokeMode) require('./smoke.cjs').runSmoke(app, mainWindow);
+        if (integrationMode) require('./integration.cjs').runIntegration(app, mainWindow);
+        else if (smokeMode) require('./smoke.cjs').runSmoke(app, mainWindow);
         if (app.isPackaged) {
             updates.check();
             updateTimer = setInterval(function() { updates.check(); }, 60 * 60 * 1000);

@@ -553,7 +553,7 @@ test('Degraded Firestore health still permits a bounded server read after a cach
     assert.notEqual(offlineStatusSource.indexOf('canAttemptCloudRead()'), -1);
     assert.notEqual(offlineStatusSource.indexOf('connection.browserOnline !== false'), -1);
     assert.notEqual(offlineStatusSource.indexOf('connection.mode !=='), -1);
-    assert.notEqual(firestoreReadSource.indexOf('connection.browserOnline === false || connection.mode ==='), -1);
+    assert.match(firestoreReadSource, /connection\.browserOnline === false \|\| \(connection\.checkedAt && connection\.mode === 'offline'\)/);
     assert.notEqual(firestoreReadSource.indexOf('const timeoutMs = Math.min(requestedTimeoutMs, DEFAULT_TIMEOUT_MS);'), -1);
     assert.equal(firestoreReadSource.indexOf('DEGRADED_TIMEOUT_MS'), -1);
     assert.notEqual(customerSource.indexOf('!offlineStatusService.canAttemptCloudRead()'), -1);

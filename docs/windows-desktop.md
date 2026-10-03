@@ -1,6 +1,6 @@
 # Kyrgyz Organics for Windows
 
-The first Windows desktop release build is version **2.77.0**, based on web application 2.77. It uses Electron with a per-user NSIS installer. The installer adds desktop and Start menu shortcuts, a Windows taskbar identity, a dedicated window, and standard Windows menus.
+The current Windows desktop release build is version **2.78.0**, based on web application 2.78. It uses Electron with a per-user NSIS installer. The installer adds desktop and Start menu shortcuts, a Windows taskbar identity, a dedicated window, and standard Windows menus. See [2.78 changes and verification](windows-desktop-2.78.md).
 
 ## Local app and speed
 
@@ -20,7 +20,7 @@ On Restart to update, the user confirms that open edits and print jobs have fini
 
 The update source is the existing public repository `bryantfriend/oako_invoices`. No GitHub token or publishing credentials are included in the installer. Update download errors leave the current app available; later checks can retry. The manual check is under Help → Check for updates.
 
-Automatic updating is **configured but not live until release assets are published**. Publishing one version enables discovery; testing an actual upgrade requires publishing a higher version.
+Automatic updating uses the installer, blockmap, and `latest.yml` assets on public GitHub Releases. Version 2.77.0 was published previously. Each higher version must publish all three matching files before the update feed is exposed.
 
 ## Build and run
 
@@ -51,7 +51,7 @@ Run `node scripts/verify-desktop-package.cjs` after packaging to verify the ship
 4. Publish the matching `.exe`, `.exe.blockmap`, and `latest.yml` on a non-prerelease GitHub Release. Upload all three together. Use the installer filename specified by `latest.yml`; the configured artifact name has no spaces.
 5. Install the prior version on a test PC and confirm the new version downloads, waits for a restart, installs, relaunches, and retains its cached data and account session.
 
-The first installer and update feed have not been published by this task. No live authenticated transaction, physical printer job, actual installed upgrade, or signing certificate was exercised. Local bundling and unit tests cannot establish those results.
+The first installer and update feed were published as v2.77.0. Version 2.78 adds an authenticated local-emulator test for desktop data loading and native PDF output. No production transaction, physical printer job, actual installed upgrade, or signing certificate was exercised. Local tests cannot establish those results.
 
 ## Validation
 
