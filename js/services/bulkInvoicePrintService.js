@@ -227,7 +227,7 @@ function validateInvoice(invoice, orderId) {
     }
 }
 
-async function loadPrintableInvoices(orderIds, loadErrors) {
+async function loadPrintableInvoices(orderIds, loadErrors, invoiceSnapshots) {
     var snapshot = sessionDataStore.getInvoicesSnapshot();
     var cachedInvoices = snapshot && Array.isArray(snapshot.records)
         ? snapshot.records
@@ -239,6 +239,15 @@ async function loadPrintableInvoices(orderIds, loadErrors) {
             byOrderId[cachedInvoices[index].orderId] = cachedInvoices[index];
         }
         index = index + 1;
+    }
+
+    // A detail print uses the invoice already displayed, including recent edits.
+    // Do not replace it with an older cached record or require another cloud read.
+    var suppliedInvoices = Array.isArray(invoiceSnapshots) ? invoiceSnapshots : [];
+    for (var suppliedInvoice of suppliedInvoices) {
+        if (suppliedInvoice && orderIds.indexOf(suppliedInvoice.orderId) !== -1) {
+            byOrderId[suppliedInvoice.orderId] = suppliedInvoice;
+        }
     }
 
     var missingOrderIds = orderIds.filter(function(orderId) {
@@ -332,7 +341,7 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
     try {
         var loadErrors = {};
         emitProgress(options, 0, orderIds.length, 'Loading saved invoices', '', 0);
-        var invoices = await loadPrintableInvoices(orderIds, loadErrors);
+        var invoices = await loadPrintableInvoices(orderIds, loadErrors, options && options.invoiceSnapshots);
         // One lookup step, three steps per order (prepare, QR, render), one output step.
         var totalSteps = 2 + invoices.length * 3;
 

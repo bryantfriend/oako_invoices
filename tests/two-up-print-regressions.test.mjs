@@ -115,7 +115,7 @@ test('Quick Print renders two copies of each invoice page for single, odd, even 
     }
 });
 
-test('individual print preview keeps both copies mounted until afterprint and blocks duplicate print requests', async function() {
+test('individual full-page printing waits for afterprint and blocks duplicate print requests', async function() {
     var source = fs.readFileSync(new URL('../js/views/invoiceView.js', import.meta.url), 'utf8');
     var handlers = {};
     var calls = 0;
@@ -123,7 +123,7 @@ test('individual print preview keeps both copies mounted until afterprint and bl
     var timers = [];
     var qr = { complete: true, naturalWidth: 132 };
     var context = vm.createContext({
-        printInProgress: false,
+        printInProgress: false, is2UpMode: false,
         document: { querySelectorAll: function() { return [qr, qr]; }, querySelector: function() { return qr; }, fonts: { ready: Promise.resolve() } },
         window: { addEventListener: function(event, callback) { handlers[event] = callback; }, removeEventListener: function(event) { delete handlers[event]; }, print: function() { calls += 1; } },
         requestAnimationFrame: function(callback) { callback(); }, setTimeout: function(callback) { timers.push(callback); },
@@ -138,6 +138,68 @@ test('individual print preview keeps both copies mounted until afterprint and bl
     handlers.afterprint();
     assert.equal(finished, 1);
     assert.equal(context.printInProgress, false);
+});
+
+test('individual browser two-up printing uses the displayed invoice in a fixed PDF and blocks double clicks', async function() {
+    var source = fs.readFileSync(new URL('../js/views/invoiceView.js', import.meta.url), 'utf8');
+    var completePdf;
+    var calls = [];
+    var confirmations = 0;
+    var popup = { closed: false, document: { body: {} } };
+    var displayedInvoice = { id: 'invoice', orderId: 'order', settings: { companyName: 'Saved bakery', paperSize: 'a4' } };
+    var context = vm.createContext({
+        printInProgress: false, is2UpMode: true, invoice: displayedInvoice,
+        liveSettings: { companyName: 'Current bakery' }, currentLang: 'ru',
+        window: { print: function() { assert.fail('Two-up must not print the rotated HTML'); } },
+        document: { body: { classList: { remove: function() {} } } },
+        reserveInvoicePrintWindow: function() { return popup; }, refreshBody: function() {},
+        notificationService: { error: function(message) { assert.fail(message); } },
+        bulkInvoicePrintService: { generateCombinedPdf: function() {
+            calls.push(Array.from(arguments));
+            return new Promise(function(resolve) { completePdf = resolve; });
+        } }
+    });
+    vm.runInContext(section(source, '            const printWithAfterprint =', "            document.getElementById('btn-print-portrait')") + '\nglobalThis.printJob = printWithAfterprint;', context);
+    var job = context.printJob(function() { confirmations += 1; });
+    await context.printJob(function() { assert.fail('Duplicate click must be ignored'); });
+    assert.equal(calls.length, 1);
+    assert.deepEqual(Array.from(calls[0][0]), ['order']);
+    assert.equal(calls[0][1], 'two-up-portrait');
+    assert.equal(calls[0][2].language, 'ru');
+    assert.equal(calls[0][2].settings.companyName, 'Current bakery');
+    assert.equal(calls[0][2].settings.paperSize, 'a4');
+    assert.equal(calls[0][3].invoiceSnapshots[0], displayedInvoice);
+    assert.equal(calls[0][3].previewWindow, popup);
+    assert.equal(confirmations, 0, 'Do not offer paper confirmation for an unfinished PDF');
+    completePdf({});
+    await job;
+    assert.equal(confirmations, 1);
+    assert.equal(context.printInProgress, false);
+    assert.equal(context.is2UpMode, false);
+});
+
+test('failed individual two-up PDFs keep print status unconfirmed and allow retry', async function() {
+    var source = fs.readFileSync(new URL('../js/views/invoiceView.js', import.meta.url), 'utf8');
+    var popup = { closed: false, document: { body: {} } };
+    var errors = [];
+    var context = vm.createContext({
+        printInProgress: false, is2UpMode: true,
+        invoice: { orderId: 'order', settings: { companyName: 'Saved bakery' } },
+        liveSettings: { __fromFallback: true }, currentLang: 'en', window: {},
+        document: { body: { classList: { remove: function() {} } } },
+        reserveInvoicePrintWindow: function() { return popup; }, refreshBody: function() {},
+        notificationService: { error: function(message) { errors.push(message); } },
+        bulkInvoicePrintService: { generateCombinedPdf: async function(ids, layout, settings) {
+            assert.equal(settings.settings.companyName, 'Saved bakery');
+            throw new Error('PDF image failed');
+        } }
+    });
+    vm.runInContext(section(source, '            const printWithAfterprint =', "            document.getElementById('btn-print-portrait')") + '\nglobalThis.printJob = printWithAfterprint;', context);
+    await context.printJob(function() { assert.fail('Failed PDFs cannot confirm paper printing'); });
+    assert.deepEqual(errors, ['PDF image failed']);
+    assert.equal(popup.document.body.textContent, 'PDF image failed');
+    assert.equal(context.printInProgress, false);
+    assert.equal(context.is2UpMode, false);
 });
 
 test('long Daily Orders paginate with two complete copies of every item', function() {

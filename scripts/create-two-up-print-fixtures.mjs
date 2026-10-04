@@ -62,6 +62,22 @@ await build({
     } }]
 });
 fs.writeFileSync(path.join(output, 'bulk.html'), '<!doctype html><meta charset="utf-8"><title>Synthetic Quick Print verification</title><script src="/vendor/jspdf.umd.min.js"></script><script src="/vendor/html2canvas.min.js"></script><script>window.fixtureRecords=' + JSON.stringify(records) + ';window.fixtureSettings=' + JSON.stringify(settings) + ';</script><script src="bulk-service.js"></script><p>Local synthetic invoices only</p><script>window.generateTestPdf=async function(){var preview={closed:false,document:{body:{},title:""},location:{replace:function(url){window.testPdfUrl=url}}};window.testPdf=await bulkTest.bulkInvoicePrintService.generateCombinedPdf(window.fixtureRecords.map(function(invoice){return invoice.orderId}),"two-up-portrait",{settings:window.fixtureSettings,language:"en"},{previewWindow:preview});return window.testPdfUrl;};</script>');
+// Exercise the actual detail-button print action with a synthetic invoice.
+const detailPrintAction = section(viewSource, '            const printWithAfterprint =', "            document.getElementById('btn-print-portrait')");
+for (const record of [single, twoPage, long]) {
+    fs.writeFileSync(path.join(output, 'detail-pdf-' + record.invoiceNumber + '.html'),
+        '<!doctype html><meta charset="utf-8"><title>Individual 2-up PDF verification</title>' +
+        '<script src="/vendor/jspdf.umd.min.js"></script><script src="/vendor/html2canvas.min.js"></script>' +
+        '<script>window.fixtureRecords=[];window.fixtureSettings=' + JSON.stringify(settings) + ';</script><script src="bulk-service.js"></script>' +
+        '<button id="detail-print">2-up Portrait</button><p id="status">Ready</p><script>' +
+        'var invoice=' + JSON.stringify(record) + ';var liveSettings=window.fixtureSettings;var currentLang="ru";var is2UpMode=true;var printInProgress=false;' +
+        'var bulkInvoicePrintService=bulkTest.bulkInvoicePrintService;' +
+        'function reserveInvoicePrintWindow(){window.printPopup=window.open("","_blank");return window.printPopup;}' +
+        'function refreshBody(){};var notificationService={error:function(message){document.getElementById("status").textContent=message;window.printError=message;}};' +
+        detailPrintAction +
+        'document.getElementById("detail-print").onclick=function(){is2UpMode=true;return printWithAfterprint(function(){window.confirmationRequested=true;document.getElementById("status").textContent="PDF ready; paper remains unconfirmed";});};</script>'
+    );
+}
 const dailySource = fs.readFileSync('js/views/dailyOrdersView.js', 'utf8');
 const daily = vm.createContext({ escapeHtml: escapeHtml, getProductName: function(item) { return item.name; }, formatQuantity: String, formatDateLabel: String });
 vm.runInContext(section(dailySource, 'function renderPrintSlip(', 'function openPrintWindow('), daily);

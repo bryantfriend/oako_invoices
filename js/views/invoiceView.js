@@ -2336,6 +2336,39 @@ export const renderInvoiceDetail = async ({ id }) => {
 
             const printWithAfterprint = async (afterPrint) => {
                 if (printInProgress) return;
+                if (!window.desktopApp && is2UpMode) {
+                    printInProgress = true;
+                    var pdfPopup;
+                    try {
+                        // Build both rotated copies into one PDF page. Chrome's
+                        // printer preview can split the two HTML halves onto
+                        // separate sheets even when headless PDF checks pass.
+                        pdfPopup = reserveInvoicePrintWindow();
+                        var printSettings = liveSettings && liveSettings.__fromFallback !== true
+                            ? Object.assign({}, invoice.settings || {}, liveSettings)
+                            : Object.assign({}, invoice.settings || {});
+                        await bulkInvoicePrintService.generateCombinedPdf(
+                            [invoice.orderId],
+                            'two-up-portrait',
+                            { settings: printSettings, language: currentLang },
+                            { previewWindow: pdfPopup, invoiceSnapshots: [invoice] }
+                        );
+                        // The existing confirmation still requires the user to
+                        // confirm paper printing; opening a PDF changes no status.
+                        afterPrint();
+                    } catch (error) {
+                        if (pdfPopup && !pdfPopup.closed) {
+                            pdfPopup.document.body.textContent = error.message || 'Could not prepare the 2-up invoice PDF.';
+                        }
+                        notificationService.error(error.message || 'Could not prepare the 2-up invoice PDF.');
+                    } finally {
+                        printInProgress = false;
+                        is2UpMode = false;
+                        document.body.classList.remove('printing-2up-portrait');
+                        refreshBody();
+                    }
+                    return;
+                }
                 if (window.desktopApp) {
                     printInProgress = true;
                     try {
@@ -2455,3 +2488,4 @@ export const renderInvoiceDetail = async ({ id }) => {
 };
 
 import { reserveInvoicePrintWindow, showNativeInvoicePrint } from '../services/nativeInvoicePrintService.js';
+import bulkInvoicePrintService from '../services/bulkInvoicePrintService.js';

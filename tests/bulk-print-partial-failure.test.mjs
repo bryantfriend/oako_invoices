@@ -52,6 +52,19 @@ function invoice(id, overrides) {
     return Object.assign({ id: id, orderId: id, invoiceNumber: id, items: [], secureToken: 'token', pages: [id] }, overrides);
 }
 
+test('detail two-up PDFs use current invoice snapshots instead of stale cache or cloud lookups', async function() {
+    var h = harness([invoice('order', { pages: ['old-items'] })]);
+    var current = invoice('order', { pages: ['updated-page-1', 'updated-page-2'] });
+    var result = await h.context.generateCombinedPdf(['order'], 'two-up-portrait', {}, { invoiceSnapshots: [current] });
+    assert.deepEqual(h.sheets, [['updated-page-1', 'updated-page-1'], ['updated-page-2', 'updated-page-2']]);
+    assert.equal(result.includedInvoices[0], current);
+    assert.equal(h.opened(), 1);
+
+    var uncached = harness([]);
+    await uncached.context.generateCombinedPdf(['order'], 'two-up-portrait', {}, { invoiceSnapshots: [current] });
+    assert.deepEqual(uncached.sheets, h.sheets);
+});
+
 for (const layout of ['full', 'two-up-portrait']) {
     test('Quick Print skips sync and data failures and removes partial invoices: ' + layout, async function() {
         var invoices = [invoice('token-failure', { secureToken: '' }), invoice('good'), invoice('partial', { pages: ['partial-page', 'broken'] }), invoice('invalid', { items: null }), invoice('last', { syncStatus: 'error' })];
