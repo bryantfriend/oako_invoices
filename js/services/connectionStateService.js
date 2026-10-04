@@ -1,9 +1,10 @@
 import { db } from "../core/firebase.js";
-import { doc, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { readServerSnapshot } from "../core/firestoreServerRead.js";
 import { offlineQueueService } from "./offlineQueueService.js";
 
-const HEALTH_TIMEOUT_MS = 1600;
-const FIRESTORE_TIMEOUT_MS = 2200;
+const HEALTH_TIMEOUT_MS = 5000;
+const FIRESTORE_TIMEOUT_MS = 15000;
 const REFRESH_INTERVAL_MS = 30000;
 
 const subscribers = [];
@@ -24,7 +25,7 @@ const state = {
 let initialized = false;
 let refreshPromise = null;
 let refreshTimer = null;
-let onlineCandidateAt = 0;
+let successfulReadRevision = 0;
 
 function cloneState() {
     return Object.assign({}, state);
@@ -97,10 +98,17 @@ async function runHealthCheck() {
 
 async function runFirestoreCheck() {
     try {
-        await withTimeout(getDocFromServer(doc(db, 'settings', 'offline_health')), FIRESTORE_TIMEOUT_MS, 'Firestore reachability check');
+        await readServerSnapshot(doc(db, 'settings', 'offline_health'), FIRESTORE_TIMEOUT_MS, function createProbeTimeout() {
+            return new Error('Firestore reachability check timed out after ' + FIRESTORE_TIMEOUT_MS + ' ms');
+        });
         return { ok: true, reason: '' };
     } catch (error) {
-        return { ok: false, reason: error && error.message ? error.message : 'Firestore reachability check failed.' };
+        var code = error && error.code ? error.code : '';
+        var reason = error && error.message ? error.message : 'Firestore reachability check failed.';
+        if (code === 'permission-denied' || code === 'unauthenticated') {
+            reason = 'Cloud access was rejected (' + code + '). Check your staff sign-in and permissions.';
+        }
+        return { ok: false, reason: reason };
     }
 }
 
@@ -171,22 +179,24 @@ export const connectionStateService = {
 
     async refresh(options) {
         var safeOptions = options || {};
-        if (refreshPromise && safeOptions.force !== true) {
+        if (refreshPromise) {
             return refreshPromise;
         }
 
         refreshPromise = (async function() {
+            var readRevisionAtStart = successfulReadRevision;
             var browserOnline = typeof navigator === 'undefined' ? false : navigator.onLine !== false;
             var pendingSyncCount = await getPendingSyncCount();
             var healthResult = { ok: false, reason: 'Skipped network check.' };
             var firestoreResult = { ok: false, reason: 'Skipped Firestore check.' };
 
             if (browserOnline && safeOptions.skipNetworkCheck !== true) {
-                healthResult = await runHealthCheck();
+                var results = await Promise.all([runHealthCheck(), runFirestoreCheck()]);
+                healthResult = results[0];
+                firestoreResult = results[1];
                 if (healthResult.ok) {
                     state.lastSuccessfulHealthCheckAt = new Date().toISOString();
                 }
-                firestoreResult = await runFirestoreCheck();
                 if (firestoreResult.ok) {
                     state.lastSuccessfulFirestoreReadAt = new Date().toISOString();
                 }
@@ -195,23 +205,17 @@ export const connectionStateService = {
                 firestoreResult = { ok: state.firestoreReachable === true, reason: state.reason || '' };
             }
 
+            // A real server response received during a probe is stronger evidence
+            // than that older probe's timeout. Never let it overwrite recovery.
+            if (successfulReadRevision !== readRevisionAtStart && browserOnline) {
+                firestoreResult = { ok: true, reason: '' };
+            }
+            browserOnline = typeof navigator === 'undefined' ? false : navigator.onLine !== false;
             var previousMode = state.mode;
             var modeResult = computeMode(safeOptions.syncing === true, browserOnline, healthResult.ok, firestoreResult.ok, pendingSyncCount);
-            if (modeResult.mode === 'online' && previousMode !== 'online') {
-                if (!onlineCandidateAt) {
-                    onlineCandidateAt = Date.now();
-                }
-                if (Date.now() - onlineCandidateAt < 1200) {
-                    modeResult = { mode: previousMode === 'offline' ? 'degraded' : previousMode, reason: 'Waiting for stable Firestore reachability before marking online.' };
-                } else {
-                    console.info('[CONNECTIVITY_STABLE] mode changed ' + previousMode + ' -> online after stable check');
-                }
-            } else if (modeResult.mode !== 'online') {
-                onlineCandidateAt = 0;
-            }
             state.browserOnline = browserOnline;
             state.internetReachable = healthResult.ok === true;
-            state.firestoreReachable = firestoreResult.ok === true;
+            state.firestoreReachable = browserOnline && firestoreResult.ok === true;
             state.pendingSyncCount = pendingSyncCount;
             state.mode = modeResult.mode;
             state.reason = modeResult.reason || healthResult.reason || firestoreResult.reason || '';
@@ -251,9 +255,22 @@ export const connectionStateService = {
         this.refresh({ reason: 'sync-finished', force: true });
     },
 
+    markSuccessfulFirestoreRead: function() {
+        successfulReadRevision += 1;
+        state.lastSuccessfulFirestoreReadAt = new Date().toISOString();
+        state.browserOnline = typeof navigator !== 'undefined' && navigator.onLine !== false;
+        state.firestoreReachable = state.browserOnline;
+        if (state.browserOnline && state.mode !== 'syncing') {
+            state.mode = 'online';
+            state.reason = 'Cloud data was received successfully.';
+        }
+        state.checkedAt = new Date().toISOString();
+        notifySubscribers();
+    },
+
     markSuccessfulFirestoreWrite: function() {
         state.lastSuccessfulFirestoreWriteAt = new Date().toISOString();
-        notifySubscribers();
+        this.markSuccessfulFirestoreRead();
     },
 
     isCloudReachable: function() {

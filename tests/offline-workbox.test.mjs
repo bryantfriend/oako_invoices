@@ -337,7 +337,7 @@ test('Connectivity service does not rely on navigator.onLine as source of truth'
 
     assert.notEqual(connectionSource.indexOf('health.json'), -1);
     assert.notEqual(connectionSource.indexOf("cache: 'no-store'"), -1);
-    assert.notEqual(connectionSource.indexOf('getDocFromServer'), -1);
+    assert.notEqual(connectionSource.indexOf('readServerSnapshot'), -1);
     assert.notEqual(offlineStatusSource.indexOf('connectionStateService.isCloudReachable()'), -1);
     assert.equal(offlineStatusSource.indexOf('navigator.onLine !== false'), -1);
 });
@@ -489,7 +489,7 @@ test('Connectivity probe uses allowed Firestore read and does not let health.jso
 
     assert.notEqual(connectionSource.indexOf("doc(db, 'settings', 'offline_health')"), -1);
     assert.equal(connectionSource.indexOf("doc(db, 'system', 'health')"), -1);
-    assert.notEqual(connectionSource.indexOf('firestoreResult = await runFirestoreCheck();'), -1);
+    assert.notEqual(connectionSource.indexOf('Promise.all([runHealthCheck(), runFirestoreCheck()])'), -1);
     assert.notEqual(connectionSource.indexOf('if (firestoreReachable)'), -1);
     assert.notEqual(connectionSource.indexOf('Static health check failed'), -1);
 });

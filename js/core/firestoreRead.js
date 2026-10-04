@@ -1,9 +1,10 @@
-import { getDocsFromServer, getDocsFromCache } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getDocsFromCache } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { readServerSnapshot } from "./firestoreServerRead.js";
 import { createCollectionTimeoutError, logCollectionError } from "./firestoreDiagnostics.js";
 import { openOfflineDexieDatabase } from "../services/offlineDexieDb.js";
 import { connectionStateService } from "../services/connectionStateService.js";
 
-const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_TIMEOUT_MS = 25000;
 const DEFAULT_ATTEMPTS = 1;
 
 const CACHE_PREFIX = 'kyrgyz-organics-read-cache:';
@@ -277,17 +278,6 @@ function writeCachedRows(cacheKey, rows) {
     }
 }
 
-async function withTimeout(promise, collectionName, timeoutMs) {
-    let timeoutId;
-    const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-            reject(createCollectionTimeoutError(collectionName, timeoutMs));
-        }, timeoutMs);
-    });
-
-    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
-}
-
 function mapSnapshotRows(snapshot) {
     return snapshot.docs.map(function(documentSnapshot) {
         // Firestore's document path is authoritative, even for legacy records with an id field.
@@ -366,7 +356,14 @@ export async function getDocsWithCache(queryRef, options = {}) {
         try {
             // An offline SDK can resolve getDocs() with an empty memory snapshot.
             // Require a server answer here; durable cache fallback is handled below.
-            const snapshot = await withTimeout(enqueueFirestoreRead(function() { return getDocsFromServer(queryRef); }, options), collectionName, timeoutMs);
+            // Start the deadline when a scheduler slot is available. Waiting for
+            // another collection must not consume this request's network budget.
+            const snapshot = await enqueueFirestoreRead(function readQueuedCollection() {
+                return readServerSnapshot(queryRef, timeoutMs, function createReadTimeout() {
+                    return createCollectionTimeoutError(collectionName, timeoutMs);
+                });
+            }, options);
+            connectionStateService.markSuccessfulFirestoreRead();
             const rows = mapSnapshotRows(snapshot);
             writeCachedRows(cacheKey, rows);
             if (typeof options.onReadSource === 'function') {

@@ -110,9 +110,9 @@ test('cold Firestore cache misses query the server instead of becoming empty res
     var module = await loadModule('js/core/firestoreRead.js', {
         'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js': {
             getDocsFromCache: async function() { return { docs: [] }; },
-            getDocsFromServer: async function() { reads += 1; return { docs: [{ id: row.id, data: function() { return { companyName: row.companyName }; } }], metadata: { fromCache: false } }; }
         },
-        connectionStateService: { connectionStateService: { getSnapshot: function() { return snapshot; } } },
+        firestoreServerRead: { readServerSnapshot: async function() { reads += 1; return { docs: [{ id: row.id, data: function() { return { companyName: row.companyName }; } }], metadata: { fromCache: false } }; } },
+        connectionStateService: { connectionStateService: { getSnapshot: function() { return snapshot; }, markSuccessfulFirestoreRead: function() {} } },
         offlineDexieDb: { openOfflineDexieDatabase: async function() { return {}; } }
     });
     assert.equal((await module.getDocsWithCache({}, { cacheKey: 'customers:all' }))[0].id, row.id);
@@ -125,9 +125,9 @@ test('cold Firestore cache misses query the server instead of becoming empty res
 test('an unavailable server and empty SDK cache never become an authoritative empty collection', async function() {
     var module = await loadModule('js/core/firestoreRead.js', {
         'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js': {
-            getDocsFromServer: async function() { throw new Error('server unavailable'); },
             getDocsFromCache: async function() { return { docs: [] }; }
         },
+        firestoreServerRead: { readServerSnapshot: async function() { throw new Error('server unavailable'); } },
         connectionStateService: { connectionStateService: { getSnapshot: function() { return { browserOnline: true, mode: 'online', checkedAt: 'checked' }; } } },
         offlineDexieDb: { openOfflineDexieDatabase: async function() { return {}; } },
         firestoreDiagnostics: { logCollectionError: function() {}, createCollectionTimeoutError: function() { return new Error('timed out'); } }

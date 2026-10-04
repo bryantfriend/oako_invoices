@@ -20,7 +20,10 @@ export const offlinePersistenceState = {
 // Keeping Firestore's cache in memory prevents a browser-level IndexedDB failure
 // from poisoning Firestore's internal async queue and breaking cloud reads.
 export const db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
+    // Let the SDK use its faster normal transport and detect buffering proxies.
+    // Shorter long polls also avoid proxies that close requests at 30 seconds.
+    experimentalAutoDetectLongPolling: true,
+    experimentalLongPollingOptions: { timeoutSeconds: 25 },
     localCache: memoryLocalCache()
 });
 
