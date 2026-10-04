@@ -46,15 +46,17 @@ for (const record of [single, twoPage, long]) {
     const sheets = originals.map(function(page, index) { return '<div class="print-sheet"><div class="sheet-half">' + page + '</div><div class="sheet-half">' + copies[index] + '</div></div>'; });
     // Include the real preview's flex wrapper: omitting it hides print fragmentation bugs.
     const wrapper = viewSource.match(/<div class="print-wrapper invoice-document"[^>]*>/)[0];
-    fs.writeFileSync(path.join(output, 'individual-' + record.invoiceNumber + '.html'), '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/css/styles.css">' + style + '<body><div id="invoice-doc-container" class="printing-2up-portrait">' + wrapper + sheets.join('') + '</div></div>');
+    fs.writeFileSync(path.join(output, 'individual-' + record.invoiceNumber + '.html'), '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/css/variables.css"><link rel="stylesheet" href="/css/styles.css"><link rel="stylesheet" href="/css/animations.css">' + style + '<body><div id="app"><aside id="sidebar">Sidebar</aside><main class="main-content"><header id="top-bar">Toolbar</header><div class="page-container"><div id="invoice-doc-container" class="printing-2up-portrait animate-fade-in">' + wrapper + sheets.join('') + '</div></div></div></main></div>');
 }
 await build({
     entryPoints: ['js/services/bulkInvoicePrintService.js'], bundle: true, outfile: path.join(output, 'bulk-service.js'), format: 'iife', globalName: 'bulkTest',
     plugins: [{ name: 'synthetic-print-data', setup: function(api) {
-        api.onResolve({ filter: /\/(sessionDataStore|invoiceService|qrService)\.js$/ }, function(args) { return { path: args.path, namespace: 'fixture' }; });
+        api.onResolve({ filter: /\/(sessionDataStore|invoiceService|qrService|syncSupportService|nativeInvoicePrintService)\.js$/ }, function(args) { return { path: args.path, namespace: 'fixture' }; });
         api.onLoad({ filter: /.*/, namespace: 'fixture' }, function(args) {
             if (args.path.includes('sessionDataStore')) return { contents: 'export default {getInvoicesSnapshot:function(){return {records:window.fixtureRecords}}};' };
             if (args.path.includes('invoiceService')) return { contents: 'export const invoiceService={getInvoicesByOrderIds:async function(){throw new Error("Unexpected production lookup")}};' };
+            if (args.path.includes('syncSupportService')) return { contents: 'export const syncSupportService={recordIssue:async function(){}};' };
+            if (args.path.includes('nativeInvoicePrintService')) return { contents: 'export async function showNativeInvoicePrint(){throw new Error("Unexpected desktop print in browser fixture")}' };
             return { contents: 'export const qrService={ensureInvoiceToken:async function(invoice){return invoice},generateQrDataUrl:async function(invoice){return invoice.invoiceQrDataUrl}};' };
         });
     } }]
