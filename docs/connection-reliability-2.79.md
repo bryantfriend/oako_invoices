@@ -23,12 +23,19 @@ user's internet connection was down.
   overwriting a successful business-data read. Explain authorization failures.
 - `tests/connection-reliability.test.mjs`, `tests/desktop-printing.test.mjs`, and
   `tests/offline-workbox.test.mjs`: regression coverage and updated SDK boundaries.
+- `js/services/customerService.js`, `js/views/customerView.js`: return customer
+  rows without waiting for hidden PIN updates. Unset PINs display "Not set";
+  explicit create/update actions still save PINs. Failed reads remain errors.
+- `desktop/updateManager.cjs`, `desktop/main.cjs`, `desktop/renderer/main.js`:
+  manual update checks show checking, current, progress, ready, or error feedback.
+  The installer shortcut is named "Kyrgyz Organics Windows" to distinguish it
+  from existing Chrome/PWA shortcuts. App identity and saved data stay unchanged.
 - Release metadata: root and desktop package files, `scripts/build.cjs`,
   `js/config.js`, `index.html`, `deployment-version.json`, and service workers.
 
 ## Verification
 
-All 318 automated tests pass; web assets and the service worker build successfully.
+All 320 automated tests pass; web assets and the service worker build successfully.
 A fresh Windows renderer signed in against local Firebase emulators and loaded
 customers, orders, invoices, and settings with initial connection mode Online.
 Individual and two-up PDFs and subsequent Dexie cache loading also passed.

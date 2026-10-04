@@ -76,7 +76,7 @@ if (!app.requestSingleInstanceLock()) {
         ipcMain.handle('desktop:update-state', function(event) { authorizeBridge(event); return updates.getState(); });
         ipcMain.handle('desktop:check-update', async function(event) {
             authorizeBridge(event);
-            if (app.isPackaged) await updates.check();
+            if (app.isPackaged) await updates.check({ manual: true });
             return updates.getState();
         });
         ipcMain.handle('desktop:install-update', function(event) { authorizeBridge(event); return updates.install(); });
@@ -95,7 +95,7 @@ if (!app.requestSingleInstanceLock()) {
             { label: 'File', submenu: [{ role: 'quit', label: 'Exit' }] },
             { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
             { label: 'View', submenu: [{ role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' }, { role: 'togglefullscreen' }] },
-            { label: 'Help', submenu: [{ label: 'Check for updates', click: function() { if (app.isPackaged) updates.check(); } }] }
+            { label: 'Help', submenu: [{ label: 'Check for updates', click: function() { if (app.isPackaged) updates.check({ manual: true }); } }] }
         ]));
         createWindow();
         if (integrationMode) require('./integration.cjs').runIntegration(app, mainWindow);

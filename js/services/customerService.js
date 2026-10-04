@@ -29,9 +29,6 @@ function normalizeCustomerPin(pinCode) {
     return generateCustomerPin();
 }
 
-function isCustomerPin(pinCode) {
-    return /^1\d{5}$/.test(String(pinCode || ''));
-}
 function filterActiveCustomers(rows) {
     return (Array.isArray(rows) ? rows : [])
         .filter(d => d.archived !== true)
@@ -55,19 +52,9 @@ export const customerService = {
                 timeoutMs: 45000,
                 attempts: 2
             });
-            const customersNeedingPins = docs.filter(customer => !isCustomerPin(customer.pinCode));
-            await Promise.all(customersNeedingPins.map(async (customer) => {
-                const pinCode = normalizeCustomerPin(customer.pinCode);
-                customer.pinCode = pinCode;
-                try {
-                    await updateDoc(doc(db, COLLECTION, customer.id), {
-                        pinCode,
-                        updatedAt: serverTimestamp()
-                    });
-                } catch (error) {
-                    console.warn("Could not save generated customer PIN.", error);
-                }
-            }));
+            // Loading a list must not wait for unrelated PIN writes. An SDK write
+            // can remain pending while reconnecting, hiding already-loaded rows.
+            // PINs are persisted by explicit create/update actions instead.
 
             // Client-side filter and sort as a fallback
             return filterActiveCustomers(docs);
@@ -78,10 +65,8 @@ export const customerService = {
                 console.warn('Using cached customers after live customer load failed.', error);
                 return cachedCustomers;
             }
-            if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('timeout')) {
-                throw error;
-            }
-            return [];
+            // A failed cloud read is not an authoritative empty customer list.
+            throw error;
         }
     },
 
@@ -96,14 +81,6 @@ export const customerService = {
             if (!docSnap.exists()) return null;
 
             const customer = { ...docSnap.data(), id: docSnap.id };
-            if (!isCustomerPin(customer.pinCode)) {
-                const pinCode = normalizeCustomerPin(customer.pinCode);
-                customer.pinCode = pinCode;
-                await updateDoc(docRef, {
-                    pinCode,
-                    updatedAt: serverTimestamp()
-                }).catch(error => console.warn("Could not normalize customer PIN.", error));
-            }
             return customer;
         } catch (error) {
             console.error("Error fetching customer:", error);

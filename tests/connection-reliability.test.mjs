@@ -1,6 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadModule } from './helpers/load-isolated-module.mjs';
+import { EventEmitter } from 'node:events';
+import updaterModule from '../desktop/updateManager.cjs';
+
+test('customer loading returns legacy customers without waiting for PIN writes', async function() {
+    var writes = 0;
+    var fail = false;
+    var module = await loadModule('js/services/customerService.js', {
+        firebase: { db: {} },
+        'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js': {
+            collection: function() { return {}; },
+            updateDoc: function() { writes += 1; return new Promise(function() {}); }
+        },
+        firestoreRead: {
+            getDocsWithCache: async function() {
+                if (fail) throw new Error('server unavailable');
+                return [{ id: 'legacy', companyName: 'Legacy customer' }];
+            },
+            readCachedRowsAsync: async function() { return []; }
+        },
+        offlineStatusService: { offlineStatusService: { canAttemptCloudRead: function() { return true; } } },
+        firestoreDiagnostics: { logCollectionError: function() {} }
+    });
+    var customers = await module.customerService.getAllCustomers();
+    assert.equal(customers[0].id, 'legacy');
+    assert.equal(writes, 0);
+    fail = true;
+    await assert.rejects(module.customerService.getAllCustomers(), /server unavailable/);
+});
+
+test('manual update checks publish checking, current, and useful errors', async function() {
+    var updater = new EventEmitter();
+    var states = [];
+    updater.checkForUpdates = async function() {};
+    var manager = updaterModule.createUpdateManager(updater, function(state) { states.push(state); });
+    await manager.check({ manual: true });
+    assert.equal(states[0].status, 'checking');
+    assert.equal(states[0].showFeedback, true);
+    assert.equal(states[1].status, 'current');
+    updater.checkForUpdates = async function() { throw new Error('download server unreachable'); };
+    await manager.check({ manual: true });
+    assert.equal(manager.getState().status, 'error');
+    assert.match(manager.getState().message, /download server unreachable/);
+});
 
 test('server reads ignore cache snapshots and cancel listeners after success or timeout', async function() {
     var receive;

@@ -123,9 +123,9 @@ export const renderCustomers = async function renderCustomers(cachedCustomers) {
                     key: 'pinCode',
                     label: 'PIN Code',
                     render: (val, row) => {
-                        const pin = val || customerController.generateCustomerPin();
+                        const pin = escapeCustomerValue(val || '');
                         return isEditingLocked
-                            ? `<span style="font-family: monospace; font-weight: 800; letter-spacing: 0.08em; color: #1e3318;">${pin}</span>`
+                            ? `<span style="font-family: monospace; font-weight: 800; letter-spacing: 0.08em; color: #1e3318;">${pin || 'Not set'}</span>`
                             : `<input type="text" class="inline-edit pin-code-input" data-id="${row.id}" data-field="pinCode" value="${pin}" minlength="6" maxlength="6" pattern="1\\d{5}" style="width: 90px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-gray-300); font-family: monospace; font-weight: 800;">`;
                     }
                 },

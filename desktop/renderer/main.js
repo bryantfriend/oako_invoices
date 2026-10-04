@@ -50,11 +50,19 @@ function showUpdateState(state) {
         banner.querySelector('button').addEventListener('click', restartToUpdate);
         document.body.appendChild(banner);
     }
-    banner.style.display = state.status === 'downloading' || state.status === 'ready' ? 'flex' : 'none';
+    banner.style.display = state.status === 'downloading' || state.status === 'ready' || state.showFeedback === true ? 'flex' : 'none';
     banner.querySelector('button').hidden = state.status !== 'ready';
-    banner.querySelector('span').textContent = state.status === 'ready'
-        ? 'Version ' + state.version + ' is ready. Restart when you have finished your work.'
-        : 'Downloading update ' + state.version + '… ' + state.percent + '%';
+    var message = 'Checking for updates…';
+    if (state.status === 'ready') {
+        message = 'Version ' + state.version + ' is ready. Restart when you have finished your work.';
+    } else if (state.status === 'downloading') {
+        message = 'Downloading update ' + state.version + '… ' + state.percent + '%';
+    } else if (state.status === 'current') {
+        message = 'You have the latest Windows version.';
+    } else if (state.status === 'error') {
+        message = 'Could not check for updates. Try Help > Check for updates again. ' + (state.message || '');
+    }
+    banner.querySelector('span').textContent = message;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
