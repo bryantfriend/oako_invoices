@@ -435,10 +435,15 @@ async function generateCombinedPdf(orderIds, layout, context, options) {
             throw new Error('No printable invoice pages were generated. ' + failedInvoices.join('; '));
         }
 
+        // A delivery run must include every selected order before sending any paper.
+        if (options.deliveryRun === true && failedInvoices.length > 0) {
+            throw new Error('Delivery run stopped before printing. Correct these invoices and retry: ' + failedInvoices.join('; '));
+        }
+
         filename = buildFilename(completedInvoices, layout);
         if (desktopPrinting) {
             var nativeResult = await showNativeInvoicePrint(options.previewWindow, includedInvoices, settings, {
-                layout: layout, autoPrint: false, onConfirmed: options.onDesktopConfirmed,
+                layout: layout, autoPrint: false, deliveryRun: options.deliveryRun === true, onConfirmed: options.onDesktopConfirmed,
                 skippedInvoices: failedInvoices
             });
             return Object.assign({}, nativeResult, {

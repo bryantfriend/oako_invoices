@@ -140,3 +140,12 @@ test('Windows Quick Print skips raster capture and keeps incomplete invoices vis
     assert.equal(nativeOptions.skippedInvoices.length, 1);
     assert.equal(h.opened(), 0);
 });
+
+test('Windows delivery run stops before printing when a selected invoice cannot be prepared', async function() {
+    var h = harness([invoice('cached'), invoice('invalid', { secureToken: '' })]);
+    h.context.window = { desktopApp: {} };
+    h.context.showNativeInvoicePrint = async function() { assert.fail('No partial delivery run may reach a printer'); };
+    await assert.rejects(h.context.generateCombinedPdf(['cached', 'invalid'], 'full', {}, { deliveryRun: true }), /Delivery run stopped before printing/);
+    assert.equal(h.context.isGenerationActive(), false);
+    assert.equal(h.opened(), 0);
+});

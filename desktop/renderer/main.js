@@ -7,6 +7,7 @@ import { syncService } from '../../js/services/syncService.js';
 import pipeline from '../../js/ICF/engine/pipeline.js';
 import registry from '../../js/ICF/engine/intentRegistry.js';
 import { createRestartDesktopUpdateIntent } from './update/RestartDesktopUpdateIntent.js';
+import { initializeDesktopWorkflow } from './workflow.js';
 
 var banner;
 var restartInProgress = false;
@@ -66,6 +67,7 @@ function showUpdateState(state) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    initializeDesktopWorkflow().catch(function(error) { console.warn('Windows workflow could not start.', error.message); });
     window.desktopApp.onUpdateState(showUpdateState);
     window.desktopApp.getUpdateState().then(showUpdateState);
 });

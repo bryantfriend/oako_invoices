@@ -2,6 +2,16 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopApp', {
     publicAppUrl: 'https://bryantfriend.github.io/oako_invoices/index.html',
+    getWorkflowSettings: function() { return ipcRenderer.invoke('desktop:workflow-settings'); },
+    saveWorkflowSettings: function(payload) { return ipcRenderer.invoke('desktop:save-workflow-settings', payload); },
+    getWindowKind: function() { return ipcRenderer.invoke('desktop:window-kind'); },
+    finishQuickOrder: function() { return ipcRenderer.invoke('desktop:finish-quick-order'); },
+    onQuickOrderSaved: function(callback) {
+        function receive() { callback(); }
+        ipcRenderer.on('desktop:quick-order-saved', receive);
+        return function() { ipcRenderer.removeListener('desktop:quick-order-saved', receive); };
+    },
+    printDeliveryRun: function(payload) { return ipcRenderer.invoke('desktop:delivery-run', payload); },
     getPrintSettings: function getPrintSettings() { return ipcRenderer.invoke('desktop:print-settings'); },
     getPrinters: function getPrinters() { return ipcRenderer.invoke('desktop:printers'); },
     savePrintSettings: function savePrintSettings(payload) { return ipcRenderer.invoke('desktop:save-print-settings', payload); },

@@ -1,7 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const { dialog } = require('electron');
+const { dialog, BrowserWindow } = require('electron');
 
 async function runIntegration(app, window) {
     var timeout = setTimeout(function timedOut() { console.error('Desktop integration timed out'); app.exit(1); }, 60000);
@@ -9,6 +9,15 @@ async function runIntegration(app, window) {
     var loaded = new Promise(function documentLoaded(resolve) { window.webContents.once('did-finish-load', resolve); });
     // The development-only test selects a disposable directory instead of opening a native dialog.
     dialog.showOpenDialog = async function chooseTestFolder() { return { canceled: false, filePaths: [directory] }; };
+    // Exercise the real renderer and IPC without sending paper to staff printers.
+    var submittedPrints = [];
+    window.webContents.getPrintersAsync = async function testPrinters() { return [{ name: 'Integration printer' }]; };
+    app.on('browser-window-created', function captureTestPrinting(event, child) {
+        child.webContents.print = function testPrint(profile, callback) {
+            submittedPrints.push(profile);
+            callback(true, '');
+        };
+    });
     window.webContents.on('console-message', function rendererMessage(event) { console.log('[renderer] ' + event.message); });
     window.webContents.debugger.attach('1.3');
     await window.webContents.debugger.sendCommand('Network.enable');
@@ -64,6 +73,12 @@ async function runIntegration(app, window) {
             var batchPdf = await window.runDesktopPrintAction('file', { windowName: batchPreview.name, label: 'native-two-up-batch' });
             var twoCopies = batchPreview.document.querySelectorAll('.print-slot').length === 2;
             batchPreview.close();
+            await window.runDesktopPrintAction('saveSettings', { deviceName: 'Integration printer', directPrint: false, copies: 1, paperSize: 'A4', autoFile: false });
+            var deliveryPreview = api.reservePrint();
+            var delivery = await api.bulkPrint.generateCombinedPdf(['test-order'], 'full', { settings: { companyName: 'Test Bakery' } }, { previewWindow: deliveryPreview, deliveryRun: true });
+            var deliverySubmitted = Array.from(deliveryPreview.document.querySelectorAll('button')).some(function submitted(button) { return button.disabled && button.textContent.indexOf('Delivery run submitted') === 0; });
+            if (!deliverySubmitted) throw new Error('Delivery run did not submit all documents.');
+            deliveryPreview.close();
             var readiness = await api.readiness.getStatus();
             await new Promise(function settle(resolve) { setTimeout(resolve, 200); });
             api.session.clearUserScopedMemory('integration-reopen');
@@ -71,6 +86,9 @@ async function runIntegration(app, window) {
             var cached = await api.session.loadOrders({ source: 'desktop-integration-cache' });
             return { customers: customers.length, orders: orders.records.length, invoices: invoices.records.length, initialConnectionMode: initialConnection.mode, customerView: customerView, orderView: orderView, invoiceView: invoiceView, settingsView: Boolean(document.querySelector('desktop-print-settings form')), pdfPath: pdf.filedPath, printPages: prepared.pageCount, paperUnconfirmed: confirmedBeforePrinting, nativeBatch: batch.nativePrint === true && twoCopies, batchPdfPath: batchPdf.filedPath, installedFilesReady: readiness.serviceWorker.installed === true && readiness.serviceWorker.ready, cachedSource: cached.meta.source, cacheLoadMs: performance.now() - start };
         })()`);
+        assert.equal(submittedPrints.length, 3);
+        assert.equal(submittedPrints[2].pageSize.width, 100000);
+        result.deliveryDocumentsSubmitted = submittedPrints.length;
         assert.equal(result.customers, 1);
         assert.equal(result.orders, 1);
         assert.equal(result.invoices, 1);
@@ -81,6 +99,27 @@ async function runIntegration(app, window) {
         var pdf = await fs.readFile(result.pdfPath);
         assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
         assert.ok(pdf.length > 1000);
+        app.emit('desktop-integration-open-quick-order');
+        var quick = BrowserWindow.getAllWindows().find(function findQuick(candidate) { return candidate !== window && candidate.getTitle().indexOf('New order') === 0; });
+        assert.ok(quick);
+        await new Promise(function loaded(resolve) { quick.webContents.once('did-finish-load', resolve); });
+        var quickResult = await quick.webContents.executeJavaScript(`(async function checkQuickOrder() {
+            var started = Date.now();
+            while (!document.getElementById('create-order-form')) {
+                if (Date.now() - started > 15000) throw new Error('Quick order form did not load: ' + location.hash);
+                await new Promise(function wait(resolve) { setTimeout(resolve, 50); });
+            }
+            return { route: location.hash, kind: await window.desktopApp.getWindowKind(), separate: document.body.classList.contains('desktop-quick-order') };
+        })()`);
+        assert.equal(quickResult.route, '#/orders/create');
+        assert.equal(quickResult.kind, 'quick-order');
+        assert.equal(quickResult.separate, true);
+        assert.ok(!window.isDestroyed());
+        quick.close();
+        result.quickOrder = quickResult;
+        window.close();
+        assert.equal(window.isDestroyed(), false);
+        result.closeKeepsBackgroundAlive = true;
         var output = path.resolve(__dirname, '../output');
         await fs.mkdir(path.join(output, 'playwright'), { recursive: true });
         await fs.writeFile(path.join(output, 'windows-desktop-integration.json'), JSON.stringify(result, null, 2));

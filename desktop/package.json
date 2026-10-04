@@ -1,6 +1,6 @@
 {
   "name": "kyrgyz-organics-desktop",
-  "version": "2.79.0",
+  "version": "2.80.0",
   "private": true,
   "type": "module",
   "description": "Kyrgyz Organics Windows order and invoice application",
@@ -33,6 +33,7 @@
       "windowPolicy.cjs",
       "updateManager.cjs",
       "printManager.cjs",
+      "workflowManager.cjs",
       "app/**/*"
     ],
     "win": {

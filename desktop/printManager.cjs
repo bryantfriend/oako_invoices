@@ -1,7 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const defaults = { deviceName: '', directPrint: false, copies: 1, paperSize: 'A4', autoFile: false, folder: '' };
+const defaults = { deviceName: '', directPrint: false, copies: 1, paperSize: 'A4', autoFile: false, folder: '', packingDeviceName: '', labelDeviceName: '', labelWidth: 100, labelHeight: 60 };
 
 function normalizeSettings(input, folder) {
     if (!input || typeof input.deviceName !== 'string' || input.deviceName.length > 500) throw new Error('Choose a valid printer.');
@@ -9,7 +9,11 @@ function normalizeSettings(input, folder) {
     if (['A4', 'Letter', 'Legal', 'A3', 'A5'].indexOf(input.paperSize) === -1) throw new Error('Choose a supported paper size.');
     if (input.directPrint === true && !input.deviceName) throw new Error('Choose a printer before enabling direct printing.');
     if (input.autoFile === true && !folder) throw new Error('Choose a PDF folder before enabling automatic filing.');
-    return { deviceName: input.deviceName, directPrint: input.directPrint === true, copies: input.copies, paperSize: input.paperSize, autoFile: input.autoFile === true, folder: folder };
+    var labelWidth = input.labelWidth === undefined ? 100 : Number(input.labelWidth);
+    var labelHeight = input.labelHeight === undefined ? 60 : Number(input.labelHeight);
+    if (!Number.isFinite(labelWidth) || labelWidth < 50 || labelWidth > 210 || !Number.isFinite(labelHeight) || labelHeight < 25 || labelHeight > 210) throw new Error('Choose label dimensions between 50–210 mm wide and 25–210 mm high.');
+    return { deviceName: input.deviceName, directPrint: input.directPrint === true, copies: input.copies, paperSize: input.paperSize, autoFile: input.autoFile === true, folder: folder,
+        packingDeviceName: String(input.packingDeviceName || ''), labelDeviceName: String(input.labelDeviceName || ''), labelWidth: labelWidth, labelHeight: labelHeight };
 }
 
 function safeFilePart(value) {
@@ -22,6 +26,7 @@ function createPrintManager(options) {
     var settingsFile = path.join(options.userData, 'desktop-print-settings.json');
     var settings;
     var jobs = new Map();
+    var deliveryActive = false;
 
     async function getSettings() {
         if (!settings) {
@@ -47,9 +52,9 @@ function createPrintManager(options) {
     async function saveSettings(input) {
         var current = await getSettings();
         var next = normalizeSettings(input, current.folder);
-        if (next.deviceName) {
-            var printers = await options.getPrinters();
-            if (!printers.some(function matchesPrinter(printer) { return printer.name === next.deviceName; })) throw new Error('The saved printer is unavailable. Choose a connected printer or use the print dialog.');
+        var printers = await options.getPrinters();
+        for (var name of [next.deviceName, next.packingDeviceName, next.labelDeviceName]) {
+            if (name && !printers.some(function matchesPrinter(printer) { return printer.name === name; })) throw new Error('The saved printer is unavailable. Choose a connected printer or use the print dialog.');
         }
         return persist(next);
     }
@@ -64,7 +69,7 @@ function createPrintManager(options) {
 
     function registerWindow(window, details) {
         if (!/^ko-invoice-print-\d+-\d+$/.test(details.frameName) || details.url !== 'about:blank') return;
-        jobs.set(details.frameName, { window: window, busy: false, filedPath: '' });
+        jobs.set(details.frameName, { window: window, busy: false, filedPath: '', deliverySubmitted: false });
         window.once('closed', function removeJob() { jobs.delete(details.frameName); });
     }
 
@@ -110,11 +115,11 @@ function createPrintManager(options) {
         }
     }
 
-    async function printJob(payload) {
+    async function printJob(payload, override) {
         var job = getJob(payload);
         job.busy = true;
         try {
-            var profile = await getSettings();
+            var profile = Object.assign({}, await getSettings(), override || {});
             var filedPath = '';
             var filingError = '';
             if (profile.autoFile) {
@@ -138,7 +143,49 @@ function createPrintManager(options) {
         }
     }
 
-    return { getSettings: getSettings, saveSettings: saveSettings, chooseFolder: chooseFolder, registerWindow: registerWindow, printJob: printJob, savePdf: savePdf };
+    async function printDeliveryRun(payload) {
+        if (deliveryActive) throw new Error('A delivery run is already printing.');
+        if (!payload || !Array.isArray(payload.documents) || payload.documents.length !== 3) throw new Error('Prepare all three delivery documents.');
+        var types = ['invoice', 'packing', 'labels'];
+        var profile = await getSettings();
+        var printerNames = [profile.deviceName, profile.packingDeviceName || profile.deviceName, profile.labelDeviceName || profile.deviceName];
+        var printers = await options.getPrinters();
+        var windowNames = new Set();
+        for (var index = 0; index < types.length; index += 1) {
+            var document = payload.documents[index];
+            if (!document || document.type !== types[index] || windowNames.has(document.windowName)) throw new Error('The delivery documents are invalid.');
+            windowNames.add(document.windowName);
+            getJob(document);
+            if (!printerNames[index] || !printers.some(function match(printer) { return printer.name === printerNames[index]; })) throw new Error('Choose connected delivery printers in Settings before printing the run.');
+        }
+        deliveryActive = true;
+        var submitted = [];
+        var failures = [];
+        var primaryJob = getJob(payload.documents[0]);
+        if (!primaryJob.deliverySubmittedTypes) primaryJob.deliverySubmittedTypes = new Set();
+        try {
+            for (var index = 0; index < types.length; index += 1) {
+                var document = payload.documents[index];
+                var job = getJob(document);
+                if (primaryJob.deliverySubmittedTypes.has(document.type)) { submitted.push(document.type); continue; }
+                try {
+                    if (document.type !== 'invoice' && typeof job.window.hide === 'function') job.window.hide();
+                    var result = await printJob({ windowName: document.windowName, label: String(payload.label || 'delivery-run').slice(0, 230) + '-' + document.type }, {
+                        directPrint: true, deviceName: printerNames[index],
+                        copies: document.type === 'labels' ? 1 : profile.copies,
+                        paperSize: document.type === 'labels' ? { width: profile.labelWidth * 1000, height: profile.labelHeight * 1000 } : profile.paperSize,
+                        autoFile: document.type === 'invoice' && profile.autoFile
+                    });
+                    primaryJob.deliverySubmittedTypes.add(document.type);
+                    submitted.push(document.type);
+                    if (result.filingError) failures.push({ type: 'PDF filing', message: result.filingError });
+                } catch (error) { failures.push({ type: document.type, message: error.message }); }
+            }
+            return { submitted: submitted, failures: failures, complete: submitted.length === 3 };
+        } finally { deliveryActive = false; }
+    }
+
+    return { getSettings: getSettings, saveSettings: saveSettings, chooseFolder: chooseFolder, registerWindow: registerWindow, printJob: printJob, savePdf: savePdf, printDeliveryRun: printDeliveryRun };
 }
 
 module.exports = { createPrintManager: createPrintManager, normalizeSettings: normalizeSettings, safeFilePart: safeFilePart };

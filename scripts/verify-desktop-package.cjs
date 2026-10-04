@@ -8,10 +8,13 @@ const output = path.resolve(__dirname, '../output/windows');
 const archive = path.join(output, 'win-unpacked/resources/app.asar');
 const entries = asar.listPackage(archive);
 const manifest = yaml.load(fs.readFileSync(path.join(output, 'latest.yml'), 'utf8'));
+const desktopPackage = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../desktop/package.json'), 'utf8'));
+assert.equal(manifest.version, desktopPackage.version);
+assert.equal(JSON.parse(asar.extractFile(archive, 'package.json').toString()).version, desktopPackage.version);
 const installer = fs.readFileSync(path.join(output, manifest.path));
 assert.equal(crypto.createHash('sha512').update(installer).digest('base64'), manifest.sha512);
 assert.equal(installer.length, manifest.files[0].size);
-for (const name of ['main.cjs', 'preload.cjs', 'updateManager.cjs', 'windowPolicy.cjs', 'printManager.cjs']) {
+for (const name of ['main.cjs', 'preload.cjs', 'updateManager.cjs', 'windowPolicy.cjs', 'printManager.cjs', 'workflowManager.cjs']) {
     assert.equal(asar.extractFile(archive, name).toString(), fs.readFileSync(path.resolve(__dirname, '../desktop', name), 'utf8'));
 }
 assert.equal(entries.some(function(entry) { return /node_modules[\\/](?:electron-builder|app-builder-lib|oako-invoices)(?:[\\/]|$)/.test(entry); }), false);

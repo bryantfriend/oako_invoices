@@ -8,6 +8,8 @@ function owner() {
 }
 
 function key(kind, id, actorId) {
+    // A second editor must not overwrite the main window's recovery draft.
+    if (kind === 'draft' && (id === 'editor' || id === 'previous-editor') && typeof window !== 'undefined' && window.desktopApp && new URLSearchParams(window.location.search).get('quick-order') === '1') id = id + ':quick-order';
     return 'ko-workflow:' + (actorId || owner()) + ':' + kind + ':' + id;
 }
 

@@ -17,10 +17,20 @@ class DesktopPrintSettings extends HTMLElement {
     }
 
     async load() {
-        var results = await Promise.all([window.desktopApp.getPrintSettings(), window.desktopApp.getPrinters()]);
+        var results = await Promise.all([window.desktopApp.getPrintSettings(), window.desktopApp.getPrinters(), window.desktopApp.getWorkflowSettings()]);
         if (!this.isConnected) return;
         var profile = results[0];
         var printers = results[1];
+        var workflow = results[2];
+        function companionChoices(selected) {
+            var missingChoice = '';
+            if (selected && !printers.some(function match(printer) { return printer.name === selected; })) {
+                missingChoice = '<option selected value="' + escapeAttribute(selected) + '">' + escapeAttribute(selected) + ' (unavailable)</option>';
+            }
+            return '<option value="">Use invoice printer</option>' + missingChoice + printers.map(function choice(printer) {
+                return '<option value="' + escapeAttribute(printer.name) + '"' + (printer.name === selected ? ' selected' : '') + '>' + escapeAttribute(printer.displayName || printer.name) + '</option>';
+            }).join('');
+        }
         var choices = '<option value="">Use the Windows print dialog</option>';
         if (profile.deviceName && !printers.some(function match(printer) { return printer.name === profile.deviceName; })) {
             choices += '<option selected value="' + escapeAttribute(profile.deviceName) + '">' + escapeAttribute(profile.deviceName) + ' (unavailable)</option>';
@@ -34,6 +44,15 @@ class DesktopPrintSettings extends HTMLElement {
             '<label>Paper size<select name="paperSize">' + ['A4', 'Letter', 'Legal', 'A3', 'A5'].map(function paper(size) { return '<option' + (size === profile.paperSize ? ' selected' : '') + '>' + size + '</option>'; }).join('') + '</select></label>' +
             '<label><input name="directPrint" type="checkbox"' + (profile.directPrint ? ' checked' : '') + '> Print directly to the saved printer</label>' +
             '<label><input name="autoFile" type="checkbox"' + (profile.autoFile ? ' checked' : '') + '> Save a PDF automatically when printing</label>' +
+            '<p>Automatic PDF saving is off by default. Turn it on only if you want copies saved on this computer.</p>' +
+            '<h3>Delivery-run printing</h3><label>Packing-list printer<select name="packingDeviceName">' + companionChoices(profile.packingDeviceName) + '</select></label>' +
+            '<label>Delivery-label printer<select name="labelDeviceName">' + companionChoices(profile.labelDeviceName) + '</select></label>' +
+            '<label>Label width (mm)<input name="labelWidth" type="number" min="50" max="210" value="' + profile.labelWidth + '"></label>' +
+            '<label>Label height (mm)<input name="labelHeight" type="number" min="25" max="210" value="' + profile.labelHeight + '"></label>' +
+            '<h3>Windows workflow</h3><label><input name="background" type="checkbox"' + (workflow.background ? ' checked' : '') + '> Keep syncing in the tray when the window closes</label>' +
+            '<label><input name="startAtLogin" type="checkbox"' + (workflow.startAtLogin ? ' checked' : '') + '> Start in the tray when Windows starts</label>' +
+            '<label><input name="shortcut" type="checkbox"' + (workflow.shortcut ? ' checked' : '') + '> Ctrl+Alt+O opens a separate order-entry window</label>' +
+            '<p>Use Exit in the tray menu to stop the app. ' + (workflow.shortcut && !workflow.shortcutAvailable ? 'The shortcut is unavailable; another app may be using it. New order is still available in the tray.' : '') + '</p>' +
             '<p>PDFs are filed in date folders, with the customer and invoice in the filename.</p><p data-folder></p>' +
             '<div><button type="button" data-folder-button class="btn btn-secondary">Choose PDF folder</button> <button type="submit" class="btn btn-primary">Save Windows settings</button></div><p role="status" aria-live="polite"></p></form>';
         this.querySelector('[data-folder]').textContent = profile.folder || 'No PDF folder selected';
@@ -62,8 +81,13 @@ class DesktopPrintSettings extends HTMLElement {
                 copies: Number(form.elements.copies.value),
                 paperSize: form.elements.paperSize.value,
                 directPrint: form.elements.directPrint.checked,
-                autoFile: form.elements.autoFile.checked
+                autoFile: form.elements.autoFile.checked,
+                packingDeviceName: form.elements.packingDeviceName.value,
+                labelDeviceName: form.elements.labelDeviceName.value,
+                labelWidth: Number(form.elements.labelWidth.value),
+                labelHeight: Number(form.elements.labelHeight.value)
             });
+            await runDesktopPrintAction('saveWorkflow', { background: form.elements.background.checked, startAtLogin: form.elements.startAtLogin.checked, shortcut: form.elements.shortcut.checked });
             this.querySelector('[role="status"]').textContent = 'Windows settings saved.';
         } catch (error) { this.showError(error); }
         finally { button.disabled = false; }

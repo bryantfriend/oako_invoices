@@ -5,18 +5,24 @@ import { createSaveDesktopPrintSettingsIntent } from './SaveDesktopPrintSettings
 import { createChooseDesktopPdfFolderIntent } from './ChooseDesktopPdfFolderIntent.js';
 import { createPrintDesktopInvoicesIntent } from './PrintDesktopInvoicesIntent.js';
 import { createFileDesktopInvoicesIntent } from './FileDesktopInvoicesIntent.js';
+import { createPrintDesktopDeliveryRunIntent } from './PrintDesktopDeliveryRunIntent.js';
+import { createSaveDesktopWorkflowSettingsIntent } from './SaveDesktopWorkflowSettingsIntent.js';
 
 var factories = {
     saveSettings: createSaveDesktopPrintSettingsIntent,
     chooseFolder: createChooseDesktopPdfFolderIntent,
     print: createPrintDesktopInvoicesIntent,
-    file: createFileDesktopInvoicesIntent
+    file: createFileDesktopInvoicesIntent,
+    deliveryRun: createPrintDesktopDeliveryRunIntent,
+    saveWorkflow: createSaveDesktopWorkflowSettingsIntent
 };
 
 registry.registerIntent('SaveDesktopPrintSettingsIntent', createSaveDesktopPrintSettingsIntent);
 registry.registerIntent('ChooseDesktopPdfFolderIntent', createChooseDesktopPdfFolderIntent);
 registry.registerIntent('PrintDesktopInvoicesIntent', createPrintDesktopInvoicesIntent);
 registry.registerIntent('FileDesktopInvoicesIntent', createFileDesktopInvoicesIntent);
+registry.registerIntent('PrintDesktopDeliveryRunIntent', createPrintDesktopDeliveryRunIntent);
+registry.registerIntent('SaveDesktopWorkflowSettingsIntent', createSaveDesktopWorkflowSettingsIntent);
 
 function getVerifiedUser() {
     var state = authService.getAuthDebugState();

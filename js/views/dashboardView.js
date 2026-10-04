@@ -838,6 +838,7 @@ export const renderDashboard = async (params, routeContext) => {
                     <button id="clear-invoice-selection" class="btn btn-secondary btn-sm" type="button">Clear selection</button>
                     <button id="prepare-selected-invoices" class="btn btn-secondary btn-sm" type="button">Prepare selected invoices</button><button id="quick-print-full" class="btn btn-primary btn-sm" type="button" disabled>Quick Print — Full</button>
                     <button id="quick-print-two-up" class="btn btn-secondary btn-sm" type="button" disabled>Quick Print — 2-Up Portrait</button>
+                    ${window.desktopApp ? '<button id="desktop-delivery-run" class="btn btn-primary btn-sm" type="button" disabled>Print delivery run</button>' : ''}
                 </div>
             </div>
         `;
@@ -1658,6 +1659,8 @@ export const renderDashboard = async (params, routeContext) => {
         const actionLabel = document.getElementById('bulk-invoice-selected-label');
         const fullButton = document.getElementById('quick-print-full');
         const twoUpButton = document.getElementById('quick-print-two-up');
+        var deliveryRunButton = document.getElementById('desktop-delivery-run');
+        if (deliveryRunButton) deliveryRunButton.disabled = getOrderedSelectedOrderIds(false).length === 0 || bulkPrintActive || bulkArchiveActive;
         var prepareButton = document.getElementById('prepare-selected-invoices');
         if (prepareButton) prepareButton.disabled = !count || bulkPrintActive || bulkArchiveActive;
 
@@ -1744,7 +1747,7 @@ export const renderDashboard = async (params, routeContext) => {
         return previewWindow;
     }
 
-    async function quickPrintSelectedInvoices(layout) {
+    async function quickPrintSelectedInvoices(layout, deliveryRun) {
         var foregroundLoading = startOvenLoading('Updating orders');
         try {
             const orderedOrderIds = getOrderedSelectedOrderIds(false);
@@ -1767,6 +1770,7 @@ export const renderDashboard = async (params, routeContext) => {
                     {
                         source: 'orders-tab',
                         printOptions: {
+                            deliveryRun: deliveryRun === true,
                             onDesktopConfirmed: refreshDashboardDataPreservingState,
                             previewWindow: previewWindow,
                             orderSnapshots: allOrders.filter(function selectedSnapshot(order) { return orderedOrderIds.includes(order.id); }),
@@ -1790,7 +1794,8 @@ export const renderDashboard = async (params, routeContext) => {
                 await refreshPrintableInvoiceMap();
                 var printResult = result.data;
                 var printedCount = printResult.invoiceCount;
-                notificationService.success(String(printedCount) + ' selected printable invoice' + (printedCount === 1 ? ' is' : 's are') + ' ready in one preview tab.');
+                if (deliveryRun) notificationService.info('Delivery documents prepared. Check the print window for submission results and paper confirmation.');
+                else notificationService.success(String(printedCount) + ' selected printable invoice' + (printedCount === 1 ? ' is' : 's are') + ' ready in one preview tab.');
                 if (!printResult.nativePrint) showQuickPrintConfirmation(printResult, function refreshPrintedOrder(invoice, result) {
                     var order = allOrders.find(function matchesPrintedOrder(record) {
                         return record.id === invoice.orderId;
@@ -1859,6 +1864,8 @@ export const renderDashboard = async (params, routeContext) => {
             finally { foregroundLoading.finish(); bulkPrintActive = false; updateBulkArchiveControls(); }
         }, "Updating orders");
         const quickPrintFullButton = document.getElementById('quick-print-full');
+        var deliveryRunButton = document.getElementById('desktop-delivery-run');
+        if (deliveryRunButton) deliveryRunButton.addEventListener('click', function printSelectedDeliveryRun() { quickPrintSelectedInvoices('full', true); });
         if (quickPrintFullButton) {
             quickPrintFullButton.addEventListener('click', function() {
                 quickPrintSelectedInvoices('full');

@@ -4,6 +4,7 @@ import { qrService } from './qrService.js';
 import { invoiceController } from '../controllers/invoiceController.js';
 import { workflowLocalStore } from './workflowLocalStore.js';
 import { i18n } from '../core/i18n.js';
+import { buildDeliveryDocuments } from './deliveryPrintDocuments.js';
 
 var desktopPrintSequence = 0;
 
@@ -197,6 +198,41 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
             }
         }
         if (window.desktopApp) {
+            var deliveryButton = popup.document.createElement('button');
+            deliveryButton.textContent = 'Print delivery run';
+            status.parentNode.insertBefore(deliveryButton, status);
+            var companions = null;
+            deliveryButton.onclick = async function printDeliveryRun() {
+                deliveryButton.disabled = true;
+                printButton.disabled = true;
+                try {
+                    if (!companions) {
+                        var profile = await window.desktopApp.getPrintSettings();
+                        if (!profile.deviceName) throw new Error('Choose an invoice printer in Settings before printing a delivery run.');
+                        var documents = buildDeliveryDocuments(records, profile);
+                        companions = [];
+                        for (var type of ['packing', 'labels']) {
+                            var companion = reserveInvoicePrintWindow();
+                            companions.push({ type: type, popup: companion });
+                            companion.document.open(); companion.document.write(documents[type]); companion.document.close();
+                            await waitForPrintAssets(companion);
+                        }
+                    }
+                    var result = await window.runDesktopPrintAction('deliveryRun', {
+                        windowName: popup.name, label: nativePayload.label,
+                        documents: [{ type: 'invoice', windowName: popup.name }].concat(companions.map(function(document) { return { type: document.type, windowName: document.popup.name }; }))
+                    });
+                    if (result.submitted.indexOf('invoice') !== -1) confirmButton.disabled = false;
+                    status.textContent = 'Sent to Windows: ' + result.submitted.join(', ') + '. Check the paper before confirming.';
+                    if (result.failures.length) status.textContent += ' ' + result.failures.map(function(failure) { return failure.type + ': ' + failure.message; }).join('; ') + '. Retry sends only documents that have not been submitted.';
+                    deliveryButton.textContent = result.complete ? 'Delivery run submitted ✓' : 'Retry delivery run';
+                    deliveryButton.disabled = result.complete;
+                } catch (error) {
+                    status.textContent = error.message;
+                    if (companions && companions.some(function(document) { return document.popup.closed; })) companions = null;
+                    deliveryButton.disabled = false;
+                } finally { printButton.disabled = false; }
+            };
             var fileButton = popup.document.createElement('button');
             fileButton.textContent = 'Save PDF';
             status.parentNode.insertBefore(fileButton, status);
@@ -248,7 +284,8 @@ export async function showNativeInvoicePrint(popup, invoices, settings, options)
             durationMs: Date.now() - started,
             count: records.length,
         });
-        if (safeOptions.autoPrint !== false) await printJob();
+        if (safeOptions.deliveryRun === true && deliveryButton) await deliveryButton.onclick();
+        else if (safeOptions.autoPrint !== false) await printJob();
         return { pageCount: pages.length, durationMs: Date.now() - started };
     } catch (error) {
         ovenProgress.fail();
