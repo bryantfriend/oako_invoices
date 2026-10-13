@@ -264,7 +264,8 @@ service cloud.firestore {
         request.resource.data.timestamp != null &&
         request.resource.data.actionType is string;
 
-      allow read: if true;
+      // Operational event identifiers are restricted to authorized staff.
+      allow read: if isAdmin();
       allow update: if isAdmin();
       allow delete: if false;
     }
@@ -449,7 +450,9 @@ service cloud.firestore {
     // PUBLIC QR INVOICE SNAPSHOTS
     // ===============================
     match /invoice_qr_links/{token} {
-      allow read: if true;
+      // Preserve bearer-link access while preventing public invoice enumeration.
+      allow get: if true;
+      allow list: if isAdmin();
 
       allow create, update: if isAdmin()
         && request.resource.data.invoiceId is string
