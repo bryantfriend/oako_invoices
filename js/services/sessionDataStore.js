@@ -1,3 +1,7 @@
+import { orderLiveQueryService } from './orderLiveQueryService.js';
+import { offlineQueueService } from './offlineQueueService.js';
+import { selectReturnInvoices } from '../core/firebaseOrderStreamAdapter.js';
+import { normalizeArchivedRecord } from '../core/archiveRecordHelpers.js';
 import { auth } from "../core/firebase.js";
 import { store } from "../core/store.js";
 import icfPipeline from "../ICF/engine/pipeline.js";
@@ -17,6 +21,9 @@ import { runSingleFlight } from "../core/singleFlight.js";
 import { readCachedRowsAsync } from "../core/firestoreRead.js";
 
 var SESSION_REFRESH_AGE_MS = 20000;
+var liveObservers = new Set();
+var liveQueueRevision = 0;
+function liveEnabled() { return Boolean(orderLiveQueryService && orderLiveQueryService.canUse()); }
 var SESSION_CACHE_SCHEMA = 'session-v1';
 
 var sessionDataStore = {
@@ -89,6 +96,7 @@ function ensureOwner() {
 
 function resetCollectionState(state, reason) {
     state.records = [];
+    state.liveContext = null;
     state.loaded = false;
     state.loadedAt = null;
     state.loadingPromise = null;
@@ -263,7 +271,7 @@ async function readDexieCache(collectionName) {
     }
 }
 
-async function writeDexieCache(collectionName, records, extras) {
+async function writeDexieCache(collectionName, records, extras, loadedAt) {
     var ownerKey = getCurrentOwnerKey();
     var cacheKey = getCacheKey(collectionName, ownerKey);
 
@@ -279,7 +287,7 @@ async function writeDexieCache(collectionName, records, extras) {
             collectionName: collectionName,
             rowsJson: JSON.stringify(records || []),
             extrasJson: JSON.stringify(extras || {}),
-            loadedAt: new Date().toISOString()
+            loadedAt: loadedAt ? new Date(loadedAt).toISOString() : null
         });
         return true;
     } catch (error) {
@@ -321,6 +329,7 @@ function getSnapshot(collectionName) {
         loadedAt: state.loadedAt,
         revision: state.revision,
         source: 'memory',
+        liveSequence: state.liveSequence,
         shouldRefresh: isStale(state)
     };
 }
@@ -350,7 +359,7 @@ function assignCollectionData(state, records, extras, readCount, reason) {
     }
 
     if (reason !== 'dexie-cache') {
-        writeDexieCache(state.name, state.records, state.extras);
+        writeDexieCache(state.name, state.records, state.extras, state.loadedAt);
     }
 
     return {
@@ -361,6 +370,7 @@ function assignCollectionData(state, records, extras, readCount, reason) {
 }
 
 async function fetchOrdersData(options) {
+    var live = liveEnabled() ? await orderLiveQueryService.requestSnapshot() : null;
     var authoritative = false;
     var startedAt = getPerformanceNow();
     var queryCount = 5;
@@ -374,12 +384,12 @@ async function fetchOrdersData(options) {
         })
     ]);
     var groups = await Promise.all([
-        orderService.getAllOrders({
+        live ? mergeLiveOrders(live.orders, live.owner) : orderService.getAllOrders({
             forceRefresh: options && options.forceRefresh === true,
             onReadSource: function(source) { authoritative = source === 'server'; }
         }),
         customerService.getAllCustomers(),
-        invoiceService.getReturnedInvoicesForAnalytics(),
+        live ? Promise.resolve(selectReturnInvoices(live.invoiceRows)) : invoiceService.getReturnedInvoicesForAnalytics(),
         referenceGroupsPromise
     ]);
     var orders = groups[0] || [];
@@ -404,7 +414,9 @@ async function fetchOrdersData(options) {
 
     return {
         records: enrichedOrders,
-        authoritative: authoritative,
+        live: live,
+        liveContext: live ? { customers: customers, products: products, categories: productCategories, settings: intelligenceSettings, owner: live.owner } : null,
+        authoritative: live ? true : authoritative,
         extras: {
             returnOrders: enrichedOrders,
             returnInvoices: returnInvoices,
@@ -828,9 +840,28 @@ async function fetchAndAssignCollection(collectionName, options) {
 
     try {
         var loaded = collectionName === 'orders' ? await fetchOrdersData(options) : await fetchInvoicesData();
+        if (loaded.live) {
+            var stable = false;
+            for (var attempt = 0; attempt < 3 && !stable; attempt += 1) {
+                var latest = await orderLiveQueryService.requestSnapshot();
+                if (loaded.live.owner !== latest.owner || getCurrentOwnerKey() !== latest.owner) throw new Error('Account changed during live refresh.');
+                var orderRevision = state.revision;
+                var invoiceRevision = sessionDataStore.invoices.revision;
+                var queueRevision = liveQueueRevision;
+                var observed = await stageLiveRows(latest, loaded.liveContext);
+                stable = latest.current() && getCurrentOwnerKey() === latest.owner && state.revision === orderRevision
+                    && sessionDataStore.invoices.revision === invoiceRevision && liveQueueRevision === queueRevision;
+            }
+            if (!stable) throw new Error('Orders changed during refresh. Cached work is retained; retry with Refresh.');
+            loaded.records = observed.records;
+            loaded.extras = observed.extras;
+            state.liveContext = loaded.liveContext;
+            state.liveSequence = latest.sequence;
+        }
         reconciliationStartedAt = getPerformanceNow();
         var mutationBoundary = state.lastMutationAt || 0;
-        var incomingRecords = mergeRecordsByFreshness(state.records, loaded.records || [], loaded.authoritative === true, state.recordMutations, startRevision);
+        var incomingRecords = loaded.live ? loaded.records : mergeRecordsByFreshness(state.records, loaded.records || [], loaded.authoritative === true, state.recordMutations, startRevision);
+        if (loaded.live) state.recordMutations = {};
         var assignment = assignCollectionData(state, incomingRecords, loaded.extras || {}, loaded.readCount, 'firestore-refresh');
 
         if (mutationBoundary && state.loadedAt && state.loadedAt < mutationBoundary) {
@@ -849,6 +880,7 @@ async function fetchAndAssignCollection(collectionName, options) {
         return buildLoadResult(state, 'firestore', false, assignment.changed, false);
     } catch (error) {
         state.lastError = error;
+        if (collectionName === 'orders' && liveEnabled()) notifyLiveObservers();
         logCache(label, 'background refresh failed', {
             message: error && error.message ? error.message : ''
         });
@@ -858,6 +890,7 @@ async function fetchAndAssignCollection(collectionName, options) {
         throw error;
     } finally {
         state.loadingPromise = null;
+        if (collectionName === 'orders' && liveEnabled()) orderLiveQueryService.requestPublish();
     }
 }
 
@@ -874,7 +907,8 @@ function buildLoadResult(state, source, cacheHit, changed, shouldRefresh) {
             revision: state.revision,
             shouldRefresh: shouldRefresh === true || isStale(state),
             readCount: state.lastReadCount || 0,
-            invalidationReason: state.lastInvalidationReason || ''
+            invalidationReason: state.lastInvalidationReason || '',
+            error: state.lastError ? state.lastError.message : null
         }
     };
 }
@@ -922,7 +956,7 @@ function updateRecord(collectionName, id, patch, reason) {
     state.lastMutationAt = Date.now();
     state.recordMutations[id] = { revision: state.revision, removed: false };
     state.lastInvalidationReason = reason || 'mutation-update';
-    writeDexieCache(collectionName, state.records, state.extras);
+    writeDexieCache(collectionName, state.records, state.extras, state.loadedAt);
     logCache(collectionName === 'orders' ? 'Orders' : 'Invoices', 'cache updated after mutation', {
         id: id,
         reason: reason || 'mutation-update',
@@ -949,7 +983,7 @@ function removeRecord(collectionName, id, reason) {
     state.lastMutationAt = Date.now();
     state.recordMutations[id] = { revision: state.revision, removed: true };
     state.lastInvalidationReason = reason || 'mutation-remove';
-    writeDexieCache(collectionName, state.records, state.extras);
+    writeDexieCache(collectionName, state.records, state.extras, state.loadedAt);
     logCache(collectionName === 'orders' ? 'Orders' : 'Invoices', 'cache removed record after mutation', {
         id: id,
         reason: reason || 'mutation-remove',
@@ -1047,12 +1081,20 @@ var publicStoreApi = {
         }, []);
     },
 
+    subscribeLiveOrders: function(callback, current) {
+        var observer = { callback: callback, current: current };
+        liveObservers.add(observer);
+        return function stop() { liveObservers.delete(observer); };
+    },
+    getLiveStatus: function() { return orderLiveQueryService ? orderLiveQueryService.getStatus() : { state: 'disabled' }; },
     updateOrderRecord: function(id, patch, reason) {
         updateRecord('orders', id, patch, reason);
+        if (liveEnabled()) orderLiveQueryService.requestPublish();
     },
 
     updateInvoiceRecord: function(id, patch, reason) {
         updateRecord('invoices', id, patch, reason);
+        if (liveEnabled()) orderLiveQueryService.requestPublish();
     },
 
     removeInvoiceRecord: function(id, reason) {
@@ -1061,6 +1103,7 @@ var publicStoreApi = {
 
     removeOrderRecord: function(id, reason) {
         removeRecord('orders', id, reason);
+        if (liveEnabled()) orderLiveQueryService.requestPublish();
     },
 
     clearUserScopedMemory: function(reason) {
@@ -1072,3 +1115,58 @@ var publicStoreApi = {
 
 export { sessionDataStore };
 export default publicStoreApi;
+
+async function mergeLiveOrders(rows, owner) {
+    var local = await offlineQueueService.getLocalEntitySnapshots('order', owner);
+    var map = new Map(rows.map(function entry(row) { return [row.id, row]; }));
+    Object.keys(local).forEach(function overlay(id) { map.set(id, Object.assign({}, map.get(id) || {}, local[id], { id: id })); });
+    return Array.from(map.values()).map(function normalize(row) { return normalizeArchivedRecord(row, 'draft'); }).sort(function recent(a, b) { return getMillis(b.createdAt) - getMillis(a.createdAt); });
+}
+async function stageLiveRows(snapshot, reference) {
+    var groups = await Promise.all([mergeLiveOrders(snapshot.orders, snapshot.owner), offlineQueueService.getLocalEntitySnapshots('invoice', snapshot.owner)]);
+    var invoiceRows = snapshot.invoiceRows.slice();
+    Object.keys(groups[1]).forEach(function overlay(id) {
+        var index = invoiceRows.findIndex(function matches(row) { return row.id === id; });
+        var local = groups[1][id];
+        if (index >= 0) invoiceRows[index] = Object.assign({}, invoiceRows[index], local, { id: id });
+        else invoiceRows.push(Object.assign({}, local, { id: id }));
+    });
+    var returns = selectReturnInvoices(invoiceRows);
+    var records = buildOrdersWithContext(groups[0], reference.customers, reference.products, reference.categories, returns);
+    return { records: records, extras: { returnOrders: records, returnInvoices: returns, intelligenceSettings: reference.settings } };
+}
+function notifyLiveObservers() {
+    liveObservers.forEach(function notify(observer) {
+        if (!observer.current()) { liveObservers.delete(observer); return; }
+        observer.callback();
+    });
+}
+async function publishLiveSnapshot(rows, snapshot) {
+    ensureOwner();
+    var state = sessionDataStore.orders;
+    if (!state.loaded || state.loadingPromise || !state.liveContext || !liveEnabled()) return false;
+    if (state.liveContext.owner !== snapshot.owner) return false;
+    var revision = state.revision;
+    var invoiceRevision = sessionDataStore.invoices.revision;
+    var queueRevision = liveQueueRevision;
+    var staged = await stageLiveRows(Object.assign({}, snapshot, { orders: rows }), state.liveContext);
+    if (!snapshot.current() || state.revision !== revision || sessionDataStore.invoices.revision !== invoiceRevision || liveQueueRevision !== queueRevision || state.loadingPromise) return false;
+    var changed = !recordsAreEqual(state.records, staged.records, state.extras, staged.extras);
+    state.liveSequence = snapshot.sequence;
+    if (!changed) return true;
+    // A fresh authoritative stream can reintroduce an ID previously deleted.
+    // Real pending local intent snapshots were layered above, not tombstones.
+    state.records = cloneRecords(staged.records);
+    state.extras = cloneExtras(staged.extras);
+    state.recordMutations = {};
+    state.revision += 1;
+    state.lastError = null;
+    writeDexieCache('orders', state.records, state.extras, state.loadedAt);
+    notifyLiveObservers();
+    return true;
+}
+if (orderLiveQueryService) {
+    orderLiveQueryService.setPublisher(publishLiveSnapshot);
+    orderLiveQueryService.subscribeStatus(notifyLiveObservers);
+    offlineQueueService.subscribe(function queueChanged() { liveQueueRevision += 1; orderLiveQueryService.requestPublish(); });
+}

@@ -524,7 +524,7 @@ export const offlineQueueService = {
     },
 
 
-    async getLocalEntitySnapshots(entityType) {
+    async getLocalEntitySnapshots(entityType, ownerId) {
         var items = await getAllIntentRecords();
         var snapshots = {};
         for (var index = 0; index < items.length; index += 1) {
@@ -532,6 +532,7 @@ export const offlineQueueService = {
             if (!isActiveLocalStatus(item.status)) {
                 continue;
             }
+            if (ownerId && item.userId !== ownerId) continue;
             var snapshot = getLocalEntitySnapshotFromIntent(item, entityType);
             if (snapshot && item.entityId) {
                 snapshots[item.entityId] = cloneData(snapshot);

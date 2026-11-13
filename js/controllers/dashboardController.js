@@ -1,3 +1,4 @@
+import { orderLiveQueryService } from '../services/orderLiveQueryService.js';
 import sessionDataStore from "../services/sessionDataStore.js";
 import { notificationService } from "../core/notificationService.js";
 import { statsService } from "../services/statsService.js";
@@ -35,6 +36,23 @@ async function loadDashboardReconciliation(forceRefresh) {
 }
 
 export const dashboardController = {
+    liveEnabled: function() { return Boolean(orderLiveQueryService && orderLiveQueryService.canUse()); },
+    liveStatus: function() { return sessionDataStore.getLiveStatus ? sessionDataStore.getLiveStatus() : { state: 'disabled' }; },
+    liveStockRecords: function() {
+        if (!orderLiveQueryService || !orderLiveQueryService.getSnapshot()) return null;
+        var snapshot = sessionDataStore.getOrdersSnapshot();
+        var live = orderLiveQueryService.getSnapshot();
+        return snapshot && live && snapshot.liveSequence === live.sequence ? snapshot.records : null;
+    },
+    currentRevision: function() { var snapshot = sessionDataStore.getOrdersSnapshot(); return snapshot ? snapshot.revision : null; },
+    subscribeLive: function(callback, current) {
+        return sessionDataStore.subscribeLiveOrders(function updated() {
+            var snapshot = sessionDataStore.getOrdersSnapshot();
+            if (!snapshot) return;
+            var missingCatalog = productReconciliationService.getContext().products.length ? null : new Error('Product matches unavailable');
+            callback(buildDashboardResult({ records: snapshot.records, extras: snapshot.extras, meta: snapshot }, missingCatalog), dashboardController.liveStatus());
+        }, current);
+    },
     getCachedDashboard: function() {
         if (!productReconciliationService.getContext().products.length) { return null; }
         var snapshot = sessionDataStore.getOrdersSnapshot();

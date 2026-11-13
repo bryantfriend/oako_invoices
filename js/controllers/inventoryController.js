@@ -53,10 +53,12 @@ export const inventoryController = {
             const dailyRecords = await inventoryService.getDailyInventory(date, safeOptions);
 
             // 5. Count saved orders for their scheduled date, including drafts.
+            var providedOrders = Array.isArray(safeOptions.providedOrderRecords) ? safeOptions.providedOrderRecords : null;
             var orderSnapshot = sessionDataStore.getOrdersSnapshot();
             var shouldRefreshOrders = (safeOptions.forceRefresh === true && safeOptions.ordersAlreadyRefreshed !== true) || Boolean(orderSnapshot && orderSnapshot.shouldRefresh);
             var allOrders = orderSnapshot && Array.isArray(orderSnapshot.records) ? orderSnapshot.records : null;
-            if (!allOrders || shouldRefreshOrders) {
+            if (providedOrders) allOrders = providedOrders;
+            if (!providedOrders && (!allOrders || shouldRefreshOrders)) {
                 var loadedOrders = await sessionDataStore.loadOrders({
                     source: 'inventory',
                     forceRefresh: shouldRefreshOrders

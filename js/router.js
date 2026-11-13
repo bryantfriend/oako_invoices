@@ -1,3 +1,4 @@
+import { orderLiveQueryService } from './services/orderLiveQueryService.js';
 import { stopInvoicePreparationProgress } from './components/invoicePreparationProgress.js';
 import { startOvenLoading } from "./components/ovenLoading.js";
 import { ROUTES } from "./core/constants.js";
@@ -129,6 +130,7 @@ class Router {
 
     async handleLocationChange() {
         let path = window.location.hash.slice(1) || '/';
+        if (orderLiveQueryService) orderLiveQueryService.setRoute(path);
 
         // Normalize any weird double slashes
         if (path.startsWith('//')) path = path.slice(1);

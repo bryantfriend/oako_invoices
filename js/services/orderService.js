@@ -1,3 +1,4 @@
+import { orderLiveQueryService } from './orderLiveQueryService.js';
 import { queueWorkflowEffect } from './workflowEffectsService.js';
 import { auth, db } from "../core/firebase.js";
 import {
@@ -221,6 +222,24 @@ export const orderService = {
     async getAllOrders(options) {
         try {
             var safeOptions = options || {};
+            if (orderLiveQueryService && orderLiveQueryService.canUse()) {
+                var queueRevision = 0;
+                var unsubscribeQueue = offlineQueueService.subscribe(function changed() { queueRevision += 1; });
+                try {
+                    for (var attempt = 0; attempt < 3; attempt += 1) {
+                        var live = await orderLiveQueryService.requestSnapshot();
+                        var beforeQueue = queueRevision;
+                        var pending = await offlineQueueService.getLocalEntitySnapshots('order', live.owner);
+                        if (!live.current() || !auth.currentUser || auth.currentUser.uid !== live.owner) throw new Error('Order stream changed while loading. Refresh to retry.');
+                        if (beforeQueue !== queueRevision) continue;
+                        if (typeof safeOptions.onReadSource === 'function') safeOptions.onReadSource('server');
+                        return mergeLocalOrders(live.orders, pending).sort(function recent(a, b) { return getMillis(b.createdAt) - getMillis(a.createdAt); });
+                    }
+                    throw new Error('Pending orders changed during refresh. Cached work is retained; retry with Refresh.');
+                } finally {
+                    unsubscribeQueue();
+                }
+            }
             var currentSource = 'cache';
             var archiveSource = 'cache';
             // Read the complete collection: orderBy(createdAt) omits legacy rows

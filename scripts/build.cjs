@@ -8,8 +8,8 @@ const vendorDir = path.join(root, 'vendor');
 const tempDir = path.join(root, '.workbox');
 const bundledWorker = path.join(tempDir, 'sw-bundled.js');
 const deploymentVersion = {
-    appVersion: '2.81',
-    serviceWorkerVersion: '2.81',
+    appVersion: '2.82',
+    serviceWorkerVersion: '2.82',
     dexieSchemaVersion: 3
 };
 
@@ -100,6 +100,7 @@ async function buildServiceWorker() {
             'assets/icons/*.png',
             'css/*.css',
             'js/**/*.js',
+            'js/**/*.mjs',
             'vendor/*.mjs',
             'Payment QR Code.png'
         ],

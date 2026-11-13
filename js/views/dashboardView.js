@@ -1,3 +1,4 @@
+var stopLiveDashboard = null;
 import { withOvenLoading, startOvenLoading, ovenMarkup, paintOven } from "../components/ovenLoading.js";
 import { mountInvoiceProductivityPanel } from '../components/invoiceProductivityPanel.js';
 import { createOrderArchiveAction } from '../components/orderArchiveAction.js';
@@ -370,12 +371,13 @@ export const renderDashboard = async (params, routeContext) => {
             ignoreStaleRouteResult('dashboard-background-refresh', expectedRoute, navigationId);
             return;
         }
+        if (refreshedMeta.error) throw new Error(String(refreshedMeta.error));
         // Stock depends on the refreshed orders. Loading both in parallel can keep old reservations.
         var refreshedInventoryDate = getLocalDateKey(new Date());
         var refreshedInventoryData = inventoryCategories;
         var inventoryError = null;
         try {
-            refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId, forceRefresh: true, ordersAlreadyRefreshed: true });
+            refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId, forceRefresh: true, ordersAlreadyRefreshed: true, providedOrderRecords: dashboardController.liveEnabled && dashboardController.liveEnabled() ? refreshedOrders : null });
         } catch (error) {
             // Inventory availability must not block newly loaded orders from appearing.
             inventoryError = error;
@@ -387,6 +389,7 @@ export const renderDashboard = async (params, routeContext) => {
             return;
         }
 
+        if (dashboardController.liveEnabled && dashboardController.liveEnabled() && refreshedMeta.revision !== dashboardController.currentRevision()) return;
         allOrders = refreshedOrders;
         reconciliationUnavailable = refreshedMeta.reconciliationUnavailable === true;
         activeOrders = getActiveOrders(allOrders);
@@ -395,8 +398,7 @@ export const renderDashboard = async (params, routeContext) => {
         intelligenceSettings = refreshedIntelligenceSettings;
         inventoryCategories = refreshedInventoryData;
         if (!inventoryError) inventoryDate = refreshedInventoryDate;
-        pendingCheckmarkUpdates.clear();
-        updatedCheckmarkUpdates.clear();
+        updatedCheckmarkUpdates.forEach(function settled(id) { if (!pendingCheckmarkUpdates.has(id)) updatedCheckmarkUpdates.delete(id); });
         renderUI();
         refreshPrintableInvoiceMap().catch(function(error) {
             console.warn('Printable invoice map refresh failed after Orders refresh.', error);
@@ -411,7 +413,7 @@ export const renderDashboard = async (params, routeContext) => {
 
     const refreshInventoryStrip = async function refreshInventoryStrip() {
         var refreshedInventoryDate = getLocalDateKey(new Date());
-        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId, forceRefresh: true });
+        const refreshedInventoryData = await inventoryController.loadInventoryData(refreshedInventoryDate, { routeName: expectedRoute, navigationId: navigationId, forceRefresh: true, providedOrderRecords: dashboardController.liveStockRecords ? dashboardController.liveStockRecords() : null });
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             ignoreStaleRouteResult('dashboard-inventory-strip', expectedRoute, navigationId);
             return;
@@ -459,6 +461,7 @@ export const renderDashboard = async (params, routeContext) => {
 
         invoiceRefreshTimer = setTimeout(async () => {
             invoiceRefreshTimer = null;
+            if (!isNavigationStillCurrent(navigationId, expectedRoute)) return;
 
             if (pendingCheckmarkUpdates.size > 0) {
                 scheduleInvoiceListRefresh(1000);
@@ -654,10 +657,23 @@ export const renderDashboard = async (params, routeContext) => {
 
     window.dashboardHandleTableSort = handleSort;
 
+    var pendingLiveResult = null;
     const renderUI = () => {
         if (!isNavigationStillCurrent(navigationId, expectedRoute)) {
             ignoreStaleRouteResult('dashboard-render-ui', expectedRoute, navigationId);
             return;
+        }
+        // Any deliberate view render (including applying a date filter) consumes the
+        // latest deferred observation, so removing the banner cannot strand old rows.
+        if (pendingLiveResult && (!pendingLiveResult.result.meta || pendingLiveResult.result.meta.revision !== dashboardController.currentRevision())) pendingLiveResult = null;
+        if (pendingLiveResult) {
+            allOrders = pendingLiveResult.result.orders;
+            activeOrders = getActiveOrders(allOrders);
+            returnOrders = pendingLiveResult.result.returnOrders;
+            returnInvoices = pendingLiveResult.result.returnInvoices;
+            intelligenceSettings = pendingLiveResult.result.intelligenceSettings;
+            if (pendingLiveResult.status.state === 'live') updatedCheckmarkUpdates.forEach(function settled(id) { if (!pendingCheckmarkUpdates.has(id)) updatedCheckmarkUpdates.delete(id); });
+            pendingLiveResult = null;
         }
         cleanupCharts();
         const analyticsOrders = getAnalyticsOrders();
@@ -1088,12 +1104,16 @@ export const renderDashboard = async (params, routeContext) => {
     `;
 
     const renderInventoryStrip = (categories) => {
+        var streamStatus = dashboardController.liveStatus ? dashboardController.liveStatus() : { state: 'disabled' };
+        var streamLabel = streamStatus.state === 'disabled' ? '' : 'Order / latest250 invoice observations: ' + streamStatus.state + '. Reference and stock data refresh with the existing Refresh action.';
+        if (streamStatus.testMode) streamLabel = 'LIVE ORDERS TEST MODE. ' + (streamLabel || 'Waiting for authenticated Orders session.');
+        if (streamStatus.state === 'error') streamLabel = (streamStatus.testMode ? 'LIVE ORDERS TEST MODE. ' : '') + 'Live updates interrupted. Cached data is shown; use Refresh Stock to retry. Payment saves are separate.';
         const products = categories
             .flatMap(cat => cat.products || [])
             .sort((a, b) => (a.left ?? 0) - (b.left ?? 0));
 
         if (products.length === 0) {
-            return '<div class="dashboard-card inventory-strip"><h3>Inventory Left Today</h3><p>Stock has not loaded, or no inventory products are configured.</p><button id="refresh-stock-btn" class="btn btn-secondary btn-sm">Refresh Stock</button> <button id="open-inventory-btn" class="btn btn-secondary btn-sm">Open Inventory</button></div>';
+            return '<div class="dashboard-card inventory-strip"><h3>Inventory Left Today</h3><small>' + escapeHtml(streamLabel) + '</small><p>Stock has not loaded, or no inventory products are configured.</p><button id="refresh-stock-btn" class="btn btn-secondary btn-sm">Refresh Stock</button> <button id="open-inventory-btn" class="btn btn-secondary btn-sm">Open Inventory</button></div>';
         }
 
         return `
@@ -1101,7 +1121,7 @@ export const renderDashboard = async (params, routeContext) => {
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
                     <div>
                         <h3 style="font-size: 12px; font-weight: 700; color: var(--color-gray-800); margin: 0;">Inventory Left Today</h3>
-                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">${escapeHtml(inventoryDate)} · Stock remaining after saved orders, as shown in Inventory</div>
+                        <div style="font-size: 10px; color: var(--color-gray-400); margin-top: 2px;">${escapeHtml(streamLabel)}<br>${escapeHtml(inventoryDate)} · Stock remaining after saved orders, as shown in Inventory</div>
                     </div>
                     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                         <button id="refresh-stock-btn" class="btn btn-secondary btn-sm" style="font-size: 11px;">Refresh Stock</button>
@@ -2322,6 +2342,49 @@ export const renderDashboard = async (params, routeContext) => {
     const visibleRenderStartedAt = performance.now();
     renderUI();
     console.info('[PERF] Orders first visible render: ' + (performance.now() - visibleRenderStartedAt).toFixed(1) + ' ms');
+    if (stopLiveDashboard) stopLiveDashboard();
+    if (dashboardController.liveEnabled && dashboardController.liveEnabled()) {
+        stopLiveDashboard = dashboardController.subscribeLive(function observed(result, status) {
+            if (!isNavigationStillCurrent(navigationId, expectedRoute)) return;
+            var focused = document.activeElement;
+            var popover = document.getElementById('custom-date-popover');
+            var editing = (focused && /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName))
+                || (popover && popover.style.display !== 'none')
+                || document.querySelector('.modal-backdrop') || pendingCheckmarkUpdates.size > 0;
+            var notice = document.getElementById('orders-live-pending');
+            if (editing || notice) {
+                pendingLiveResult = { result: result, status: status };
+                if (!notice) {
+                    notice = document.createElement('button');
+                    notice.id = 'orders-live-pending';
+                    notice.type = 'button';
+                    notice.setAttribute('role', 'status');
+                    container.prepend(notice);
+                }
+                notice.textContent = status.state === 'error'
+                    ? 'Live updates interrupted. Finish editing, then use Refresh Stock to retry.'
+                    : 'New order or return details are available. Finish editing, then apply latest details.';
+                notice.onclick = function applyLatestDetails() {
+                    if (!isNavigationStillCurrent(navigationId, expectedRoute) || pendingCheckmarkUpdates.size > 0 || document.querySelector('.modal-backdrop')) return;
+                    // The current session remains live while the visible edit is deliberately retained.
+                    // Applying is an explicit choice; do not automatically destroy draft date fields.
+                    notice.remove();
+                    renderUI();
+                };
+                return;
+            }
+            allOrders = result.orders;
+            activeOrders = getActiveOrders(allOrders);
+            returnOrders = result.returnOrders;
+            returnInvoices = result.returnInvoices;
+            intelligenceSettings = result.intelligenceSettings;
+            if (status.state === 'live') updatedCheckmarkUpdates.forEach(function settled(id) { if (!pendingCheckmarkUpdates.has(id)) updatedCheckmarkUpdates.delete(id); });
+            var scrollTop = getScrollPosition();
+            renderUI();
+            restoreScrollPosition(scrollTop);
+        }, function current() { return isNavigationStillCurrent(navigationId, expectedRoute); });
+    }
+
 
     window.setTimeout(function() {
         refreshPrintableInvoiceMap().catch(function(error) {
